@@ -1,581 +1,142 @@
 # -*- coding: utf-8 -*-
 """
-Text utilities for layout text handling
+Text utilities for layout text handling (only freetype method)
 """
 
-UNIT_SCALE = 1.0  # 默认1μm=1dbu，可由外部设置
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-def set_unit_scale(scale):
-    global UNIT_SCALE
-    UNIT_SCALE = scale
+try:
+    import pya
+    Layout = pya.Layout
+    Text = pya.Text
+except (ImportError, AttributeError):
+    import klayout.db as pya
+    Layout = pya.Layout
+    Text = pya.Text
 
-def get_unit_scale():
-    return UNIT_SCALE
-
-import pya
-from config import FONT_CONFIG
+from config import DEFAULT_UNIT_SCALE, DEFAULT_DBU
 from utils.geometry import GeometryUtils
 
 class TextUtils:
     """文本工具类"""
+    UNIT_SCALE = DEFAULT_UNIT_SCALE  # 全局单位缩放，默认为DEFAULT_UNIT_SCALE
     
     @staticmethod
-    def create_simple_text(text, x, y, font_config='default', center=True):
-        """创建简单字符形状的文本（使用几何图形表示字母）"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        char_width = size * 0.6
-        char_height = size
-        
-        if center:
-            total_width = len(text) * char_width
-            start_x = x - total_width / 2
-        else:
-            start_x = x
-        
-        text_shapes = []
-        
-        for i, char in enumerate(text):
-            if char != ' ':
-                char_x = start_x + i * char_width
-                char_y = y
-                
-                # 为每个字符创建简单的几何形状
-                char_shapes = TextUtils._create_char_shape(char, char_x, char_y, char_width, char_height)
-                text_shapes.extend(char_shapes)
-        
-        return text_shapes
+    def set_unit_scale(scale):
+        """设置单位缩放"""
+        TextUtils.UNIT_SCALE = scale
     
     @staticmethod
-    def _create_char_shape(char, x, y, width, height):
-        """为单个字符创建几何形状"""
-        char = char.upper()
-        shapes = []
-        
-        # 字符的线宽
-        line_width = width * 0.1
-        
-        if char == 'A':
-            # A: 两条斜线加一条横线
-            # 左斜线
-            left_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x, y + height*0.4, line_width)
-            shapes.append(left_line)
-            # 右斜线
-            right_line = GeometryUtils.create_line(x + width*0.3, y - height*0.4, x, y + height*0.4, line_width)
-            shapes.append(right_line)
-            # 横线
-            cross_line = GeometryUtils.create_line(x - width*0.2, y, x + width*0.2, y, line_width)
-            shapes.append(cross_line)
-            
-        elif char == 'B':
-            # B: 竖线加两个半圆
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 上半圆
-            top_arc = GeometryUtils.create_arc(x - width*0.3, y + height*0.2, width*0.3, 0, 180)
-            shapes.append(top_arc)
-            # 下半圆
-            bottom_arc = GeometryUtils.create_arc(x - width*0.3, y - height*0.2, width*0.3, 180, 360)
-            shapes.append(bottom_arc)
-            
-        elif char == 'C':
-            # C: 半圆
-            arc = GeometryUtils.create_arc(x, y, width*0.4, 45, 315)
-            shapes.append(arc)
-            
-        elif char == 'D':
-            # D: 竖线加半圆
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 半圆
-            arc = GeometryUtils.create_arc(x - width*0.3, y, width*0.3, 90, 270)
-            shapes.append(arc)
-            
-        elif char == 'E':
-            # E: 竖线加三条横线
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 上横线
-            top_line = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(top_line)
-            # 中横线
-            mid_line = GeometryUtils.create_line(x - width*0.3, y, x + width*0.2, y, line_width)
-            shapes.append(mid_line)
-            # 下横线
-            bottom_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(bottom_line)
-            
-        elif char == 'F':
-            # F: 竖线加两条横线
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 上横线
-            top_line = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(top_line)
-            # 中横线
-            mid_line = GeometryUtils.create_line(x - width*0.3, y, x + width*0.2, y, line_width)
-            shapes.append(mid_line)
-            
-        elif char == 'G':
-            # G: 半圆加一条线
-            # 半圆
-            arc = GeometryUtils.create_arc(x, y, width*0.4, 45, 315)
-            shapes.append(arc)
-            # 横线
-            cross_line = GeometryUtils.create_line(x, y, x + width*0.3, y, line_width)
-            shapes.append(cross_line)
-            
-        elif char == 'H':
-            # H: 两条竖线加一条横线
-            # 左竖线
-            left_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(left_line)
-            # 右竖线
-            right_line = GeometryUtils.create_line(x + width*0.3, y - height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(right_line)
-            # 横线
-            cross_line = GeometryUtils.create_line(x - width*0.3, y, x + width*0.3, y, line_width)
-            shapes.append(cross_line)
-            
-        elif char == 'I':
-            # I: 竖线加两条横线
-            # 竖线
-            vert_line = GeometryUtils.create_line(x, y - height*0.4, x, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 上横线
-            top_line = GeometryUtils.create_line(x - width*0.2, y + height*0.4, x + width*0.2, y + height*0.4, line_width)
-            shapes.append(top_line)
-            # 下横线
-            bottom_line = GeometryUtils.create_line(x - width*0.2, y - height*0.4, x + width*0.2, y - height*0.4, line_width)
-            shapes.append(bottom_line)
-            
-        elif char == 'L':
-            # L: 竖线加横线
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 横线
-            bottom_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(bottom_line)
-            
-        elif char == 'M':
-            # M: 两条竖线加两条斜线
-            # 左竖线
-            left_line = GeometryUtils.create_line(x - width*0.4, y - height*0.4, x - width*0.4, y + height*0.4, line_width)
-            shapes.append(left_line)
-            # 右竖线
-            right_line = GeometryUtils.create_line(x + width*0.4, y - height*0.4, x + width*0.4, y + height*0.4, line_width)
-            shapes.append(right_line)
-            # 左斜线
-            left_diag = GeometryUtils.create_line(x - width*0.4, y + height*0.4, x, y - height*0.2, line_width)
-            shapes.append(left_diag)
-            # 右斜线
-            right_diag = GeometryUtils.create_line(x + width*0.4, y + height*0.4, x, y - height*0.2, line_width)
-            shapes.append(right_diag)
-            
-        elif char == 'N':
-            # N: 两条竖线加一条斜线
-            # 左竖线
-            left_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(left_line)
-            # 右竖线
-            right_line = GeometryUtils.create_line(x + width*0.3, y - height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(right_line)
-            # 斜线
-            diag_line = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(diag_line)
-            
-        elif char == 'O':
-            # O: 椭圆
-            ellipse = GeometryUtils.create_ellipse(x, y, width*0.4, height*0.4)
-            shapes.append(ellipse)
-            
-        elif char == 'P':
-            # P: 竖线加半圆
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 半圆
-            arc = GeometryUtils.create_arc(x - width*0.3, y + height*0.2, width*0.3, 90, 270)
-            shapes.append(arc)
-            
-        elif char == 'Q':
-            # Q: 椭圆加一条线
-            # 椭圆
-            ellipse = GeometryUtils.create_ellipse(x, y, width*0.4, height*0.4)
-            shapes.append(ellipse)
-            # 斜线
-            diag_line = GeometryUtils.create_line(x + width*0.2, y - height*0.2, x + width*0.4, y - height*0.4, line_width)
-            shapes.append(diag_line)
-            
-        elif char == 'R':
-            # R: 竖线加半圆加斜线
-            # 竖线
-            vert_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            # 半圆
-            arc = GeometryUtils.create_arc(x - width*0.3, y + height*0.2, width*0.3, 90, 270)
-            shapes.append(arc)
-            # 斜线
-            diag_line = GeometryUtils.create_line(x - width*0.3, y, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(diag_line)
-            
-        elif char == 'S':
-            # S: 两个半圆
-            # 上半圆
-            top_arc = GeometryUtils.create_arc(x, y + height*0.2, width*0.3, 45, 225)
-            shapes.append(top_arc)
-            # 下半圆
-            bottom_arc = GeometryUtils.create_arc(x, y - height*0.2, width*0.3, 225, 45)
-            shapes.append(bottom_arc)
-            
-        elif char == 'T':
-            # T: 横线加竖线
-            # 横线
-            top_line = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(top_line)
-            # 竖线
-            vert_line = GeometryUtils.create_line(x, y - height*0.4, x, y + height*0.4, line_width)
-            shapes.append(vert_line)
-            
-        elif char == 'U':
-            # U: 两条竖线加半圆
-            # 左竖线
-            left_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x - width*0.3, y + height*0.2, line_width)
-            shapes.append(left_line)
-            # 右竖线
-            right_line = GeometryUtils.create_line(x + width*0.3, y - height*0.4, x + width*0.3, y + height*0.2, line_width)
-            shapes.append(right_line)
-            # 半圆
-            arc = GeometryUtils.create_arc(x, y + height*0.2, width*0.3, 0, 180)
-            shapes.append(arc)
-            
-        elif char == 'V':
-            # V: 两条斜线
-            # 左斜线
-            left_diag = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x, y - height*0.4, line_width)
-            shapes.append(left_diag)
-            # 右斜线
-            right_diag = GeometryUtils.create_line(x + width*0.3, y + height*0.4, x, y - height*0.4, line_width)
-            shapes.append(right_diag)
-            
-        elif char == 'W':
-            # W: 四条斜线
-            # 左斜线
-            left_diag = GeometryUtils.create_line(x - width*0.4, y + height*0.4, x - width*0.2, y - height*0.4, line_width)
-            shapes.append(left_diag)
-            # 中左斜线
-            mid_left_diag = GeometryUtils.create_line(x - width*0.2, y - height*0.4, x, y + height*0.2, line_width)
-            shapes.append(mid_left_diag)
-            # 中右斜线
-            mid_right_diag = GeometryUtils.create_line(x, y + height*0.2, x + width*0.2, y - height*0.4, line_width)
-            shapes.append(mid_right_diag)
-            # 右斜线
-            right_diag = GeometryUtils.create_line(x + width*0.2, y - height*0.4, x + width*0.4, y + height*0.4, line_width)
-            shapes.append(right_diag)
-            
-        elif char == 'X':
-            # X: 两条交叉斜线
-            # 左斜线
-            left_diag = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(left_diag)
-            # 右斜线
-            right_diag = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(right_diag)
-            
-        elif char == 'Y':
-            # Y: 两条斜线加一条竖线
-            # 左斜线
-            left_diag = GeometryUtils.create_line(x - width*0.2, y + height*0.4, x, y, line_width)
-            shapes.append(left_diag)
-            # 右斜线
-            right_diag = GeometryUtils.create_line(x + width*0.2, y + height*0.4, x, y, line_width)
-            shapes.append(right_diag)
-            # 竖线
-            vert_line = GeometryUtils.create_line(x, y, x, y - height*0.4, line_width)
-            shapes.append(vert_line)
-            
-        elif char == 'Z':
-            # Z: 两条横线加一条斜线
-            # 上横线
-            top_line = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y + height*0.4, line_width)
-            shapes.append(top_line)
-            # 下横线
-            bottom_line = GeometryUtils.create_line(x - width*0.3, y - height*0.4, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(bottom_line)
-            # 斜线
-            diag_line = GeometryUtils.create_line(x - width*0.3, y + height*0.4, x + width*0.3, y - height*0.4, line_width)
-            shapes.append(diag_line)
-            
-        else:
-            # 对于其他字符，创建简单的矩形
-            char_box = GeometryUtils.create_rectangle(x, y, width * 0.8, height, center=True)
-            shapes.append(char_box)
-        
-        return shapes
-
-    @staticmethod
-    def create_text(text, x, y, font_config='default', center=True):
-        """创建文本标签"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        # 为每个字符创建简单的矩形作为标签
-        char_width = size * 0.6
-        char_height = size
-        
-        if center:
-            # 计算文本总宽度
-            total_width = len(text) * char_width
-            start_x = x - total_width / 2
-        else:
-            start_x = x
-        
-        text_shapes = []
-        
-        for i, char in enumerate(text):
-            if char != ' ':
-                char_x = start_x + i * char_width
-                char_box = GeometryUtils.create_rectangle(
-                    char_x + char_width * 0.4, y, 
-                    char_width * 0.8, char_height, 
-                    center=True
-                )
-                text_shapes.append(char_box)
-        
-        return text_shapes
+    def get_unit_scale():
+        """获取单位缩放"""
+        return TextUtils.UNIT_SCALE
     
-    @staticmethod
-    def create_bold_text(text, x, y, font_config='default', center=True):
-        """创建粗体文本"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        # 粗体文本使用更宽的字符
-        char_width = size * 0.7
-        char_height = size
-        
-        if center:
-            total_width = len(text) * char_width
-            start_x = x - total_width / 2
-        else:
-            start_x = x
-        
-        text_shapes = []
-        
-        for i, char in enumerate(text):
-            if char != ' ':
-                char_x = start_x + i * char_width
-                # 创建多个重叠的矩形来模拟粗体效果
-                for offset in [0, 0.2, 0.4]:
-                    char_box = GeometryUtils.create_rectangle(
-                        char_x + char_width * 0.4 + offset, y, 
-                        char_width * 0.8, char_height, 
-                        center=True
-                    )
-                    text_shapes.append(char_box)
-        
-        return text_shapes
-    
-    @staticmethod
-    def create_outlined_text(text, x, y, font_config='default', outline_width=0.5, center=True):
-        """创建轮廓文本"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        char_width = size * 0.6
-        char_height = size
-        
-        if center:
-            total_width = len(text) * char_width
-            start_x = x - total_width / 2
-        else:
-            start_x = x
-        
-        text_shapes = []
-        
-        for i, char in enumerate(text):
-            if char != ' ':
-                char_x = start_x + i * char_width
-                
-                # 创建轮廓（外框）
-                outline_box = GeometryUtils.create_rectangle(
-                    char_x + char_width * 0.4, y, 
-                    char_width * 0.8 + outline_width * 2, char_height + outline_width * 2, 
-                    center=True
-                )
-                text_shapes.append(outline_box)
-                
-                # 创建内部填充
-                fill_box = GeometryUtils.create_rectangle(
-                    char_x + char_width * 0.4, y, 
-                    char_width * 0.8, char_height, 
-                    center=True
-                )
-                text_shapes.append(fill_box)
-        
-        return text_shapes
-    
-    @staticmethod
-    def create_rotated_text(text, x, y, angle, font_config='default', center=True):
-        """创建旋转文本"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        char_width = size * 0.6
-        char_height = size
-        
-        if center:
-            total_width = len(text) * char_width
-            start_x = x - total_width / 2
-        else:
-            start_x = x
-        
-        text_shapes = []
-        
-        for i, char in enumerate(text):
-            if char != ' ':
-                char_x = start_x + i * char_width
-                char_box = GeometryUtils.create_rectangle(
-                    char_x + char_width * 0.4, y, 
-                    char_width * 0.8, char_height, 
-                    center=True
-                )
-                
-                # 旋转字符
-                import math
-                cos_a = math.cos(angle)
-                sin_a = math.sin(angle)
-                
-                # 创建变换矩阵
-                trans = pya.Trans(cos_a, sin_a, -sin_a, cos_a, x, y)
-                rotated_box = char_box.transformed(trans)
-                text_shapes.append(rotated_box)
-        
-        return text_shapes
-    
-    @staticmethod
-    def create_multiline_text(lines, x, y, line_spacing=1.5, font_config='default', center=True):
-        """创建多行文本"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        all_shapes = []
-        line_height = size * line_spacing
-        
-        for i, line in enumerate(lines):
-            line_y = y - i * line_height
-            line_shapes = TextUtils.create_text(line, x, line_y, font_config, center)
-            all_shapes.extend(line_shapes)
-        
-        return all_shapes
-    
-    @staticmethod
-    def create_text_with_background(text, x, y, background_padding=2.0, font_config='default', center=True):
-        """创建带背景的文本"""
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        
-        # 创建文本
-        text_shapes = TextUtils.create_text(text, x, y, font_config, center)
-        
-        # 计算背景尺寸
-        char_width = size * 0.6
-        total_width = len(text) * char_width
-        total_height = size
-        
-        if center:
-            bg_x, bg_y = x, y
-        else:
-            bg_x = x + total_width / 2
-            bg_y = y + total_height / 2
-        
-        # 创建背景
-        background = GeometryUtils.create_rectangle(
-            bg_x, bg_y,
-            total_width + background_padding * 2,
-            total_height + background_padding * 2,
-            center=True
-        )
-        
-        return [background] + text_shapes
-    
-    @staticmethod
-    def create_numbered_text(text, x, y, number, font_config='default', center=True):
-        """创建带编号的文本"""
-        numbered_text = f"{number}. {text}"
-        return TextUtils.create_text(numbered_text, x, y, font_config, center)
-    
-    @staticmethod
-    def create_parameter_text(param_name, param_value, x, y, unit="", font_config='default', center=True):
-        """创建参数文本"""
-        if unit:
-            text = f"{param_name}: {param_value}{unit}"
-        else:
-            text = f"{param_name}: {param_value}"
-        return TextUtils.create_text(text, x, y, font_config, center) 
-
-    @staticmethod
-    def create_text_polygon(text, x, y, font_config='default', center=True, dbu=0.001):
-        """使用KLayout TextGenerator生成多边形文本（兼容不同版本，支持dbu）"""
-        import pya
-        from config import FONT_CONFIG
-        config = FONT_CONFIG.get(font_config, FONT_CONFIG['default'])
-        size = config['size']
-        try:
-            generator = pya.TextGenerator.default_generator()
-            height = float(size) / float(dbu)
-            x_db = float(x) / float(dbu)
-            y_db = float(y) / float(dbu)
-            print(f"[DEBUG] TextGenerator.text: text='{text}', x={x_db}, y={y_db}, height={height}, dbu={dbu}")
-            polys = generator.text(text, x_db, y_db, height)
-            return list(polys)
-        except Exception as e:
-            print("[WARN] KLayout TextGenerator not available or failed: ", e)
-            return [] 
-
     @staticmethod
     def create_text_freetype(text, x, y, size_um=10, font_path='C:/Windows/Fonts/arial.ttf', spacing_um=2.0):
         """
         使用 freetype-py 将字符串转为多边形点集（适用于KLayout Polygon）。
-        - text: 字符串
-        - x, y: 左下角起点（um）
-        - size_um: 字高（um）
-        - font_path: 字体文件路径
-        - spacing_um: 字符间距（um）
-        返回: [ [ (x1, y1), (x2, y2), ... ], ... ]  # 每个字符的多边形点集
+        参数：
+            text (str): 要生成的字符串
+            x, y (float): 右上角坐标（单位um）
+            size_um (float): 字高（um）
+            font_path (str): 字体文件路径（默认 'C:/Windows/Fonts/arial.ttf'）
+            spacing_um (float): 字符间距（um）
+        返回：
+            List[Polygon]: 每个字符的多边形（含孔洞）
         """
-        import freetype
-        import numpy as np
+        try:
+            import freetype
+            import numpy as np
+        except ImportError:
+            print("[WARN] freetype or numpy not available, fallback to rectangle")
+            return [GeometryUtils.create_rectangle(x*TextUtils.UNIT_SCALE, y*TextUtils.UNIT_SCALE, size_um * 0.6 * len(text) * TextUtils.UNIT_SCALE, size_um * TextUtils.UNIT_SCALE, center=False)]
+        
         polys_all = []
-        cursor_x = x
+        # 计算字符串总宽度（nm）
+        face = freetype.Face(font_path)
+        face.set_char_size(int(size_um * 64))
+        advances = []
         for char in text:
-            face = freetype.Face(font_path)
-            face.set_char_size(int(size_um * 64))
             face.load_char(char)
-            outline = face.glyph.outline
-            points = np.array(outline.points, dtype=float)
-            # 轮廓分段
-            start, polys = 0, []
-            for c in outline.contours:
-                end = c + 1
-                poly = points[start:end]
-                # 坐标归一化（freetype坐标是1/64像素，y轴向上）
-                poly = poly / 64.0
-                # y轴翻转（KLayout y向下，freetype y向上）
-                poly[:, 1] = -poly[:, 1]
-                # 平移到当前字符位置
-                poly[:, 0] += cursor_x
-                poly[:, 1] += y
-                polys.append(poly.tolist())
-                start = end
-            polys_all.extend(polys)
-            # 字符宽度推进
-            advance = face.glyph.advance.x / 64.0
-            cursor_x += advance + spacing_um
-        return polys_all 
+            char_advance = face.glyph.advance.x / 64.0 * TextUtils.UNIT_SCALE
+            spacing_nm = spacing_um * TextUtils.UNIT_SCALE
+            advances.append(char_advance + spacing_nm)
+        total_width = sum(advances)
+        cursor_x = x * TextUtils.UNIT_SCALE - total_width  # 从右上角向左排布
+        y_top = y * TextUtils.UNIT_SCALE
+        
+        for idx, char in enumerate(text):
+            try:
+                face = freetype.Face(font_path)
+                face.set_char_size(int(size_um * 64))
+                face.load_char(char)
+                outline = face.glyph.outline
+                points = np.array(outline.points, dtype=float)
+                start = 0
+                ascent = face.size.ascender / 64.0 * TextUtils.UNIT_SCALE
+                contours = []
+                for c in outline.contours:
+                    end = c + 1
+                    poly = points[start:end]
+                    poly = poly / 64.0
+                    poly = poly * TextUtils.UNIT_SCALE
+                    poly[:, 1] += y_top + ascent
+                    poly[:, 0] += cursor_x
+                    klayout_points = [GeometryUtils.Point(int(point[0]), int(point[1])) for point in poly]
+                    if len(klayout_points) >= 3:
+                        contours.append(klayout_points)
+                    start = end
+                if contours:
+                    outer_contour = contours[0]
+                    klayout_polygon = GeometryUtils.Polygon(outer_contour)
+                    for i in range(1, len(contours)):
+                        hole_points = contours[i]
+                        if len(hole_points) >= 3:
+                            klayout_polygon.insert_hole(hole_points)
+                    polys_all.append(klayout_polygon)
+                advance = face.glyph.advance.x / 64.0 * TextUtils.UNIT_SCALE + spacing_um * TextUtils.UNIT_SCALE
+                cursor_x += advance
+            except Exception as e:
+                print(f"[WARN] Failed to process character '{char}': {e}")
+                char_box = GeometryUtils.create_rectangle(cursor_x, y_top - size_um * TextUtils.UNIT_SCALE, size_um * 0.6 * TextUtils.UNIT_SCALE, size_um * TextUtils.UNIT_SCALE, center=False)
+                polys_all.append(char_box)
+                cursor_x += size_um * 0.6 * TextUtils.UNIT_SCALE + spacing_um * TextUtils.UNIT_SCALE
+        return polys_all
+
+# 测试部分
+if __name__ == "__main__":
+    from config import LAYER_DEFINITIONS
+    from utils.geometry import GeometryUtils
+    
+    # 设置单位缩放和精度
+    unit_scale = DEFAULT_UNIT_SCALE  # 1000, 1um = 1000dbu
+    dbu = DEFAULT_DBU  # 0.001, 1dbu = 1nm
+    GeometryUtils.UNIT_SCALE = unit_scale
+    TextUtils.set_unit_scale(unit_scale)
+    
+    # 创建新layout和cell
+    layout = Layout()
+    layout.dbu = dbu
+    top = layout.create_cell('TEST_TEXT_UTILS')
+    layer_info = LAYER_DEFINITIONS['labels']
+    layer = layout.layer(layer_info['id'], 0, layer_info['name'])
+    
+    size = 10  # um
+    start_x = 0  # um，右上角x
+    start_y = 0  # um，右上角y
+    lines = [
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        "abcdefghijklmnopqrstuvwxyz",
+        "0123456789",
+        "!@#$%^&*()_+-=[]{}|;:',.<>/?"
+    ]
+    line_height = size * 1.2
+    for i, line in enumerate(lines):
+        y_pos = start_y - i * line_height
+        shapes = TextUtils.create_text_freetype(line, start_x, y_pos, size_um=size, spacing_um=2.0)
+        for shape in shapes:
+            top.shapes(layer).insert(shape)
+    layout.write('TEST_TEXT_UTILS.gds')
+    print('TEST_TEXT_UTILS.gds generated successfully.')

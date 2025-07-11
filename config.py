@@ -28,17 +28,22 @@ LAYER_DEFINITIONS = {
 FONT_CONFIG = {
     'default': {
         'family': 'Arial',
-        'size': 5.0,
+        'size': 2.0,
         'style': 'normal'
     },
     'title': {
         'family': 'Arial',
-        'size': 8.0,
+        'size': 3.0,
         'style': 'bold'
     },
     'small': {
         'family': 'Arial',
-        'size': 3.0,
+        'size': 1.0,
+        'style': 'normal'
+    },
+    'large': {
+        'family': 'Arial',
+        'size': 4.0,
         'style': 'normal'
     }
 }

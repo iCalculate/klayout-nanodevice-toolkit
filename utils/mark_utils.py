@@ -302,27 +302,10 @@ if __name__ == "__main__":
         else:
             cell.shapes(layer_id).insert(mark)
         # Determine label position and line splitting
-        max_line_len = 8
-        label_lines = [desc]
-        if len(desc) > max_line_len:
-            split_pos = desc.rfind(' ', 0, max_line_len)
-            if split_pos == -1:
-                split_pos = max_line_len
-            label_lines = [desc[:split_pos].strip(), desc[split_pos:].strip()]
         text_x = x - 5.0  # Move left
         text_y = y - size_um/2 - 8.0  # Move down
-        label_height = 3.0
-        for i, line in enumerate(label_lines):
-            line_y = text_y - i * (label_height + 1.0)  # 4um vertical spacing
-            # TextUtils.create_text_freetype要求size_um为int
-            polys = TextUtils.create_text_freetype(line, text_x, line_y, size_um=3, font_path='C:/Windows/Fonts/arial.ttf', spacing_um=0.3)
-            for poly in polys:
-                if len(poly) >= 3:
-                    klayout_poly = GeometryUtils.Polygon([
-                        GeometryUtils.Point(int(pt[0]/layout.dbu), int((2*line_y + label_height - pt[1])/layout.dbu))
-                        for pt in poly
-                    ])
-                    cell.shapes(text_layer_id).insert(klayout_poly)
+        # 直接插入KLayout文本标签（不换行）
+        cell.shapes(text_layer_id).insert(pya.Text(desc, text_x / layout.dbu, text_y / layout.dbu))
 
     print("All mark types (10um) have been generated and arranged in a grid with text labels.")
     output_gds = "TEST_MARK_UTILS.gds"
