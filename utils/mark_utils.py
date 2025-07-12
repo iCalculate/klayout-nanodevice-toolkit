@@ -9,6 +9,57 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from config import MARK_SHAPES, DEFAULT_UNIT_SCALE
 from utils.geometry import GeometryUtils
 
+class MarkWrapper:
+    """Mark包装器类，支持链式调用的旋转功能"""
+    
+    def __init__(self, shapes, x, y):
+        """
+        初始化包装器
+        shapes: 可以是单个shape、region或shape列表
+        x, y: mark的中心坐标
+        """
+        self.shapes = shapes
+        self.x = x
+        self.y = y
+        self.rotation = 0
+    
+    def rotate(self, angle):
+        """
+        旋转mark
+        angle: 旋转角度（度），正值逆时针
+        """
+        from klayout.db import Trans
+        self.rotation = angle
+        return self
+    
+    def get_shapes(self):
+        """获取旋转后的shapes"""
+        from klayout.db import Trans
+        
+        if self.rotation == 0:
+            return self.shapes
+        
+        # 计算旋转中心（以mark中心为原点）
+        # 注意：这里需要转换为数据库单位
+        center_x = int(self.x * MarkUtils.UNIT_SCALE)
+        center_y = int(self.y * MarkUtils.UNIT_SCALE)
+        
+        # 创建旋转变换：先移动到旋转中心，旋转，再移回
+        # 1. 移动到旋转中心
+        trans1 = Trans(0, False, -center_x, -center_y)
+        # 2. 绕原点旋转
+        trans2 = Trans(self.rotation, False, 0, 0)
+        # 3. 移回原位置
+        trans3 = Trans(0, False, center_x, center_y)
+        # 组合变换
+        trans = trans3 * trans2 * trans1
+        
+        # 应用旋转
+        if isinstance(self.shapes, list):
+            return [shape.transformed(trans) for shape in self.shapes]
+        else:
+            return self.shapes.transformed(trans)
+
 class MarkUtils:
     """标记工具类"""
     UNIT_SCALE = DEFAULT_UNIT_SCALE  # 全局单位缩放，默认为DEFAULT_UNIT_SCALE
@@ -39,64 +90,78 @@ class MarkUtils:
         else:
             return MarkUtils.cross(x, y, size * s, (width or size * 0.1) * s)
 
-    # All mark creation functions below only return shape, region, or list of shapes/regions (never a cell)
+    # All mark creation functions below return MarkWrapper objects for chainable rotation
     @staticmethod
     def cross(x, y, size, width):
-        return GeometryUtils.create_cross(x, y, size, width)
+        shapes = GeometryUtils.create_cross(x, y, size, width)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def square(x, y, size=10.0):
-        return GeometryUtils.create_rectangle(x, y, size, size, center=True)
+        shapes = GeometryUtils.create_rectangle(x, y, size, size, center=True)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def circle(x, y, size=10.0):
         radius = size / 2
-        return GeometryUtils.create_circle(x, y, radius)
+        shapes = GeometryUtils.create_circle(x, y, radius)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def diamond(x, y, size=10.0):
-        return GeometryUtils.create_diamond(x, y, size)
+        shapes = GeometryUtils.create_diamond(x, y, size)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def triangle(x, y, size=10.0, direction='up'):
-        return GeometryUtils.create_triangle(x, y, size, direction)
+        shapes = GeometryUtils.create_triangle(x, y, size, direction)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def l(x, y, size, width):
-        return GeometryUtils.create_L_shape(x, y, size, width/size, 0.5)
+        shapes = GeometryUtils.create_L_shape(x, y, size, width/size, 0.5)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def t(x, y, size, width):
-        return GeometryUtils.create_T_shape(x, y, size, width/size, 0.5)
+        shapes = GeometryUtils.create_T_shape(x, y, size, width/size, 0.5)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def semi_cross(x, y, size, width, head_size=0, hole_radius=0):
-        return GeometryUtils.create_semiconductor_cross(x, y, size, width, head_size, hole_radius)
+        shapes = GeometryUtils.create_semiconductor_cross(x, y, size, width, head_size, hole_radius)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def cross_pos(x, y, size=10.0, ratio=0.1):
         # Always return a list of shapes if compound
-        return GeometryUtils.create_cross_positive(x, y, size, ratio)
+        shapes = GeometryUtils.create_cross_positive(x, y, size, ratio)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def cross_neg(x, y, size=10.0, ratio=0.1, insert_ratio=0.8, box_margin=5):
-        return GeometryUtils.create_cross_negative(x, y, size, ratio, insert_ratio, int(box_margin))
+        shapes = GeometryUtils.create_cross_negative(x, y, size, ratio, insert_ratio, int(box_margin))
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def l_shape(x, y, size=10.0, ratio=0.1, arm_ratio=0.5):
-        return GeometryUtils.create_L_shape(x, y, size, ratio, arm_ratio)
+        shapes = GeometryUtils.create_L_shape(x, y, size, ratio, arm_ratio)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def t_shape(x, y, size=10.0, ratio=0.1, arm_ratio=0.5):
-        return GeometryUtils.create_T_shape(x, y, size, ratio, arm_ratio)
+        shapes = GeometryUtils.create_T_shape(x, y, size, ratio, arm_ratio)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def sq_missing(x, y, size, missing=(2,4)):
-        return GeometryUtils.create_square_with_missing_quadrants(x, y, size, missing)
+        shapes = GeometryUtils.create_square_with_missing_quadrants(x, y, size, missing)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def sq_missing_border(x, y, size=10.0, border_ratio=0.1, missing=(2,4)):
-        return GeometryUtils.create_square_with_missing_quadrants_with_border(x, y, size, border_ratio, missing)
+        shapes = GeometryUtils.create_square_with_missing_quadrants_with_border(x, y, size, border_ratio, missing)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def create_mark_array(mark_func, start_x, start_y, n_row, n_col, dx, dy, *args, **kwargs):
@@ -122,7 +187,7 @@ class MarkUtils:
         ]
         for pos_x, pos_y in positions:
             mark = MarkUtils.create_mark(mark_type, pos_x, pos_y, size * MarkUtils.UNIT_SCALE * 0.3, width)
-            marks.append(mark)
+            marks.append(mark.get_shapes())
         return marks
 
     @staticmethod
@@ -141,7 +206,7 @@ class MarkUtils:
                 mark = MarkUtils.triangle(pos_x, pos_y, mark_size, direction)
             else:
                 mark = MarkUtils.create_mark(mark_type, pos_x, pos_y, mark_size, width)
-            marks.append(mark)
+            marks.append(mark.get_shapes())
         return marks
 
     @staticmethod
@@ -156,7 +221,7 @@ class MarkUtils:
             y = start_y
             while y <= end_y:
                 mark = MarkUtils.create_mark(mark_type, x, y, size, width)
-                marks.append(mark)
+                marks.append(mark.get_shapes())
                 y += spacing
             x += spacing
         return marks
@@ -174,7 +239,7 @@ class MarkUtils:
         ]
         for pos_x, pos_y in positions:
             mark = MarkUtils.create_mark(mark_type, pos_x, pos_y, mark_size, width)
-            marks.append(mark)
+            marks.append(mark.get_shapes())
         return marks
 
     @staticmethod
@@ -189,40 +254,46 @@ class MarkUtils:
     def create_mark_cell(layout, cell_name, mark_func, layer_id, x, y, *args, **kwargs):
         cell = layout.create_cell(cell_name)
         mark = mark_func(0, 0, *args, **kwargs)
-        if isinstance(mark, list):
-            for shape in mark:
+        shapes = mark.get_shapes()
+        if isinstance(shapes, list):
+            for shape in shapes:
                 cell.shapes(layer_id).insert(shape)
         else:
-            cell.shapes(layer_id).insert(mark)
+            cell.shapes(layer_id).insert(shapes)
         # The returned cell is always created in the provided layout, not a temp layout
         from klayout.db import Trans
         return cell, Trans(int(x * MarkUtils.UNIT_SCALE), int(y * MarkUtils.UNIT_SCALE))
 
     @staticmethod
     def cross_tri(x, y, size=10.0, ratio=0.1, triangle_leg_ratio=0.3):
-        return GeometryUtils.create_cross_with_triangle(x, y, size, ratio, triangle_leg_ratio)
+        shapes = GeometryUtils.create_cross_with_triangle(x, y, size, ratio, triangle_leg_ratio)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def sq_missing_rotborder(x, y, size=10.0, missing=(2,4), border_ratio=0.1):
         # Based on previous create_square_with_missing_quadrants_and_border_mark
         original_mark = MarkUtils.sq_missing(x, y, size, missing)
         border_frame = GeometryUtils.create_square_with_missing_quadrants_and_border(x, y, size, missing, border_ratio)
-        if isinstance(original_mark, list):
-            return original_mark + [border_frame]
+        if isinstance(original_mark.shapes, list):
+            shapes = original_mark.shapes + [border_frame]
         else:
-            return [original_mark, border_frame]
+            shapes = [original_mark.shapes, border_frame]
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def sq_missing_diff_rotborder(x, y, size=10.0, missing=(2,4), border_ratio=0.1):
-        return GeometryUtils.create_square_with_missing_quadrants_diff_and_rotated_border(x, y, size, missing, border_ratio)
+        shapes = GeometryUtils.create_square_with_missing_quadrants_diff_and_rotated_border(x, y, size, missing, border_ratio)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def regular_polygon(x, y, size=10.0, n_sides=6):
-        return GeometryUtils.create_regular_polygon(x, y, size/2, n_sides)
+        shapes = GeometryUtils.create_regular_polygon(x, y, size/2, n_sides)
+        return MarkWrapper(shapes, x, y)
 
     @staticmethod
     def chamfered_octagon(x, y, size=10.0, chamfer_ratio=0.25):
-        return GeometryUtils.create_chamfered_octagon(x, y, size, chamfer_ratio) 
+        shapes = GeometryUtils.create_chamfered_octagon(x, y, size, chamfer_ratio)
+        return MarkWrapper(shapes, x, y) 
 
 if __name__ == "__main__":
     import sys
@@ -262,6 +333,9 @@ if __name__ == "__main__":
     start_x = 0
     start_y = 0
 
+    # 全局旋转角度
+    rotation = 2
+
     # List of (function, kwargs, description) for all mark types to test
     mark_tests = [
         (MarkUtils.cross, dict(size=size_um, width=size_um*0.1), "Cross"),
@@ -294,18 +368,19 @@ if __name__ == "__main__":
         col = idx % n_cols
         x = start_x + col * spacing
         y = start_y - row * spacing  # Negative y for top-down arrangement
-        mark = func(x=x, y=y, **kwargs)
-        # Always flatten and insert all shapes/regions/lists
-        if isinstance(mark, list):
-            for shape in mark:
+        mark = func(x=x, y=y, **kwargs).rotate(rotation)
+        # Get shapes from MarkWrapper and insert them
+        shapes = mark.get_shapes()
+        if isinstance(shapes, list):
+            for shape in shapes:
                 cell.shapes(layer_id).insert(shape)
         else:
-            cell.shapes(layer_id).insert(mark)
+            cell.shapes(layer_id).insert(shapes)
         # Determine label position and line splitting
         text_x = x - 5.0  # Move left
         text_y = y - size_um/2 - 8.0  # Move down
         # 直接插入KLayout文本标签（不换行）
-        cell.shapes(text_layer_id).insert(pya.Text(desc, text_x / layout.dbu, text_y / layout.dbu))
+        cell.shapes(text_layer_id).insert(pya.Text(desc, int(text_x / layout.dbu), int(text_y / layout.dbu)))
 
     print("All mark types (10um) have been generated and arranged in a grid with text labels.")
     output_gds = "TEST_MARK_UTILS.gds"
