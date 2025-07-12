@@ -348,7 +348,7 @@ class FET:
         # 设置字符大小和间距
         char_size = self.mark_size * 0.25
         stroke_width = self.mark_width * 0.8
-        char_spacing = char_size * 1.4  # 字符间距
+        char_spacing = char_size * 1.7  # 字符间距
         
         # 创建每个字符
         for i, char in enumerate(label):
@@ -365,7 +365,59 @@ class FET:
             for polygon in polygons:
                 cell.shapes(layer_id).insert(polygon)
     
-    def create_single_device(self, cell_name="FET_Device", x=0, y=0, device_id=None, row=None, col=None):
+    def create_parameter_labels(self, cell, x, y, device_params):
+        """
+        在器件区域内创建参数标注，使用pya.Text
+        
+        Args:
+            cell: 目标单元格
+            x, y: 器件中心坐标
+            device_params: 器件参数字典
+        """
+        layer_id = LAYER_DEFINITIONS['labels']['id']
+        
+        # 计算标注起始位置（器件中心上方）
+        start_x = x - self.device_margin_x * 0.9  # 向左偏移
+        start_y = y - self.device_margin_y * 0.7  # 向上偏移
+        
+        # 创建参数标注文本
+        param_texts = []
+        
+        # 添加沟道宽度标注
+        if 'ch_width' in device_params:
+            ch_width = device_params['ch_width']
+            param_texts.append(f"W:{ch_width:.1f}")
+        
+        # 添加沟道长度标注
+        if 'ch_len' in device_params:
+            ch_len = device_params['ch_len']
+            param_texts.append(f"L:{ch_len:.1f}")
+        
+        # 添加栅极间距标注
+        if 'gate_space' in device_params:
+            gate_space = device_params['gate_space']
+            param_texts.append(f"GS:{gate_space:.1f}")
+        
+        # 添加栅极宽度标注
+        if 'gate_width' in device_params:
+            gate_width = device_params['gate_width']
+            param_texts.append(f"GW:{gate_width:.1f}")
+        
+        # 创建每行参数标注
+        line_spacing = 10.0  # 行间距 (μm)
+        for i, text in enumerate(param_texts):
+            text_y = start_y - i * line_spacing
+            
+            # 使用db.Text创建文本
+            text_obj = db.Text(
+                text,
+                int(start_x * 1000),  # 转换为数据库单位
+                int(text_y * 1000)    # 转换为数据库单位
+            )
+            
+            cell.shapes(layer_id).insert(text_obj)
+    
+    def create_single_device(self, cell_name="FET_Device", x=0, y=0, device_id=None, row=None, col=None, device_params=None):
         """
         创建单个FET器件
         
@@ -375,6 +427,7 @@ class FET:
             device_id: 器件编号
             row: 行号（用于生成字母+数字格式的标记）
             col: 列号（用于生成字母+数字格式的标记）
+            device_params: 器件参数字典，用于标注
             
         Returns:
             创建的单元格
@@ -392,6 +445,10 @@ class FET:
         self.create_source_drain_electrodes(cell, x, y)
         self.create_top_gate_electrode(cell, x, y)
         self.create_alignment_marks(cell, x, y, device_id, row, col)
+        
+        # 如果有器件参数，添加参数标注
+        if device_params:
+            self.create_parameter_labels(cell, x, y, device_params)
         
         return cell
     
@@ -422,8 +479,8 @@ class FET:
         for row in range(rows):
             for col in range(cols):
                 # 计算器件位置
-                device_x = col * device_spacing_x
-                device_y = row * device_spacing_y
+                device_x = int(col * device_spacing_x)
+                device_y = int(row * device_spacing_y)
                 
                 # 创建单个器件
                 device_cell = self.create_single_device(
@@ -513,14 +570,15 @@ class FET:
                 self.set_device_parameters(**current_params)
                 
                 # 计算器件位置（加上偏移）
-                device_x = offset_x + col * device_spacing_x
-                device_y = offset_y + row * device_spacing_y
+                device_x = int(offset_x + col * device_spacing_x)
+                device_y = int(offset_y + row * device_spacing_y)
                 
                 # 创建单个器件
                 device_cell = self.create_single_device(
                     f"FET_Scan_{device_id:03d}", 
                     device_x, device_y, 
-                    device_id, row, col
+                    device_id, row, col,
+                    current_params
                 )
                 
                 # 将器件单元格插入到扫描阵列中
@@ -577,7 +635,7 @@ def main():
     print(f"参数扫描阵列已创建: {scan_array.name}")
     
     # 保存布局文件
-    output_file = "fet_device_test.gds"
+    output_file = "TEST_FET_COMP.gds"
     fet.layout.write(output_file)
     print(f"布局文件已保存: {output_file}")
     

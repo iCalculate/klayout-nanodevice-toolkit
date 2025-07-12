@@ -16,7 +16,7 @@ class DigitalDisplay:
 
     @staticmethod
     def get_segments(size, stroke_width):
-        min_size = max(size, 5.0)
+        min_size = max(size, 2.0)
         min_width = max(stroke_width, PROCESS_CONFIG['min_feature_size'])
         seg_len_h = min_size * 1 + min_width
         seg_len_v = min_size * 1 + min_width
@@ -100,7 +100,7 @@ class DigitalDisplay:
     @staticmethod
     def create_digit(digit, x, y, size=10.0, stroke_width=1.0, center=True):
         segments_dict, seg_len_h, seg_len_v, min_width, diag_len, diag_offset = DigitalDisplay.get_segments(size, stroke_width)
-        min_size = max(size, 5.0)
+        min_size = max(size, 2.0)
         offset_x = min_size * 0.5
         offset_y = min_size * 1
         diag = min_size * 1.0
