@@ -128,25 +128,36 @@ def _pad_edge_points(center, length, width, chamfer_size, chamfer_type, edge: Li
             return (x - half_l + c, y - half_w), (x + half_l - c, y - half_w)
     raise ValueError(f"Unknown edge: {edge}")
 
+def _get_chamfered_edge_width(length, width, chamfer_size, chamfer_type, edge: Literal['left', 'right', 'top', 'bottom']):
+    """获取倒角后边缘的实际宽度"""
+    if chamfer_type == 'none' or chamfer_size <= 0:
+        if edge in ['left', 'right']:
+            return width
+        else:  # 'top', 'bottom'
+            return length
+    else:
+        if edge in ['left', 'right']:
+            return width - 2 * chamfer_size
+        else:  # 'top', 'bottom'
+            return length - 2 * chamfer_size
+
 
 def draw_trapezoidal_fanout(
     inner_pad: PadInfo,
     outer_pad: PadInfo,
-    chamfer_size_inner: float = 0.0,
-    chamfer_size_outer: float = 0.0,
-    chamfer_type_inner: Literal['none', 'straight', 'round'] = 'none',
-    chamfer_type_outer: Literal['none', 'straight', 'round'] = 'none',
+    chamfer_size_inner: float = None,
+    chamfer_size_outer: float = None,
+    chamfer_type_inner: Literal['none', 'straight', 'round'] = None,
+    chamfer_type_outer: Literal['none', 'straight', 'round'] = None,
 ) -> 'Polygon':
-    # 只支持PadInfo输入
-    iparams = inner_pad
-    oparams = outer_pad
-    chamfer_size_inner = chamfer_size_inner if chamfer_size_inner is not None else iparams.chamfer_size
-    chamfer_size_outer = chamfer_size_outer if chamfer_size_outer is not None else oparams.chamfer_size
-    chamfer_type_inner = chamfer_type_inner if chamfer_type_inner is not None else iparams.chamfer_type
-    chamfer_type_outer = chamfer_type_outer if chamfer_type_outer is not None else oparams.chamfer_type
+    # 自动读取PadInfo的属性
+    chamfer_size_inner = inner_pad.chamfer_size if chamfer_size_inner is None else chamfer_size_inner
+    chamfer_size_outer = outer_pad.chamfer_size if chamfer_size_outer is None else chamfer_size_outer
+    chamfer_type_inner = inner_pad.chamfer_type if chamfer_type_inner is None else chamfer_type_inner
+    chamfer_type_outer = outer_pad.chamfer_type if chamfer_type_outer is None else chamfer_type_outer
     s = GeometryUtils.UNIT_SCALE
-    cx1, cy1 = iparams.center
-    cx2, cy2 = oparams.center
+    cx1, cy1 = inner_pad.center
+    cx2, cy2 = outer_pad.center
     cx1, cy1, cx2, cy2 = cx1 * s, cy1 * s, cx2 * s, cy2 * s
     dx, dy = cx2 - cx1, cy2 - cy1
     angle = math.atan2(dy, dx)
@@ -156,8 +167,10 @@ def draw_trapezoidal_fanout(
     else:
         inner_edge = 'top' if dy > 0 else 'bottom'
         outer_edge = 'bottom' if dy > 0 else 'top'
-    ip1, ip2 = _pad_edge_points(iparams.center, iparams.length, iparams.width, chamfer_size_inner, chamfer_type_inner, inner_edge)
-    op1, op2 = _pad_edge_points(oparams.center, oparams.length, oparams.width, chamfer_size_outer, chamfer_type_outer, outer_edge)
+    # 获取倒角后的边缘点
+    ip1, ip2 = _pad_edge_points(inner_pad.center, inner_pad.length, inner_pad.width, chamfer_size_inner, chamfer_type_inner, inner_edge)
+    op1, op2 = _pad_edge_points(outer_pad.center, outer_pad.length, outer_pad.width, chamfer_size_outer, chamfer_type_outer, outer_edge)
+    # 直接连接这些点创建梯形扇出
     points = [Point(int(ip1[0]), int(ip1[1])), Point(int(ip2[0]), int(ip2[1])), Point(int(op2[0]), int(op2[1])), Point(int(op1[0]), int(op1[1]))]
     return Polygon(points)
 
@@ -380,13 +393,7 @@ if __name__ == '__main__':
             inner = draw_pad((x0 + pad_dx, y0 + pad_dy), inner_size_x, inner_size_y, chamfer_size=inner_chamfer, chamfer_type='none')
             # Fanout
             if ftype == "trapezoidal":
-                fanout = draw_trapezoidal_fanout(
-                    inner, outer,
-                    chamfer_size_inner=inner.chamfer_size,
-                    chamfer_size_outer=outer.chamfer_size,
-                    chamfer_type_inner=cast(Literal['none', 'straight', 'round'], inner.chamfer_type),
-                    chamfer_type_outer=cast(Literal['none', 'straight', 'round'], outer.chamfer_type)
-                )
+                fanout = draw_trapezoidal_fanout(inner, outer)
                 test_cell.shapes(layer_routing).insert(fanout)
             else:
                 chamfer_val = 15 if 'chamfer' in ftype else 10
