@@ -128,7 +128,12 @@ class MarkUtils:
         return MarkWrapper(shapes, x, y)
 
     @staticmethod
-    def semi_cross(x, y, size, width, head_size=0, hole_radius=0):
+    def semi_cross(x, y, size, width, head_size=None, hole_radius=None):
+        # 如果head_size和hole_radius为None，则使用size的0.4倍作为默认值
+        if head_size is None:
+            head_size = size * 0.2
+        if hole_radius is None:
+            hole_radius = size * 0.2
         shapes = GeometryUtils.create_semiconductor_cross(x, y, size, width, head_size, hole_radius)
         return MarkWrapper(shapes, x, y)
 

@@ -11,40 +11,80 @@ import klayout.db as db
 from utils.geometry import GeometryUtils
 from utils.mark_utils import MarkUtils
 from utils.fanout_utils import draw_pad, draw_trapezoidal_fanout
+from utils.text_utils import TextUtils
 from utils.digital_utils import DigitalDisplay
 from config import LAYER_DEFINITIONS, DEFAULT_UNIT_SCALE
 
 class FET:
     """场效应晶体管器件类"""
     
-    def __init__(self, layout=None):
+    def __init__(self, layout=None, **kwargs):
         """
         初始化FET器件类
         
         Args:
             layout: KLayout布局对象，如果为None则创建新的
+            **kwargs: 其他参数，包括器件、标记、扇出、编号等相关参数
         """
         self.layout = layout or db.Layout()
         self.setup_layers()
         
-        # 默认器件参数
-        self.ch_len = 10.0      # 沟道宽度 (μm)
-        self.ch_width = 5.0         # 沟道长度 (μm)
-        self.gate_space = 20.0    # 栅极边缘到边缘间距 (μm)
-        self.gate_width = 15.0    # 栅极宽度 (μm)
+        # ===== 器件核心参数 =====
+        self.ch_len = kwargs.get('ch_len', 10.0)           # 沟道长度 (μm)
+        self.ch_width = kwargs.get('ch_width', 5.0)        # 沟道宽度 (μm)
+        self.gate_space = kwargs.get('gate_space', 20.0)   # 栅极边缘到边缘间距 (μm)
+        self.gate_width = kwargs.get('gate_width', 15.0)   # 栅极宽度 (μm)
         
-        # 器件边界参数
-        self.device_margin_x = 170.0  # 器件核心区域横向边界距离 (μm)
-        self.device_margin_y = 170.0  # 器件核心区域纵向边界距离 (μm)
-        self.mark_margin = 0.0       # 标记中心点距离边界收缩距离 (μm)
+        # ===== 器件边界参数 =====
+        self.device_margin_x = kwargs.get('device_margin_x', 170.0)  # 器件核心区域横向边界距离 (μm)
+        self.device_margin_y = kwargs.get('device_margin_y', 170.0)  # 器件核心区域纵向边界距离 (μm)
+        self.mark_margin = kwargs.get('mark_margin', 0.0)           # 标记中心点距离边界收缩距离 (μm)
         
-        # 标记参数
-        self.mark_size = 20.0         # 标记尺寸 (μm)
-        self.mark_width = 2.0         # 标记线宽 (μm)
+        # ===== 标记参数 =====
+        self.mark_size = kwargs.get('mark_size', 20.0)              # 标记尺寸 (μm)
+        self.mark_width = kwargs.get('mark_width', 2.0)             # 标记线宽 (μm)
+        # 四个角落的标记类型，对应MarkUtils中的函数名:
+        # 'cross', 'square', 'circle', 'diamond', 'triangle', 'l', 't', 
+        # 'semi_cross', 'cross_pos', 'cross_neg', 'l_shape', 't_shape',
+        # 'sq_missing', 'sq_missing_border', 'cross_tri', 'regular_polygon', 'chamfered_octagon'
+        self.mark_types = kwargs.get('mark_types', ['sq_missing', 'l', 'l', 'cross_tri'])  # [左上, 右上, 左下, 右下]
+        # 四个角落标记的旋转角度: 0=不旋转, 1=90度, 2=180度, 3=270度
+        self.mark_rotations = kwargs.get('mark_rotations', [0, 0, 2, 1])  # [左上, 右上, 左下, 右下]
         
-        # 扇出参数
-        self.outer_pad_size = 100.0   # 外部焊盘尺寸 (μm)
-        self.chamfer_size = 10.0      # 倒角尺寸 (μm)
+        # ===== 扇出参数 =====
+        self.outer_pad_size = kwargs.get('outer_pad_size', 100.0)   # 外部焊盘尺寸 (μm)
+        self.chamfer_size = kwargs.get('chamfer_size', 10.0)        # 倒角尺寸 (μm)
+        self.chamfer_type = kwargs.get('chamfer_type', 'straight')  # 倒角类型: 'straight', 'rounded', 'none'
+        
+        # ===== 电极参数 =====
+        # 底栅电极参数
+        self.bottom_gate_inner_width_ratio = kwargs.get('bottom_gate_inner_width_ratio', 1.5)  # 内焊盘宽度相对于沟道宽度的比例
+        self.bottom_gate_outer_offset_x = kwargs.get('bottom_gate_outer_offset_x', 50.0)      # 外焊盘X偏移 (μm)
+        self.bottom_gate_outer_offset_y = kwargs.get('bottom_gate_outer_offset_y', -100.0)    # 外焊盘Y偏移 (μm)
+        self.bottom_gate_inner_chamfer = kwargs.get('bottom_gate_inner_chamfer', 'none')      # 内焊盘倒角类型
+        self.bottom_gate_outer_chamfer = kwargs.get('bottom_gate_outer_chamfer', 'straight')  # 外焊盘倒角类型
+        
+        # 源漏电极参数
+        self.source_drain_inner_width_ratio = kwargs.get('source_drain_inner_width_ratio', 1.2)  # 内焊盘宽度相对于沟道宽度的比例
+        self.source_drain_outer_offset_x = kwargs.get('source_drain_outer_offset_x', 110.0)     # 外焊盘X偏移 (μm)
+        self.source_drain_outer_offset_y = kwargs.get('source_drain_outer_offset_y', 20.0)     # 外焊盘Y偏移 (μm)
+        self.source_drain_inner_chamfer = kwargs.get('source_drain_inner_chamfer', 'none')      # 内焊盘倒角类型
+        self.source_drain_outer_chamfer = kwargs.get('source_drain_outer_chamfer', 'straight')  # 外焊盘倒角类型
+        
+        # 顶栅电极参数
+        self.top_gate_inner_width_ratio = kwargs.get('top_gate_inner_width_ratio', 1.2)  # 内焊盘宽度相对于沟道宽度的比例
+        self.top_gate_outer_offset_x = kwargs.get('top_gate_outer_offset_x', 0.0)        # 外焊盘X偏移 (μm)
+        self.top_gate_outer_offset_y = kwargs.get('top_gate_outer_offset_y', 100.0)      # 外焊盘Y偏移 (μm)
+        self.top_gate_inner_chamfer = kwargs.get('top_gate_inner_chamfer', 'none')       # 内焊盘倒角类型
+        self.top_gate_outer_chamfer = kwargs.get('top_gate_outer_chamfer', 'straight')   # 外焊盘倒角类型
+        
+        # ===== 编号参数 =====
+        self.label_size = kwargs.get('label_size', 20.0)           # 编号大小 (μm)
+        self.label_spacing = kwargs.get('label_spacing', 0.5)      # 编号字符间距 (相对于字符大小的比例)
+        self.label_font = kwargs.get('label_font', 'C:/Windows/Fonts/OCRAEXT.TTF')  # 编号字体路径
+        self.label_offset_x = kwargs.get('label_offset_x', 0.0)    # 编号位置X偏移量 (μm)
+        self.label_offset_y = kwargs.get('label_offset_y', -20.0)  # 编号位置Y偏移量 (μm)
+        self.use_digital_display = kwargs.get('use_digital_display', False)  # 是否使用DigitalDisplay，默认False（使用TextUtils）
         
     def setup_layers(self):
         """设置图层"""
@@ -87,19 +127,20 @@ class FET:
         inner_pad1 = draw_pad(
             center=(x - self.gate_space/2 - self.gate_width/2, y),
             length=self.gate_width,
-            width=self.ch_width * 1.5,
-            chamfer_size=0,      # 不倒角
-            chamfer_type='none'  # 不倒角
+            width=self.ch_width * self.bottom_gate_inner_width_ratio,
+            chamfer_size=0 if self.bottom_gate_inner_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.bottom_gate_inner_chamfer
         )
         cell.shapes(layer_id).insert(inner_pad1.polygon)
         
         # Outer pad
         outer_pad1 = draw_pad(
-            center=(x - 50 - self.gate_space/2 - self.gate_width/2, y - 100),
+            center=(x - self.bottom_gate_outer_offset_x - self.gate_space/2 - self.gate_width/2, 
+                   y + self.bottom_gate_outer_offset_y),
             length=self.outer_pad_size,
             width=self.outer_pad_size,
-            chamfer_size=self.chamfer_size,
-            chamfer_type='straight'
+            chamfer_size=0 if self.bottom_gate_outer_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.bottom_gate_outer_chamfer
         )
         cell.shapes(layer_id).insert(outer_pad1.polygon)
         
@@ -112,19 +153,20 @@ class FET:
         inner_pad2 = draw_pad(
             center=(x + self.gate_space/2 + self.gate_width/2, y),
             length=self.gate_width,
-            width=self.ch_width * 1.5,
-            chamfer_size=0,      # 不倒角
-            chamfer_type='none'  # 不倒角
+            width=self.ch_width * self.bottom_gate_inner_width_ratio,
+            chamfer_size=0 if self.bottom_gate_inner_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.bottom_gate_inner_chamfer
         )
         cell.shapes(layer_id).insert(inner_pad2.polygon)
         
         # Outer pad
         outer_pad2 = draw_pad(
-            center=(x + 50 + self.gate_space/2 + self.gate_width/2, y - 100),
+            center=(x + self.bottom_gate_outer_offset_x + self.gate_space/2 + self.gate_width/2, 
+                   y + self.bottom_gate_outer_offset_y),
             length=self.outer_pad_size,
             width=self.outer_pad_size,
-            chamfer_size=self.chamfer_size,
-            chamfer_type='straight'
+            chamfer_size=0 if self.bottom_gate_outer_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.bottom_gate_outer_chamfer
         )
         cell.shapes(layer_id).insert(outer_pad2.polygon)
         
@@ -180,19 +222,20 @@ class FET:
         source_inner = draw_pad(
             center=(x - self.ch_len, y),
             length=self.ch_len,
-            width=self.ch_width * 1.2,
-            chamfer_size=0,
-            chamfer_type='none'
+            width=self.ch_width * self.source_drain_inner_width_ratio,
+            chamfer_size=0 if self.source_drain_inner_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.source_drain_inner_chamfer
         )
         cell.shapes(layer_id).insert(source_inner.polygon)
 
         # 源极 outer pad
         source_outer = draw_pad(
-            center=(x - self.ch_len /2 - 110, y+20),  # 100um向左
-            length=100,
-            width=100,
-            chamfer_size=self.chamfer_size,
-            chamfer_type='straight'
+            center=(x - self.ch_len/2 - self.source_drain_outer_offset_x, 
+                   y + self.source_drain_outer_offset_y),
+            length=self.outer_pad_size,
+            width=self.outer_pad_size,
+            chamfer_size=0 if self.source_drain_outer_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.source_drain_outer_chamfer
         )
         cell.shapes(layer_id).insert(source_outer.polygon)
 
@@ -204,19 +247,20 @@ class FET:
         drain_inner = draw_pad(
             center=(x + self.ch_len, y),
             length=self.ch_len,
-            width=self.ch_width * 1.2,
-            chamfer_size=0,
-            chamfer_type='none'
+            width=self.ch_width * self.source_drain_inner_width_ratio,
+            chamfer_size=0 if self.source_drain_inner_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.source_drain_inner_chamfer
         )
         cell.shapes(layer_id).insert(drain_inner.polygon)
 
         # 漏极 outer pad
         drain_outer = draw_pad(
-            center=(x + self.ch_len/2 + 110, y+20),  # 100um向右
-            length=100,
-            width=100,
-            chamfer_size=self.chamfer_size,
-            chamfer_type='straight'
+            center=(x + self.ch_len/2 + self.source_drain_outer_offset_x, 
+                   y + self.source_drain_outer_offset_y),
+            length=self.outer_pad_size,
+            width=self.outer_pad_size,
+            chamfer_size=0 if self.source_drain_outer_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.source_drain_outer_chamfer
         )
         cell.shapes(layer_id).insert(drain_outer.polygon)
 
@@ -237,20 +281,20 @@ class FET:
         # Inner pad
         inner_pad = draw_pad(
             center=(x, y),
-            length=self.ch_len * 1.2,
-            width=self.ch_width * 1.2,
-            chamfer_size=0,      # 不倒角
-            chamfer_type='none'  # 不倒角
+            length=self.ch_len * self.top_gate_inner_width_ratio,
+            width=self.ch_width * self.top_gate_inner_width_ratio,
+            chamfer_size=0 if self.top_gate_inner_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.top_gate_inner_chamfer
         )
         cell.shapes(layer_id).insert(inner_pad.polygon)
         
         # Outer pad
         outer_pad = draw_pad(
-            center=(x, y + 100),
+            center=(x + self.top_gate_outer_offset_x, y + self.top_gate_outer_offset_y),
             length=self.outer_pad_size,
             width=self.outer_pad_size,
-            chamfer_size=self.chamfer_size,
-            chamfer_type='straight'
+            chamfer_size=0 if self.top_gate_outer_chamfer == 'none' else self.chamfer_size,
+            chamfer_type=self.top_gate_outer_chamfer
         )
         cell.shapes(layer_id).insert(outer_pad.polygon)
         
@@ -258,7 +302,7 @@ class FET:
         fanout = draw_trapezoidal_fanout(inner_pad, outer_pad)
         cell.shapes(layer_id).insert(fanout)
     
-    def create_alignment_marks(self, cell, x=0.0, y=0.0, device_id=None, row=None, col=None):
+    def create_alignment_marks(self, cell, x=0.0, y=0.0, device_id=None, row=None, col=None, label_type=None):
         """
         创建对准标记
         
@@ -268,6 +312,7 @@ class FET:
             device_id: 器件编号，用于数字标记
             row: 行号（用于生成字母+数字格式的标记）
             col: 列号（用于生成字母+数字格式的标记）
+            label_type: 标签类型，'textutils' 或 'digital'
         """
         layer_id = LAYER_DEFINITIONS['alignment_marks']['id']
         
@@ -285,33 +330,59 @@ class FET:
         
         # 创建标记
         for i, (mark_x, mark_y) in enumerate(mark_positions):
-            if i == 0 or i == 3:  # 左上角和右下角使用十字标记
+            mark_type = self.mark_types[i] if i < len(self.mark_types) else 'cross'
+            
+            # 根据MarkUtils中的函数名创建对应的标记
+            if mark_type == 'cross':
                 marks = MarkUtils.cross(mark_x, mark_y, self.mark_size, self.mark_width)
-                # 插入十字标记
-                shapes = marks.get_shapes()
-                if isinstance(shapes, list):
-                    for shape in shapes:
-                        cell.shapes(layer_id).insert(shape)
-                else:
-                    cell.shapes(layer_id).insert(shapes)
-            elif i == 1:  # 右上角使用L型标记
+            elif mark_type == 'square':
+                marks = MarkUtils.square(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'circle':
+                marks = MarkUtils.circle(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'diamond':
+                marks = MarkUtils.diamond(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'triangle':
+                marks = MarkUtils.triangle(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'l':
                 marks = MarkUtils.l(mark_x, mark_y, self.mark_size, self.mark_width)
-                # 插入L型标记
-                shapes = marks.get_shapes()
-                if isinstance(shapes, list):
-                    for shape in shapes:
-                        cell.shapes(layer_id).insert(shape)
-                else:
-                    cell.shapes(layer_id).insert(shapes)
-            elif i == 2:  # 左下角使用L型标记
-                marks = MarkUtils.l(mark_x, mark_y, self.mark_size, self.mark_width).rotate(2)
-                # 插入L型标记（旋转90度）
-                shapes = marks.get_shapes()
-                if isinstance(shapes, list):
-                    for shape in shapes:
-                        cell.shapes(layer_id).insert(shape)
-                else:
-                    cell.shapes(layer_id).insert(shapes)
+            elif mark_type == 't':
+                marks = MarkUtils.t(mark_x, mark_y, self.mark_size, self.mark_width)
+            elif mark_type == 'semi_cross':
+                marks = MarkUtils.semi_cross(mark_x, mark_y, self.mark_size, self.mark_width)
+            elif mark_type == 'cross_pos':
+                marks = MarkUtils.cross_pos(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'cross_neg':
+                marks = MarkUtils.cross_neg(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'l_shape':
+                marks = MarkUtils.l_shape(mark_x, mark_y, self.mark_size)
+            elif mark_type == 't_shape':
+                marks = MarkUtils.t_shape(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'sq_missing':
+                marks = MarkUtils.sq_missing(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'sq_missing_border':
+                marks = MarkUtils.sq_missing_border(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'cross_tri':
+                marks = MarkUtils.cross_tri(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'regular_polygon':
+                marks = MarkUtils.regular_polygon(mark_x, mark_y, self.mark_size)
+            elif mark_type == 'chamfered_octagon':
+                marks = MarkUtils.chamfered_octagon(mark_x, mark_y, self.mark_size)
+            else:
+                # 默认使用十字标记
+                marks = MarkUtils.cross(mark_x, mark_y, self.mark_size, self.mark_width)
+            
+            # 根据mark_rotations参数旋转标记
+            rotation_angle = self.mark_rotations[i] if i < len(self.mark_rotations) else 0
+            if rotation_angle > 0:
+                marks = marks.rotate(rotation_angle)  # 直接使用0,1,2,3作为旋转参数
+            
+            # 插入标记
+            shapes = marks.get_shapes()
+            if isinstance(shapes, list):
+                for shape in shapes:
+                    cell.shapes(layer_id).insert(shape)
+            else:
+                cell.shapes(layer_id).insert(shapes)
         
         # 在右上角cross mark的右下角添加数字编号
         if device_id is not None:
@@ -323,12 +394,12 @@ class FET:
             
             # 如果有行列信息，使用字母+数字格式；否则使用纯数字
             if row is not None and col is not None:
-                self.create_device_label(cell, label_x, label_y, row, col)
+                self.create_device_label(cell, label_x, label_y, row, col, label_type)
             else:
                 # 将 device_id 转换为字符串，作为纯数字标记
-                self.create_device_label(cell, label_x, label_y, device_id - 1, 0)  # 假设为第0列
+                self.create_device_label(cell, label_x, label_y, device_id - 1, 0, label_type)  # 假设为第0列
     
-    def create_device_label(self, cell, x, y, row, col):
+    def create_device_label(self, cell, x, y, row, col, label_type=None):
         """
         在指定位置创建字母+数字格式的器件标记
         
@@ -337,6 +408,23 @@ class FET:
             x, y: 标记起始坐标
             row: 行号（数字）
             col: 列号（字母）
+            label_type: 标签类型，'textutils' 或 'digital'，如果为None则使用初始化时的设置
+        """
+        # 如果没有指定label_type，使用初始化时的设置
+        if label_type is None:
+            label_type = 'digital' if self.use_digital_display else 'textutils'
+        
+        if label_type == 'textutils':
+            self._create_device_label_textutils(cell, x, y, row, col)
+        elif label_type == 'digital':
+            self._create_device_label_digital(cell, x, y, row, col)
+        else:
+            # 默认使用textutils
+            self._create_device_label_textutils(cell, x, y, row, col)
+    
+    def _create_device_label_textutils(self, cell, x, y, row, col):
+        """
+        使用TextUtils创建器件标签（推荐方式）
         """
         layer_id = LAYER_DEFINITIONS['labels']['id']
         
@@ -345,17 +433,56 @@ class FET:
         row_number = str(row + 1)  # 行号从1开始
         label = col_letter + row_number  # 如 A1, B2, C3
         
+        # 应用偏移量
+        label_x = x + self.label_offset_x
+        label_y = y + self.label_offset_y
+        
         # 设置字符大小和间距
-        char_size = self.mark_size * 0.25
+        char_size = self.label_size
+        char_spacing = char_size * self.label_spacing  # 字符间距
+        
+        # 创建每个字符
+        for i, char in enumerate(label):
+            char_x = label_x + i * char_spacing
+            char_y = label_y
+            
+            # 使用 TextUtils 创建文本
+            text_shapes = TextUtils.create_text_freetype(
+                char, char_x, char_y, 
+                size_um=int(char_size), 
+                font_path=self.label_font,
+                spacing_um=0.5
+            )
+            
+            for shape in text_shapes:
+                cell.shapes(layer_id).insert(shape)
+    
+    def _create_device_label_digital(self, cell, x, y, row, col):
+        """
+        使用DigitalDisplay创建器件标签（传统方式）
+        """
+        layer_id = LAYER_DEFINITIONS['labels']['id']
+        
+        # 生成字母+数字格式的标记
+        col_letter = chr(ord('A') + col)  # 0->A, 1->B, 2->C, ...
+        row_number = str(row + 1)  # 行号从1开始
+        label = col_letter + row_number  # 如 A1, B2, C3
+        
+        # 应用偏移量
+        label_x = x + self.label_offset_x
+        label_y = y + self.label_offset_y
+        
+        # 设置字符大小和间距
+        char_size = self.label_size * 0.25  # DigitalDisplay通常需要较小的尺寸
         stroke_width = self.mark_width * 0.8
         char_spacing = char_size * 1.7  # 字符间距
         
         # 创建每个字符
         for i, char in enumerate(label):
-            char_x = x + i * char_spacing
-            char_y = y
+            char_x = label_x + i * char_spacing
+            char_y = label_y
             
-            # 使用 create_digit 方法处理字母和数字
+            # 使用 DigitalDisplay 创建数字显示
             polygons = DigitalDisplay.create_digit(
                 char, char_x, char_y, 
                 size=char_size, 
@@ -417,7 +544,7 @@ class FET:
             
             cell.shapes(layer_id).insert(text_obj)
     
-    def create_single_device(self, cell_name="FET_Device", x=0, y=0, device_id=None, row=None, col=None, device_params=None):
+    def create_single_device(self, cell_name="FET_Device", x=0, y=0, device_id=None, row=None, col=None, device_params=None, label_type=None):
         """
         创建单个FET器件
         
@@ -428,6 +555,7 @@ class FET:
             row: 行号（用于生成字母+数字格式的标记）
             col: 列号（用于生成字母+数字格式的标记）
             device_params: 器件参数字典，用于标注
+            label_type: 标签类型，'textutils' 或 'digital'
             
         Returns:
             创建的单元格
@@ -444,7 +572,7 @@ class FET:
         self.create_channel_material(cell, x, y)
         self.create_source_drain_electrodes(cell, x, y)
         self.create_top_gate_electrode(cell, x, y)
-        self.create_alignment_marks(cell, x, y, device_id, row, col)
+        self.create_alignment_marks(cell, x, y, device_id, row, col, label_type)
         
         # 如果有器件参数，添加参数标注
         if device_params:
@@ -452,7 +580,7 @@ class FET:
         
         return cell
     
-    def create_device_array(self, rows=10, cols=10, device_spacing_x=None, device_spacing_y=None):
+    def create_device_array(self, rows=10, cols=10, device_spacing_x=None, device_spacing_y=None, label_type=None):
         """
         创建器件阵列
         
@@ -461,6 +589,7 @@ class FET:
             cols: 列数
             device_spacing_x: 器件横向间距，如果为None则自动计算
             device_spacing_y: 器件纵向间距，如果为None则自动计算
+            label_type: 标签类型，'textutils' 或 'digital'
             
         Returns:
             阵列单元格
@@ -486,7 +615,8 @@ class FET:
                 device_cell = self.create_single_device(
                     f"FET_{device_id:03d}", 
                     device_x, device_y, 
-                    device_id, row, col
+                    device_id, row, col,
+                    label_type=label_type
                 )
                 
                 # 将器件单元格插入到阵列中
@@ -499,7 +629,7 @@ class FET:
         
         return array_cell
     
-    def scan_parameters_and_create_array(self, param_ranges, rows=10, cols=10, offset_x=0, offset_y=0):
+    def scan_parameters_and_create_array(self, param_ranges, rows=10, cols=10, offset_x=0, offset_y=0, label_type=None):
         """
         扫描参数并创建参数变化的器件阵列
         
@@ -509,6 +639,7 @@ class FET:
             cols: 列数
             offset_x: 阵列起始X坐标偏移
             offset_y: 阵列起始Y坐标偏移
+            label_type: 标签类型，'textutils' 或 'digital'
             
         Returns:
             参数扫描阵列单元格
@@ -578,7 +709,8 @@ class FET:
                     f"FET_Scan_{device_id:03d}", 
                     device_x, device_y, 
                     device_id, row, col,
-                    current_params
+                    current_params,
+                    label_type=label_type
                 )
                 
                 # 将器件单元格插入到扫描阵列中

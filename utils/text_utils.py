@@ -135,7 +135,7 @@ if __name__ == "__main__":
     line_height = size * 1.2
     for i, line in enumerate(lines):
         y_pos = start_y - i * line_height
-        shapes = TextUtils.create_text_freetype(line, start_x, y_pos, size_um=size, spacing_um=2.0)
+        shapes = TextUtils.create_text_freetype(line, start_x, y_pos,font_path='C:/Windows/Fonts/OCRAEXT.TTF', size_um=size, spacing_um=2.0)
         for shape in shapes:
             top.shapes(layer).insert(shape)
     layout.write('TEST_TEXT_UTILS.gds')

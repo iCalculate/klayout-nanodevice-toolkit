@@ -15,7 +15,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import LAYER_DEFINITIONS, PROCESS_CONFIG
 from utils.geometry import GeometryUtils
-from utils.digital_utils import DigitalDisplay
+from utils.text_utils import TextUtils
 
 class ResolutionTestPattern:
     """分辨率测试图案生成器（创意优化版）"""
@@ -700,8 +700,8 @@ class ResolutionTestPattern:
             char_spacing = 4.5
             for i, char in enumerate(label):
                 char_x = label_x + i * char_spacing
-                char_polys = DigitalDisplay.create_digit(char, char_x, label_y, size=char_size, stroke_width=1, center=False)
-                shapes.extend(char_polys)
+                char_shapes = TextUtils.create_text_freetype(char, char_x, label_y, size_um=int(char_size), font_path='C:/Windows/Fonts/OCRAEXT.TTF', spacing_um=0.5)
+                shapes.extend(char_shapes)
             progress = current_area / total_areas * 100
             print(f"⏳ 进度: {current_area}/{total_areas} ({progress:.1f}%) - 区域({row},{col}): {type_names[test_type]} (尺寸:{size}μm)")
             new_shapes = []
