@@ -1,0 +1,16 @@
+# Core dependencies
+# Note: pya and klayout.db are part of KLayout installation
+# These are not available via pip, but are included with KLayout
+
+# Required dependencies
+freetype-py>=2.3.0
+
+# Optional dependencies for enhanced functionality
+numpy>=1.21.0
+pandas>=1.3.0
+matplotlib>=3.4.0
+
+# Development dependencies (optional)
+pytest>=6.0.0
+black>=21.0.0
+flake8>=3.9.0 
