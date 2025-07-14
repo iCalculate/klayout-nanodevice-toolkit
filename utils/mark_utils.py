@@ -10,13 +10,18 @@ from config import MARK_SHAPES, DEFAULT_UNIT_SCALE
 from utils.geometry import GeometryUtils
 
 class MarkWrapper:
-    """Mark包装器类，支持链式调用的旋转功能"""
+    """Mark包装器类，支持链式调用的旋转功能
+
+    Mark wrapper class supporting chained rotation operations.
+    """
     
     def __init__(self, shapes, x, y):
         """
         初始化包装器
-        shapes: 可以是单个shape、region或shape列表
-        x, y: mark的中心坐标
+        
+        Initialize the wrapper.
+        ``shapes`` can be a single shape, region, or list of shapes.
+        ``x`` and ``y`` specify the center coordinates of the mark.
         """
         self.shapes = shapes
         self.x = x
@@ -27,6 +32,8 @@ class MarkWrapper:
         """
         旋转mark
         angle: 旋转角度（度），正值逆时针
+
+        Rotate the mark. ``angle`` is in degrees, positive for counter-clockwise.
         """
         from klayout.db import Trans
         self.rotation = angle
@@ -61,8 +68,12 @@ class MarkWrapper:
             return self.shapes.transformed(trans)
 
 class MarkUtils:
-    """标记工具类"""
+    """标记工具类
+
+    Utility class for creating alignment and measurement marks.
+    """
     UNIT_SCALE = DEFAULT_UNIT_SCALE  # 全局单位缩放，默认为DEFAULT_UNIT_SCALE
+    # Global unit scale, defaults to ``DEFAULT_UNIT_SCALE``
 
     @staticmethod
     def set_unit_scale(scale):
@@ -339,6 +350,7 @@ if __name__ == "__main__":
     start_y = 0
 
     # 全局旋转角度
+    # Global rotation angle
     rotation = 2
 
     # List of (function, kwargs, description) for all mark types to test

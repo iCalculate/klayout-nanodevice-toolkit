@@ -267,8 +267,11 @@ class LayoutGenerator:
             self.top_cell.shapes(LAYER_DEFINITIONS['labels']['id']).insert(label)
     
     def generate_layout(self):
-        """生成完整版图"""
-        print("开始生成MOSFET阵列版图...")
+        """生成完整版图
+
+        Generate the complete layout.
+        """
+        print("开始生成MOSFET阵列版图...")  # Starting layout generation
         
         # 创建器件阵列
         self.create_device_array()
@@ -276,10 +279,10 @@ class LayoutGenerator:
         # 插入所有形状到布局
         self.insert_shapes_to_layout()
         
-        print(f"版图生成完成！")
-        print(f"器件数量: {len(self.devices)}")
-        print(f"阵列大小: {self.array_config['rows']}×{self.array_config['cols']}")
-        print(f"扫描类型: {self.scan_config['scan_type']}")
+        print(f"版图生成完成！")  # Layout generation finished
+        print(f"器件数量: {len(self.devices)}")  # Number of devices
+        print(f"阵列大小: {self.array_config['rows']}×{self.array_config['cols']}")  # Array size
+        print(f"扫描类型: {self.scan_config['scan_type']}")  # Scan type
         
         return self.layout
     
@@ -289,19 +292,24 @@ class LayoutGenerator:
         print(f"版图已保存为: {filename}")
     
     def load_to_gui(self):
-        """加载版图到GUI"""
+        """加载版图到GUI
+
+        Load the generated layout into the GUI.
+        """
         try:
             # 获取主窗口
+            # Get the main window instance
             main_window = pya.Application.instance().main_window()
             
             # 加载版图到GUI
+            # Load layout into the GUI
             main_window.load_layout("mosfet_array.gds", 0)
             
-            print("版图已成功加载到GUI视图中！")
+            print("版图已成功加载到GUI视图中！")  # Layout loaded successfully
             
         except Exception as e:
-            print(f"加载到GUI时出现错误: {e}")
-            print("请手动在KLayout中打开 mosfet_array.gds 文件")
+            print(f"加载到GUI时出现错误: {e}")  # Error when loading into GUI
+            print("请手动在KLayout中打开 mosfet_array.gds 文件")  # Please open manually
     
     def get_statistics(self):
         """获取版图统计信息"""
