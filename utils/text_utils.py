@@ -37,6 +37,10 @@ class TextUtils:
     def create_text_freetype(text, x, y, size_um=10, font_path='C:/Windows/Fonts/arial.ttf', spacing_um=2.0):
         """
         使用 freetype-py 将字符串转为多边形点集（适用于KLayout Polygon）。
+        
+        Use ``freetype-py`` to convert a string into polygon point sets
+        suitable for KLayout ``Polygon`` objects.
+        
         参数：
             text (str): 要生成的字符串
             x, y (float): 右上角坐标（单位um）
@@ -45,6 +49,8 @@ class TextUtils:
             spacing_um (float): 字符间距（um）
         返回：
             List[Polygon]: 每个字符的多边形（含孔洞）
+        Returns:
+            List[Polygon]: Polygons for each character including holes.
         """
         try:
             import freetype

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 主程序入口 - 整合所有模块并提供简单的使用示例
+Main entry - integrates modules and provides simple usage examples.
 """
 
 import pya
@@ -8,7 +9,10 @@ from layout_generator import LayoutGenerator
 from gui_interface import show_mosfet_layout_gui
 
 def create_simple_array():
-    """创建简单的器件阵列示例"""
+    """创建简单的器件阵列示例
+
+    Example for creating a simple device array.
+    """
     print("创建简单的MOSFET阵列...")
     
     # 创建版图生成器
@@ -50,7 +54,10 @@ def create_simple_array():
     return generator
 
 def create_parameter_scan():
-    """创建参数扫描阵列示例"""
+    """创建参数扫描阵列示例
+
+    Example for creating a parameter-scan device array.
+    """
     print("创建参数扫描MOSFET阵列...")
     
     # 创建版图生成器
@@ -86,7 +93,10 @@ def create_parameter_scan():
     return generator
 
 def create_custom_device():
-    """创建自定义器件示例"""
+    """创建自定义器件示例
+
+    Example for creating a custom device.
+    """
     print("创建自定义MOSFET器件...")
     
     from components.mosfet import MOSFET
@@ -113,7 +123,10 @@ def create_custom_device():
     return device
 
 def show_gui():
-    """显示GUI界面"""
+    """显示GUI界面
+
+    Launch the graphical user interface.
+    """
     print("启动GUI界面...")
     return show_mosfet_layout_gui()
 

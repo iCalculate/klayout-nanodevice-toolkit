@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 MOSFET器件模块 - 定义完整的双栅器件结构
+MOSFET device module - defines the complete dual-gate device structure.
 """
 
 import pya
@@ -11,13 +12,17 @@ from utils.text_utils import TextUtils
 from utils.mark_utils import MarkUtils
 
 class MOSFET:
-    """MOSFET器件类"""
+    """MOSFET器件类
+    
+    MOSFET device class.
+    """
     
     def __init__(self, x, y, **kwargs):
         self.x = x
         self.y = y
         
         # 器件参数
+        # Device parameters
         self.channel_width = kwargs.get('channel_width', 5.0)
         self.channel_length = kwargs.get('channel_length', 20.0)
         self.gate_overlap = kwargs.get('gate_overlap', 2.0)
@@ -26,24 +31,31 @@ class MOSFET:
         self.dielectric_thickness = kwargs.get('dielectric_thickness', 4.0)
         
         # 电极配置
+        # Electrode configuration
         self.bottom_gate_enabled = kwargs.get('bottom_gate_enabled', True)
         self.top_gate_enabled = kwargs.get('top_gate_enabled', True)
         self.source_drain_enabled = kwargs.get('source_drain_enabled', True)
         
         # 扇出配置
+        # Fanout configuration
         self.fanout_enabled = kwargs.get('fanout_enabled', True)
         self.fanout_direction = kwargs.get('fanout_direction', 'horizontal')
         
         # 标签配置
+        # Label configuration
         self.device_label = kwargs.get('device_label', '')
         self.device_id = kwargs.get('device_id', 0)
         
         # 生成的组件
+        # Generated components
         self.components = {}
         self.shapes = {}
         
     def create_bottom_gate(self):
-        """创建底栅电极"""
+        """创建底栅电极
+        
+        Create the bottom gate electrode.
+        """
         if not self.bottom_gate_enabled:
             return None
         
@@ -72,7 +84,10 @@ class MOSFET:
         return bottom_gate
     
     def create_channel_etch(self):
-        """创建沟道刻蚀区域"""
+        """创建沟道刻蚀区域
+
+        Create the channel etch region.
+        """
         etch_width = self.channel_width + 1.0
         etch_length = self.channel_length + 1.0
         
@@ -84,7 +99,10 @@ class MOSFET:
         return etch
     
     def create_source_drain(self):
-        """创建源漏电极"""
+        """创建源漏电极
+
+        Create source and drain electrodes.
+        """
         if not self.source_drain_enabled:
             return None
         
@@ -125,7 +143,10 @@ class MOSFET:
         return source, drain
     
     def create_dielectric(self):
-        """创建介电层"""
+        """创建介电层
+
+        Create the dielectric layer.
+        """
         dielectric_width = self.channel_width + self.dielectric_thickness
         dielectric_length = self.channel_length + self.dielectric_thickness
         
@@ -137,7 +158,10 @@ class MOSFET:
         return dielectric
     
     def create_top_gate(self):
-        """创建顶栅电极"""
+        """创建顶栅电极
+
+        Create the top gate electrode.
+        """
         if not self.top_gate_enabled:
             return None
         
@@ -166,7 +190,10 @@ class MOSFET:
         return top_gate
     
     def create_device_label(self):
-        """创建器件标签"""
+        """创建器件标签
+
+        Create the device label.
+        """
         if not self.device_label:
             return None
         
@@ -179,7 +206,10 @@ class MOSFET:
         return label_shapes
     
     def create_parameter_labels(self):
-        """创建参数标签"""
+        """创建参数标签
+
+        Create labels for device parameters.
+        """
         labels = []
         
         # 沟道尺寸标签
@@ -203,7 +233,10 @@ class MOSFET:
         return labels
     
     def create_alignment_marks(self):
-        """创建器件对准标记"""
+        """创建器件对准标记
+
+        Create alignment marks for the device.
+        """
         mark_size = 15
         mark_width = 2
         

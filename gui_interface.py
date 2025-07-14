@@ -1,20 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 GUI界面模块 - 提供用户友好的参数配置界面
+GUI interface module providing a user-friendly parameter configuration UI.
 """
 
 import pya
 from layout_generator import LayoutGenerator
 
 class MOSFETLayoutGUI:
-    """MOSFET版图生成器GUI界面"""
+    """MOSFET版图生成器GUI界面
+
+    GUI interface for the MOSFET layout generator.
+    """
     
     def __init__(self):
         self.generator = LayoutGenerator()
         self.create_gui()
     
     def create_gui(self):
-        """创建GUI界面"""
+        """创建GUI界面
+
+        Create the GUI interface.
+        """
         # 创建主窗口
         self.dialog = pya.QDialog()
         self.dialog.setWindowTitle("MOSFET Layout Generator")
@@ -449,11 +456,17 @@ Layout Statistics:
         pya.QMessageBox.information(self.dialog, "Statistics", stats_text)
     
     def show(self):
-        """显示GUI界面"""
+        """显示GUI界面
+
+        Show the GUI window.
+        """
         return self.dialog.exec_()
 
 def show_mosfet_layout_gui():
-    """显示MOSFET版图生成器GUI"""
+    """显示MOSFET版图生成器GUI
+
+    Display the MOSFET layout generator GUI.
+    """
     gui = MOSFETLayoutGUI()
     return gui.show()
 

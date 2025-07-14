@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 配置文件 - 定义全局参数和设置
+Configuration file - defines global parameters and settings.
 """
 
 # 工艺参数
+# Process parameters
 PROCESS_CONFIG = {
     'min_feature_size': 0.1,      # 最小特征尺寸 (μm)
     'min_spacing': 0.1,           # 最小间距 (μm)
@@ -12,6 +14,7 @@ PROCESS_CONFIG = {
 }
 
 # 图层定义
+# Layer definitions
 LAYER_DEFINITIONS = {
     'bottom_gate': {'id': 1, 'name': 'Bottom Gate', 'color': 0xFF0000, 'description': '底栅电极'},
     'channel_etch': {'id': 2, 'name': 'Channel Etch', 'color': 0x00FF00, 'description': '沟道材料刻蚀'},
@@ -25,6 +28,7 @@ LAYER_DEFINITIONS = {
 }
 
 # 字体设置
+# Font settings
 FONT_CONFIG = {
     'default': {
         'family': 'Arial',
@@ -68,6 +72,7 @@ ELECTRODE_SHAPES = {
 }
 
 # 扇出配置
+# Fanout configuration
 FANOUT_CONFIG = {
     'enabled': True,
     'pad_size': 50.0,             # 焊盘尺寸 (μm)
@@ -81,5 +86,6 @@ FANOUT_CONFIG = {
 }
 
 # 默认缩放参数
+# Default scaling parameters
 DEFAULT_UNIT_SCALE = 1000      # 1 um = 1000 nm
 DEFAULT_DBU = 0.001           # 1 dbu = 0.001 um = 1 nm 

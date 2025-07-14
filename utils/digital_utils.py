@@ -12,7 +12,11 @@ from config import PROCESS_CONFIG
 from utils.geometry import GeometryUtils
 
 class DigitalDisplay:
-    """7-segment digital display class (米字数码管风格，支持四斜+短横)"""
+    """7-segment digital display class (米字数码管风格，支持四斜+短横)
+
+    7-segment digital display class with 'rice' style segments supporting
+    diagonal lines and short horizontal segments.
+    """
 
     @staticmethod
     def get_segments(size, stroke_width):
@@ -27,8 +31,11 @@ class DigitalDisplay:
         mid_y = 0
         mid_x = 0
         # 米字数码管四斜线中心点都在(0,0)，长度为sqrt(2)*min_size
+        # Center of all diagonal segments is at (0,0) with length sqrt(2)*min_size
         diag = min_size * 1.1  # 适当加长
+        # Extend slightly
         # 短横线参数
+        # Parameters for short horizontal segments
         short_h_len = min_size * 0.5
         short_h_x = offset_x*0.5  # 居中
         return {
