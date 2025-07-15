@@ -4,6 +4,7 @@
 
 # Required dependencies
 freetype-py>=2.3.0
+klayout>=0.27.12           # Optional: for pya API use without GUI
 
 # Optional dependencies for enhanced functionality
 numpy>=1.21.0
