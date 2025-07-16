@@ -23,14 +23,14 @@ class TLM:
         self.setup_layers()
         # ===== 结构主参数 =====
         self.num_electrodes = kwargs.get('num_electrodes', 6)  # 电极数
-        self.width = kwargs.get('width', 20.0)  # 沟道宽度 (μm)
+        # self.width = kwargs.get('width', 20.0)  # 沟道宽度 (μm)  # 已废弃，统一用 channel_width
         self.min_spacing = kwargs.get('min_spacing', 1.0)      # 最小电极间距（inner pad中心间距）
         self.max_spacing = kwargs.get('max_spacing', 20.0)     # 最大电极间距
         self.distribution = kwargs.get('distribution', 'log')  # 间距分布
         self.spacing_mode = kwargs.get('spacing_mode', 'centered')  # 电极间距排列方式：'centered'（默认）或 'left_to_right'
         # ===== pad 参数 =====
         self.inner_pad_length = kwargs.get('inner_pad_length', 0.5)  # inner pad 沟道方向长度
-        self.inner_pad_width = kwargs.get('inner_pad_width', None)   # inner pad 垂直方向宽度，None时自动设为width的1.2倍
+        self.inner_pad_width = kwargs.get('inner_pad_width', None)   # inner pad 垂直方向宽度，None时自动设为 channel_width 的1.2倍
         self.outer_pad_length = kwargs.get('outer_pad_length', 60.0) # outer pad 沟道方向长度
         self.outer_pad_width = kwargs.get('outer_pad_width', 60.0)   # outer pad 垂直方向宽度
         self.outer_pad_spacing = kwargs.get('outer_pad_spacing', None) # outer pad 中心到中心的最小x间距，None时自动设为outer_pad_width的1.1倍
@@ -110,7 +110,7 @@ class TLM:
         xs = self.generate_electrode_positions()
         # 以(x, y)为本单元中心
         y0 = y
-        # inner_pad_width 若为 None，自动设为 width 的 1.2 倍
+        # inner_pad_width 若为 None，自动设为 channel_width 的 1.2 倍
         pad_width = self.inner_pad_width if self.inner_pad_width is not None else self.channel_width * 1.2
         for i, xc in enumerate(xs):
             layer_id = LAYER_DEFINITIONS['source_drain']['id']
@@ -380,9 +380,9 @@ def main():
     print("参数扫描测试：批量生成不同参数的TLM器件...")
     tlm_scan = TLM(layout=layout, num_electrodes=8)
     param_ranges = {
-        'width': [5.0, 15.0, 3],         # 行扫描
+        'channel_width': [5.0, 15.0, 3],         # 行扫描
         'max_spacing': [2.0, 20.0, 3],   # 列扫描
-        'distribution': ['log'],         # 固定值
+        'distribution': ['inv'],         # 固定值
     }
     scan_cell = tlm_scan.scan_parameters_and_create_array(param_ranges, rows=3, cols=3, offset_x=0, offset_y=0)
     print(f"参数扫描器件已创建: {scan_cell.name}")
