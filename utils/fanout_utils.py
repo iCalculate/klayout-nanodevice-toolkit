@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from typing import Tuple, Literal, Dict, Any, cast
+from typing import Tuple, Literal, Dict, Any, cast, Optional
 from utils.geometry import GeometryUtils
 import math
 from utils.text_utils import TextUtils
@@ -145,32 +145,35 @@ def _get_chamfered_edge_width(length, width, chamfer_size, chamfer_type, edge: L
 def draw_trapezoidal_fanout(
     inner_pad: PadInfo,
     outer_pad: PadInfo,
-    chamfer_size_inner: float = None,
-    chamfer_size_outer: float = None,
-    chamfer_type_inner: Literal['none', 'straight', 'round'] = None,
-    chamfer_type_outer: Literal['none', 'straight', 'round'] = None,
+    inner_edge: Optional[Literal['U','D','L','R']] = None,
+    outer_edge: Optional[Literal['U','D','L','R']] = None,
 ) -> 'Polygon':
-    # 自动读取PadInfo的属性
-    chamfer_size_inner = inner_pad.chamfer_size if chamfer_size_inner is None else chamfer_size_inner
-    chamfer_size_outer = outer_pad.chamfer_size if chamfer_size_outer is None else chamfer_size_outer
-    chamfer_type_inner = inner_pad.chamfer_type if chamfer_type_inner is None else chamfer_type_inner
-    chamfer_type_outer = outer_pad.chamfer_type if chamfer_type_outer is None else chamfer_type_outer
     s = GeometryUtils.UNIT_SCALE
     cx1, cy1 = inner_pad.center
     cx2, cy2 = outer_pad.center
     cx1, cy1, cx2, cy2 = cx1 * s, cy1 * s, cx2 * s, cy2 * s
     dx, dy = cx2 - cx1, cy2 - cy1
-    angle = math.atan2(dy, dx)
-    if abs(dx) > abs(dy):
-        inner_edge = 'right' if dx > 0 else 'left'
-        outer_edge = 'left' if dx > 0 else 'right'
+    edge_map: Dict[str, Literal['left','right','top','bottom']] = {'U': 'top', 'D': 'bottom', 'L': 'left', 'R': 'right'}
+    if inner_edge is not None and inner_edge in edge_map:
+        inner_edge_str: Literal['left','right','top','bottom'] = edge_map[inner_edge]
     else:
-        inner_edge = 'top' if dy > 0 else 'bottom'
-        outer_edge = 'bottom' if dy > 0 else 'top'
-    # 获取倒角后的边缘点
-    ip1, ip2 = _pad_edge_points(inner_pad.center, inner_pad.length, inner_pad.width, chamfer_size_inner, chamfer_type_inner, inner_edge)
-    op1, op2 = _pad_edge_points(outer_pad.center, outer_pad.length, outer_pad.width, chamfer_size_outer, chamfer_type_outer, outer_edge)
-    # 直接连接这些点创建梯形扇出
+        if abs(dx) > abs(dy):
+            inner_edge_str = 'right' if dx > 0 else 'left'
+        else:
+            inner_edge_str = 'top' if dy > 0 else 'bottom'
+    if outer_edge is not None and outer_edge in edge_map:
+        outer_edge_str: Literal['left','right','top','bottom'] = edge_map[outer_edge]
+    else:
+        if abs(dx) > abs(dy):
+            outer_edge_str = 'left' if dx > 0 else 'right'
+        else:
+            outer_edge_str = 'bottom' if dy > 0 else 'top'
+    ip1, ip2 = _pad_edge_points(
+        inner_pad.center, inner_pad.length, inner_pad.width,
+        inner_pad.chamfer_size, inner_pad.chamfer_type, inner_edge_str)
+    op1, op2 = _pad_edge_points(
+        outer_pad.center, outer_pad.length, outer_pad.width,
+        outer_pad.chamfer_size, outer_pad.chamfer_type, outer_edge_str)
     points = [Point(int(ip1[0]), int(ip1[1])), Point(int(ip2[0]), int(ip2[1])), Point(int(op2[0]), int(op2[1])), Point(int(op1[0]), int(op1[1]))]
     return Polygon(points)
 
