@@ -323,11 +323,11 @@ def main():
     # 优雅的参数扫描测试
     print("参数扫描测试：批量生成不同参数的HallBar器件...")
     param_ranges = {
-        'bar_width': [8.0, 16.0, 3],    # 行扫描
-        'bar_length': [40.0, 80.0, 3],  # 列扫描
-        'v_protrude_length': [4.0, 8.0, 3],
+        'bar_width': [8.0, 16.0, 10],    # 行扫描
+        'bar_length': [40.0, 80.0, 10],  # 列扫描
+        'v_protrude_length': [4.0, 8.0, 4],
     }
-    scan_cell = hallbar.scan_parameters_and_create_array(param_ranges, rows=3, cols=3, offset_x=0, offset_y=0)
+    scan_cell = hallbar.scan_parameters_and_create_array(param_ranges, rows=10, cols=10, offset_x=0, offset_y=0)
     print(f"参数扫描器件已创建: {scan_cell.name}")
 
     # 保存布局文件

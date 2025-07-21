@@ -1,0 +1,13 @@
+<klayout-plugin>
+  <version>1.0</version>
+  <name>TRStoolkit</name>
+  <author>Xinchuan Du</author>
+  <description>Move / Rotate / Scale selected shapes with custom center</description>
+  <run-script>TRStoolkit.py</run-script>
+  <entry-point>main</entry-point>
+
+  <menu-path>MyTools/Transform Tool</menu-path>
+  <shortcut>Ctrl+Alt+T</shortcut>
+
+  <icon>icon.png</icon> <!-- 可选，没有可以注释掉 -->
+</klayout-plugin>

@@ -690,8 +690,15 @@ class FET:
                     else:
                         current_params['ch_len'] = ch_len_range[0]
                 
-                # gate_space 固定为 2
-                current_params['gate_space'] = 2.0
+                # 列扫描：gate_space
+                if 'gate_space' in param_ranges:
+                    gate_space_range = param_ranges['gate_space']
+                    if len(gate_space_range) == 3:
+                        min_val, max_val, steps = gate_space_range
+                        gate_space = min_val + col * (max_val - min_val) / (steps - 1)
+                        current_params['gate_space'] = gate_space
+                    else:
+                        current_params['gate_space'] = gate_space_range[0]
                 
                 # gate_width 固定为 ch_len/2
                 if 'ch_len' in current_params:
@@ -751,8 +758,8 @@ def main():
     # 创建参数扫描阵列（行列扫描）
     print("创建参数扫描阵列...")
     param_ranges = {
-        'ch_width': [5.0, 15.0, 5],    # 行扫描：沟道宽度从5μm到15μm，5个值
-        'ch_len': [3.0, 8.0, 5],       # 列扫描：沟道长度从3μm到8μm，5个值
+        'ch_width': [5.0, 15.0, 16],    # 行扫描：沟道宽度从5μm到15μm，5个值
+        'gate_space': [1.0, 5.0, 16],       # 列扫描：沟道长度从3μm到8μm，5个值
         # gate_space 固定为 2
         # gate_width 固定为 ch_len/2
     }
@@ -763,7 +770,7 @@ def main():
     array_width = 10 * device_spacing_x
     offset_x = array_width + 500  # 向右偏移阵列宽度+500μm
     
-    scan_array = fet.scan_parameters_and_create_array(param_ranges, rows=10, cols=10, offset_x=int(offset_x), offset_y=0)
+    scan_array = fet.scan_parameters_and_create_array(param_ranges, rows=16, cols=16, offset_x=int(offset_x), offset_y=0)
     print(f"参数扫描阵列已创建: {scan_array.name}")
     
     # 保存布局文件
