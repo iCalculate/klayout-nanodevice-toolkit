@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>NanoDeviceLib init</description>
+ <version>v0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>true</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>
+import pya
+import sys
+import os
+
+macro_dir = os.path.dirname(__file__)
+sys.path.insert(0, macro_dir)
+
+from text_pcell import TextPCell
+from qrcode_pcell import QRCodePCell
+from fanout_pcell import FanoutPCell
+from digital_pcell import DigitalPCell
+from mark_pcell import MarkPCell
+
+class NanoDeviceLib(pya.Library):
+    def __init__(self):
+        self.description = "NanoDeviceLib: All PCells"
+        self.layout().register_pcell("TextPCell", TextPCell())
+        self.layout().register_pcell("QRCodePCell", QRCodePCell())
+        self.layout().register_pcell("FanoutPCell", FanoutPCell())
+        self.layout().register_pcell("DigitalPCell", DigitalPCell())
+        self.layout().register_pcell("MarkPCell", MarkPCell())
+        self.register("NanoDeviceLib")
+
+NanoDeviceLib() 
+</text>
+</klayout-macro>

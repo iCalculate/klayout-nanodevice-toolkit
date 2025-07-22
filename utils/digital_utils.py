@@ -107,6 +107,7 @@ class DigitalDisplay:
     @staticmethod
     def create_digit(digit, x, y, size=10.0, stroke_width=1.0, center=True):
         segments_dict, seg_len_h, seg_len_v, min_width, diag_len, diag_offset = DigitalDisplay.get_segments(size, stroke_width)
+        print(f"[DEBUG] create_digit: stroke_width={stroke_width}, min_width={min_width}")
         min_size = max(size, 2.0)
         offset_x = min_size * 0.5
         offset_y = min_size * 1
@@ -228,6 +229,17 @@ class DigitalDisplay:
                     GeometryUtils.Point(int(cx_scaled + dx1 + wx), int(cy_scaled + dy1 + wy)),
                 ]
                 polygons.append(GeometryUtils.Polygon(points))
+        return polygons
+
+    @staticmethod
+    def create_digits(chars, x, y, size=10.0, stroke_width=1.0, spacing=2.0, center=True):
+        print(f"[DEBUG] create_digits: stroke_width={stroke_width}")
+        polygons = []
+        n = len(chars)
+        for i, ch in enumerate(chars):
+            x_offset = x + i * (size + spacing)
+            polys = DigitalDisplay.create_digit(ch, x_offset, y, size=size, stroke_width=stroke_width, center=center)
+            polygons.extend(polys)
         return polygons
 
 # 末尾集成主程序测试入口

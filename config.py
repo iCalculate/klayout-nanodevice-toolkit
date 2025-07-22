@@ -7,8 +7,8 @@ Configuration file - defines global parameters and settings.
 # 工艺参数
 # Process parameters
 PROCESS_CONFIG = {
-    'min_feature_size': 0.1,      # 最小特征尺寸 (μm)
-    'min_spacing': 0.1,           # 最小间距 (μm)
+    'min_feature_size': 0.001,      # 最小特征尺寸 (μm)
+    'min_spacing': 0.001,           # 最小间距 (μm)
     'min_overlap': 0.05,          # 最小重叠 (μm)
     'dbu': 0.001,                 # 数据库单位 (μm)
 }

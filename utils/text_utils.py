@@ -34,7 +34,7 @@ class TextUtils:
         return TextUtils.UNIT_SCALE
     
     @staticmethod
-    def create_text_freetype(text, x, y, size_um=10, font_path='C:/Windows/Fonts/arial.ttf', spacing_um=2.0):
+    def create_text_freetype(text, x, y, size_um=10, font_path='C:/Windows/Fonts/arial.ttf', spacing_um=2.0, anchor='right_top'):
         """
         使用 freetype-py 将字符串转为多边形点集（适用于KLayout Polygon）。
         
@@ -47,6 +47,7 @@ class TextUtils:
             size_um (float): 字高（um）
             font_path (str): 字体文件路径（默认 'C:/Windows/Fonts/arial.ttf'）
             spacing_um (float): 字符间距（um）
+            anchor (str): 'right_top'（默认，兼容旧用法）或 'left_bottom'，决定锚点
         返回：
             List[Polygon]: 每个字符的多边形（含孔洞）
         Returns:
@@ -70,8 +71,15 @@ class TextUtils:
             spacing_nm = spacing_um * TextUtils.UNIT_SCALE
             advances.append(char_advance + spacing_nm)
         total_width = sum(advances)
-        cursor_x = x * TextUtils.UNIT_SCALE - total_width  # 从右上角向左排布
-        y_top = y * TextUtils.UNIT_SCALE
+        if anchor == 'right_top':
+            cursor_x = x * TextUtils.UNIT_SCALE - total_width  # 从右上角向左排布
+            y_top = y * TextUtils.UNIT_SCALE
+        elif anchor == 'left_bottom':
+            cursor_x = x * TextUtils.UNIT_SCALE  # 左下角对齐
+            y_top = y * TextUtils.UNIT_SCALE + size_um * TextUtils.UNIT_SCALE
+        else:
+            cursor_x = x * TextUtils.UNIT_SCALE - total_width  # 默认行为
+            y_top = y * TextUtils.UNIT_SCALE
         
         for idx, char in enumerate(text):
             try:

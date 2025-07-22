@@ -1,3 +1,7 @@
+# $description: TRS-toolkit
+# $version: v0.1
+# $show-in-menu
+# $priority: 1
 import pya
 from PyQt5.QtWidgets import (
     QDialog, QLabel, QLineEdit, QComboBox, QPushButton, QFormLayout,
