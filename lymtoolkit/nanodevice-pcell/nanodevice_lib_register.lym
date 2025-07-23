@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>NanoDeviceLib init</description>
+ <version>v0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>true</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import pya
+import sys
+import os
+
+def check_and_warn_missing_dependencies():
+    required = ['qrcode', 'freetype-py']
+
+    # Locate the first valid site-packages path in sys.path
+    site_package_path = next(
+        (p for p in sys.path if 'site-packages' in p.replace("\\", "/") and os.path.isdir(p)),
+        None
+    )
+
+    if site_package_path is None:
+        print("[NanoDeviceLib] Could not locate a valid site-packages directory. Please specify manually.")
+        return False
+
+    # Check whether each required package folder or metadata is present
+    installed_names = set(os.listdir(site_package_path))
+    missing = [
+        pkg for pkg in required
+        if not any(pkg.replace("-", "_") in name.replace("-", "_") for name in installed_names)
+    ]
+
+    if not missing:
+        return True
+
+    print(f"[NanoDeviceLib] Missing required packages: {missing}\n")
+    pkgs_str = " ".join(missing)
+    print("Please run the following command in your terminal to install the missing dependencies:\n")
+    print(f"python -m pip install --target=\"{site_package_path}\" {pkgs_str}")
+    return False
+
+# Call the check at the entry point
+if not check_and_warn_missing_dependencies():
+    sys.exit(1)
+
+
+sys.path.insert(0, os.path.dirname(__file__))
+from text_pcell import TextPCell
+from qrcode_pcell import QRCodePCell
+from fanout_pcell import FanoutPCell
+from digital_pcell import DigitalPCell
+from mark_pcell import MarkPCell
+
+class NanoDeviceLib(pya.Library):
+    def __init__(self):
+        self.description = "NanoDeviceLib: All PCells"
+        self.layout().register_pcell("TextPCell", TextPCell())
+        self.layout().register_pcell("QRCodePCell", QRCodePCell())
+        self.layout().register_pcell("FanoutPCell", FanoutPCell())
+        self.layout().register_pcell("DigitalPCell", DigitalPCell())
+        self.layout().register_pcell("MarkPCell", MarkPCell())
+        self.register("NanoDeviceLib")
+
+NanoDeviceLib() 
+</text>
+</klayout-macro>

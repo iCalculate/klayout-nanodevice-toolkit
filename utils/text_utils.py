@@ -71,16 +71,10 @@ class TextUtils:
             spacing_nm = spacing_um * TextUtils.UNIT_SCALE
             advances.append(char_advance + spacing_nm)
         total_width = sum(advances)
-        if anchor == 'right_top':
-            cursor_x = x * TextUtils.UNIT_SCALE - total_width  # 从右上角向左排布
-            y_top = y * TextUtils.UNIT_SCALE
-        elif anchor == 'left_bottom':
-            cursor_x = x * TextUtils.UNIT_SCALE  # 左下角对齐
-            y_top = y * TextUtils.UNIT_SCALE + size_um * TextUtils.UNIT_SCALE
-        else:
-            cursor_x = x * TextUtils.UNIT_SCALE - total_width  # 默认行为
-            y_top = y * TextUtils.UNIT_SCALE
         
+        cursor_x = 0
+        y_top = 0
+
         for idx, char in enumerate(text):
             try:
                 face = freetype.Face(font_path)
@@ -117,6 +111,50 @@ class TextUtils:
                 char_box = GeometryUtils.create_rectangle(cursor_x, y_top - size_um * TextUtils.UNIT_SCALE, size_um * 0.6 * TextUtils.UNIT_SCALE, size_um * TextUtils.UNIT_SCALE, center=False)
                 polys_all.append(char_box)
                 cursor_x += size_um * 0.6 * TextUtils.UNIT_SCALE + spacing_um * TextUtils.UNIT_SCALE
+        
+        # Anchor-based alignment: shift all polys to align anchor to (x, y)
+        if polys_all:
+            bbox = polys_all[0].bbox()
+            for poly in polys_all[1:]:
+                other = poly.bbox()
+                bbox = pya.Box(
+                    min(bbox.left, other.left),
+                    min(bbox.bottom, other.bottom),
+                    max(bbox.right, other.right),
+                    max(bbox.top, other.top)
+                )
+
+            center_x = (bbox.left + bbox.right) / 2
+            center_y = (bbox.top + bbox.bottom) / 2
+            target_x = x * TextUtils.UNIT_SCALE
+            target_y = y * TextUtils.UNIT_SCALE
+
+            # 计算 dx, dy 以将 anchor 对齐到 target 点
+            anchor_map = {
+                'left_top':      (bbox.left, bbox.top),
+                'left_center':   (bbox.left, center_y),
+                'left_bottom':   (bbox.left, bbox.bottom),
+                'center_top':    (center_x, bbox.top),
+                'center':        (center_x, center_y),
+                'center_bottom': (center_x, bbox.bottom),
+                'right_top':     (bbox.right, bbox.top),
+                'right_center':  (bbox.right, center_y),
+                'right_bottom':  (bbox.right, bbox.bottom),
+            }
+
+            if anchor in anchor_map:
+                anchor_x, anchor_y = anchor_map[anchor]
+                dx = target_x - anchor_x
+                dy = target_y - anchor_y
+            else:
+                dx = 0
+                dy = 0  # default fallback
+
+            polys_all = [poly.transformed(pya.Trans(dx, dy)) for poly in polys_all]
+
+
+    
+        
         return polys_all
 
 # 测试部分

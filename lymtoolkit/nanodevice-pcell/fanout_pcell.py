@@ -1,7 +1,7 @@
 import pya
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../utils')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../utils')))
 from fanout_utils import draw_pad, draw_trapezoidal_fanout, draw_lead_fanout
 from utils.geometry import GeometryUtils
 
@@ -40,24 +40,24 @@ class FanoutPCell(pya.PCellDeclarationHelper):
         layer = self.layer
 
         # 参数缩小10倍
-        inner_center = (self.inner_center_x / 10.0, self.inner_center_y / 10.0)
-        outer_center = (self.outer_center_x / 10.0, self.outer_center_y / 10.0)
-        inner_length = self.inner_length / 10.0
-        inner_width = self.inner_width / 10.0
-        inner_chamfer_size = self.inner_chamfer_size / 10.0
+        inner_center = (self.inner_center_x, self.inner_center_y)
+        outer_center = (self.outer_center_x, self.outer_center_y )
+        inner_length = self.inner_length
+        inner_width = self.inner_width
+        inner_chamfer_size = self.inner_chamfer_size
         inner_chamfer_type = self.inner_chamfer_type
         inner_corner_pts = self.inner_corner_pts
 
-        outer_length = self.outer_length / 10.0
-        outer_width = self.outer_width / 10.0
-        outer_chamfer_size = self.outer_chamfer_size / 10.0
+        outer_length = self.outer_length
+        outer_width = self.outer_width
+        outer_chamfer_size = self.outer_chamfer_size
         outer_chamfer_type = self.outer_chamfer_type
         outer_corner_pts = self.outer_corner_pts
 
         fanout_type = self.fanout_type
-        lead_line_width = self.lead_line_width / 10.0
+        lead_line_width = self.lead_line_width
         lead_corner_type = self.lead_corner_type
-        lead_chamfer_size = self.lead_chamfer_size / 10.0
+        lead_chamfer_size = self.lead_chamfer_size
 
         inner_edge = self.inner_edge if self.inner_edge else None
         outer_edge = self.outer_edge if self.outer_edge else None

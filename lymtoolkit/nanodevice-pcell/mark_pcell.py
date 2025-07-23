@@ -1,7 +1,7 @@
 import pya
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../utils')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../utils')))
 from mark_utils import MarkUtils
 from utils.geometry import GeometryUtils
 
@@ -45,18 +45,16 @@ class MarkPCell(pya.PCellDeclarationHelper):
         return f"MarkPCell: {self.shape}"
 
     def produce_impl(self):
-        MarkUtils.set_unit_scale(10)
-        # GeometryUtils.UNIT_SCALE = 1000
+        MarkUtils.set_unit_scale(1)
+        GeometryUtils.UNIT_SCALE = 1000
         ly = self.layout
         cell = self.cell
         layer = self.layer
-        print(f"[DEBUG] layout.dbu: {ly.dbu}")
-        print(f"[DEBUG] PCell param size: {self.size}")
         shape = self.shape
-        x = self.x/10.0
-        y = self.y/10.0
-        size = self.size/10.0
-        width = self.width/10.0
+        x = self.x
+        y = self.y
+        size = self.size
+        width = self.width
         p1 = self.parameter1
         p2 = self.parameter2
         p3 = self.parameter3
@@ -110,9 +108,9 @@ class MarkPCell(pya.PCellDeclarationHelper):
         shapes = mark.get_shapes() if hasattr(mark, 'get_shapes') else mark
         # 插入
         if isinstance(shapes, list):
-            print(f"[DEBUG] shapes count: {len(shapes)}")
+            # print(f"[DEBUG] shapes count: {len(shapes)}")
             for s in shapes:
                 cell.shapes(layer).insert(s)
         else:
             print(f"[DEBUG] single shape")
-            cell.shapes(layer).insert(shapes) 
+            # cell.shapes(layer).insert(shapes) 

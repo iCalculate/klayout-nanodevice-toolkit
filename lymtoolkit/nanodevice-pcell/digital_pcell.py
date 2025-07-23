@@ -1,7 +1,7 @@
 import pya
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../utils')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../utils')))
 from digital_utils import DigitalDisplay
 from utils.geometry import GeometryUtils
 
@@ -24,9 +24,6 @@ class DigitalPCell(pya.PCellDeclarationHelper):
         ly = self.layout
         cell = self.cell
         layer = self.layer
-        print(f"[DEBUG] layout.dbu: {ly.dbu}")
-        print(f"[DEBUG] PCell param stroke_width: {self.stroke_width}")
-        polys = DigitalDisplay.create_digits(self.text, self.x/10.0, self.y/10.0, size=self.size/10.0, stroke_width=self.stroke_width/10.0, spacing=self.spacing/10.0)
-        print(f"[DEBUG] polygons count: {len(polys)}")
+        polys = DigitalDisplay.create_digits(self.text, self.x, self.y, size=self.size, stroke_width=self.stroke_width, spacing=self.spacing)
         for poly in polys:
             cell.shapes(layer).insert(poly) 
