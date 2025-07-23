@@ -1,301 +1,138 @@
-# KLayout Semiconductor Device Layout Generator
+# KLayout  Nano-device Layout  Toolkit
 
 [![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![KLayout](https://img.shields.io/badge/KLayout-0.28+-green.svg)](https://www.klayout.de/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+<p align="center">
+  <img src="lymtoolkit/logo.png" alt="KLayout Nanodevice Toolkit Logo" width="300"/>
+</p>
+
+
+<h1 align="center">KLayout Nanodevice Toolkit</h1>
+<p align="center">
+  A modular, professional Python toolkit for rapid semiconductor device layout generation in KLayout.
+</p>
+
 ---
 
 ## Overview
 
-**KLayout Semiconductor Device Layout Generator** is a modular, extensible Python toolkit designed for rapid and professional semiconductor device layout generation within [KLayout](https://www.klayout.de/). This project streamlines the creation of MOSFET arrays, parameter sweeps, and complex device structures, integrating advanced features such as alignment marks, text annotations, and flexible fanout routing. It is suitable for both academic research and industrial prototyping.
+KLayout Nanodevice Toolkit provides a clean, extensible framework for generating parameterized device layouts, custom electrodes, advanced fanout, alignment marks, and more. All core logic is implemented in Python modules for easy customization and scripting, with KLayout macro (.lym) interfaces for GUI-based workflows.
 
 ---
 
-## Features
+## Installation
 
-- **Modular Architecture**: Clean separation of device components, utilities, and configuration for easy maintenance and extension.
-- **Comprehensive Device Support**: Dual-gate MOSFETs, custom electrode shapes, and parameterized device arrays.
-- **Flexible Parameter Sweep Engine**: Supports grid, random, and user-defined parameter scanning for systematic or statistical studies.
-- **Advanced Fanout and Marking System**: Multiple routing styles and professional alignment/measurement marks.
-- **Seamless KLayout GUI Integration**: Native interface for real-time layout preview and interactive design.
-- **Multi-language Text Annotation**: Built-in utilities for device labeling and documentation.
-- **Process-aware Configuration**: Centralized layer and process parameter management for design rule compliance.
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd KLayout_Nanodevice_Toolkit
+   ```
 
----
+2. **Install Python dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Table of Contents
-
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Dependencies](#dependencies)
-- [Quick Start](#quick-start)
-- [Usage Examples](#usage-examples)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+3. **Test device generation**
+   - You can directly run or modify scripts in the `components/` directory, or write your own scripts to call functions from `utils/`.
 
 ---
 
-## Project Structure
+## Utilities Overview (`utils/`)
 
-```
-klayout-nanodevice-toolkit/
-├── main.py                # Main entry point
-├── layout_generator.py    # Core layout engine
-├── gui_interface.py       # KLayout GUI integration
-├── components/            # Device modules (MOSFET, electrodes)
-├── utils/                 # Geometry, text, mark, fanout utilities
-├── config.py              # Layer and process config
-└── README.md
-```
+- **geometry.py**: Core geometric primitives, shape operations, transformations, boolean ops.
+- **fanout_utils.py**: Automated fanout routing, pad array generation, connection logic.
+- **mark_utils.py**: Alignment, measurement, and custom mark generation.
+- **text_utils.py**: Multi-language text label rendering and placement.
+- **digital_utils.py**: Digital device pattern utilities.
+- **QRcode_utils.py**: QR code generation and layout embedding.
 
 ---
 
-## Installation & Setup
+## Device Components (`components/`)
 
-### Prerequisites
+Each script generates a typical device structure. Example usage:
 
-1. **System Requirements**
-   - [KLayout](https://www.klayout.de/) >= 0.28
-   - Python >= 3.7
-   - Git (for cloning the repository)
-
-2. **Operating System Support**
-   - Windows 10/11
-   - macOS 10.14+
-   - Linux (Ubuntu 18.04+, CentOS 7+)
-
-### Installation
-
-#### Prerequisites
-- **KLayout** >= 0.28 ([Download](https://www.klayout.de/))
-- **Python** >= 3.7
-- **Git** (for cloning)
-
-#### Quick Setup
-```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/klayout-nanodevice-toolkit.git
-cd klayout-nanodevice-toolkit
-
-# 2. Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-```
-
-#### Configure KLayout
-1. **Launch KLayout**
-2. **Add project to Python path**: Tools → Manage Packages → Add Path
-3. **Navigate to your project directory** and click "OK"
-
-#### Verify Installation
-In KLayout Python Console (Tools → Python Console):
-```python
-# Test imports
-import pya
-from layout_generator import LayoutGenerator
-print("✅ Installation successful!")
-```
-
-### Dependencies
-
-#### Required
-- **freetype-py** >= 2.3.0 - Text rendering for layout labels
-- **pya** - KLayout Python API (included with KLayout)
-- **klayout.db** - KLayout database module (included with KLayout)
-
-#### Optional
-- **numpy** >= 1.21.0 - Numerical operations
-- **pandas** >= 1.3.0 - Data analysis
-- **matplotlib** >= 3.4.0 - Plotting and visualization
-
-#### Development
-- **pytest** >= 6.0.0 - Testing framework
-- **black** >= 21.0.0 - Code formatting
-- **flake8** >= 3.9.0 - Code linting
-
-### Troubleshooting
-
-**Common Issues:**
-
-1. **ImportError: No module named 'pya'**
-   - Solution: Run code within KLayout's Python environment, not standalone Python
-
-2. **ModuleNotFoundError: No module named 'layout_generator'**
-   - Solution: Add project directory to KLayout's Python path (Tools → Manage Packages)
-
-3. **AttributeError: 'Layout' object has no attribute '...'**
-   - Solution: Update KLayout to version 0.28 or higher
-
-4. **ImportError: No module named 'freetype'**
-   - Solution: Run `pip install -r requirements.txt`
-
-### Development Setup
-
-For contributors:
-```bash
-pip install -r requirements.txt
-pip install black flake8 pytest
-```
-
----
-
-## Quick Start
-
-### First Time Setup
-1. **Complete the installation** (see [Installation & Setup](#installation--setup) above)
-2. **Launch KLayout**
-3. **Open Python Console** (Tools → Python Console)
-
-### Basic Usage
-
-**Option 1: Run the Interactive Main Program**
-```python
-# In KLayout Python Console
-exec(open('main.py').read())
-```
-This will show an interactive menu where you can choose different operations.
-
-**Option 2: Create a Simple Device Array**
-```python
-# In KLayout Python Console
-from layout_generator import LayoutGenerator
-
-# Create generator
-generator = LayoutGenerator()
-
-# Configure array
-generator.set_array_config(
-    rows=3, 
-    cols=3, 
-    spacing_x=100, 
-    spacing_y=100
-)
-
-# Configure parameter scan
-generator.set_scan_config(
-    channel_width_range=[3, 5, 7], 
-    channel_length_range=[10, 20, 30], 
-    scan_type='grid'
-)
-
-# Generate and save
-generator.generate_layout()
-generator.save_layout("my_device_array.gds")
-generator.load_to_gui()  # View in KLayout
-```
-
-**Option 3: Launch the GUI Interface**
-```python
-# In KLayout Python Console
-from gui_interface import show_mosfet_layout_gui
-show_mosfet_layout_gui()
-```
-
-### Quick Examples
-
-**Create a Single Device**
-```python
-from components.mosfet import MOSFET
-
-device = MOSFET(
-    x=0, y=0,
-    channel_width=5.0,
-    channel_length=20.0,
-    gate_overlap=2.0,
-    device_label="Test_Device"
-)
-device.generate()
-```
-
-**Create a Parameter Sweep Array**
-```python
-from layout_generator import LayoutGenerator
-
-generator = LayoutGenerator()
-generator.set_array_config(rows=5, cols=5, spacing_x=80, spacing_y=80)
-generator.set_scan_config(
-    channel_width_range=[2, 3, 4, 5, 6],
-    channel_length_range=[5, 10, 15, 20, 25],
-    scan_type='custom'
-)
-generator.generate_layout()
-generator.save_layout("parameter_sweep.gds")
-```
+- **fet.py**: Field-Effect Transistor (FET) generator
+- **hallbar.py**: Hall bar device generator
+- **tlm.py**: Transfer Length Method (TLM) structure generator
+- **electrode.py**: Custom electrode and pad generator
+- **resolution.py**: Resolution test patterns
 
 ---
 
 ## Usage Examples
 
-**Custom Device Creation**
-```python
-from components.mosfet import MOSFET
+### 1. Single Device Creation (Python API)
 
-device = MOSFET(
+```python
+from components.fet import FET
+
+fet = FET(
     x=0, y=0,
     channel_width=5.0,
     channel_length=20.0,
     gate_overlap=2.0,
-    device_label="Custom_Device",
-    fanout_enabled=True
+    device_label="FET_1"
 )
-device.generate()
+fet.generate()
 ```
 
-**Launch the KLayout GUI Interface**
+### 2. Parameter Scan Array Creation (Python API)
+
 ```python
-from gui_interface import show_mosfet_layout_gui
-show_mosfet_layout_gui()
+from layout_generator import LayoutGenerator
+
+gen = LayoutGenerator()
+gen.set_array_config(rows=3, cols=3, spacing_x=100, spacing_y=100)
+gen.set_scan_config(
+    channel_width_range=[2, 4, 6],
+    channel_length_range=[10, 20, 30],
+    scan_type='grid'
+)
+gen.generate_layout()
+gen.save_layout("device_array.gds")
 ```
 
 ---
 
-## Configuration
+## KLayout Macro Usage (`lymtoolkit/`)
 
-All global settings, layer definitions, and process parameters are managed in `config.py`. This includes:
+### 1. Single Device via Macro (GUI)
 
-- **Layer Definitions**: Assign layer IDs, names, and colors for each process step.
-- **Process Parameters**: Set minimum feature size, spacing, overlap, and database units.
-- **Extensibility**: Easily add new device types or routing styles by extending the `components/` and `utils/` modules.
+- Install macros as described above.
+- In KLayout, go to **Tools → Macros → Run Macro...** or use the menu entry for the installed macro (e.g., `fet_pcell` or similar in `lymtoolkit/nanodevice-pcell/`).
+- A dialog will appear for you to input device parameters (e.g., channel width, length, overlap, label).
+- Click OK to place the device in your layout.
 
-For advanced configuration and extension, please refer to the [detailed documentation](docs/README.md).
+<p align="center">
+  <img src="lymtoolkit/singleFET.png" alt="Example: Single Device via Macro" width="400"/>
+</p>
+<p align="center"><em>Example: Single device created using lym macro in KLayout</em></p>
 
----
+### 2. Parameter Scan Array via Macro (GUI)
 
-## Troubleshooting
+- In KLayout, select the macro for array/parameter scan (e.g., `fanout_pcell` or a dedicated array macro in `lymtoolkit/nanodevice-pcell/`).
+- Enter the array configuration (rows, columns, spacing) and parameter sweep ranges in the dialog.
+- Confirm to automatically generate the full device array in the layout.
 
-- **ImportError**: Ensure your Python path and module names are correct.
-- **Layer Conflicts**: Check for duplicate or conflicting layer IDs in `config.py`.
-- **GUI Issues**: Make sure your KLayout version is >= 0.28.
-- **Parameter Errors**: Validate parameter ranges and types in your scripts.
+<p align="center">
+  <img src="lymtoolkit/arrayFET.png" alt="Example: Parameter Scan Array via Macro" width="800"/>
+</p>
+<p align="center"><em>Example: Parameter scan array created using lym macro in KLayout</em></p>
 
-If you encounter issues, please check the [FAQ](docs/README.md#faq) or open an issue.
+> **Note:** If the above images do not display, please add your screenshots as <code>lymtoolkit/example_single_device.png</code> and <code>lymtoolkit/example_array.png</code> in the repository.
 
----
-
-## Contributing
-
-Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) and submit pull requests or issues to help improve this project.
+> **Note:** The .lym macros provide a user-friendly GUI for device and array creation, internally calling the same Python logic as the API examples above. For advanced customization, edit or extend the Python modules in `components/` and `utils/`.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-## Acknowledgements
-
-- Built on top of the excellent [KLayout](https://www.klayout.de/) platform.
-- Inspired by open-source EDA and device design communities.
-
----
-
-> For more advanced usage, development guides, and API reference, please see [docs/README.md](docs/README.md). 
+Built on [KLayout](https://www.klayout.de/). Inspired by the open-source EDA community. 
