@@ -82,8 +82,9 @@ class FET:
         self.label_size = kwargs.get('label_size', 20.0)           # 编号大小 (μm)
         self.label_spacing = kwargs.get('label_spacing', 0.5)      # 编号字符间距 (相对于字符大小的比例)
         self.label_font = kwargs.get('label_font', 'C:/Windows/Fonts/OCRAEXT.TTF')  # 编号字体路径
+        self.label_anchor = kwargs.get('label_cursor', 'left_top')  # 编号位置: 'right_bottom', 'right_top', 'left_bottom', 'left_top'
         self.label_offset_x = kwargs.get('label_offset_x', 0.0)    # 编号位置X偏移量 (μm)
-        self.label_offset_y = kwargs.get('label_offset_y', -20.0)  # 编号位置Y偏移量 (μm)
+        self.label_offset_y = kwargs.get('label_offset_y', -0.0)  # 编号位置Y偏移量 (μm)
         self.use_digital_display = kwargs.get('use_digital_display', False)  # 是否使用DigitalDisplay，默认False（使用TextUtils）
         
     def setup_layers(self):
@@ -451,7 +452,8 @@ class FET:
                 char, char_x, char_y, 
                 size_um=int(char_size), 
                 font_path=self.label_font,
-                spacing_um=0.5
+                spacing_um=0.5,
+                anchor=self.label_anchor
             )
             
             for shape in text_shapes:

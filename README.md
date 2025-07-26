@@ -112,16 +112,32 @@ gen.save_layout("device_array.gds")
 </p>
 <p align="center"><em>Example: Single device created using lym macro in KLayout</em></p>
 
+<p align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="lymtoolkit/arrayFET.png" alt="FET Array" height="220"/>
+        <br/><em>FET Array</em>
+      </td>
+      <td align="center">
+        <img src="lymtoolkit/arrayHallBar.png" alt="HallBar Array" height="220"/>
+        <br/><em>HallBar Array</em>
+      </td>
+      <td align="center">
+        <img src="lymtoolkit/arrayTLM.png" alt="TLM Array" height="220"/>
+        <br/><em>TLM Array</em>
+      </td>
+    </tr>
+  </table>
+</p>
+<p align="center"><em>Typical Nano-devices Auto Generation</em></p>
+
 ### 2. Parameter Scan Array via Macro (GUI)
 
 - In KLayout, select the macro for array/parameter scan (e.g., `fanout_pcell` or a dedicated array macro in `lymtoolkit/nanodevice-pcell/`).
 - Enter the array configuration (rows, columns, spacing) and parameter sweep ranges in the dialog.
 - Confirm to automatically generate the full device array in the layout.
 
-<p align="center">
-  <img src="lymtoolkit/arrayFET.png" alt="Example: Parameter Scan Array via Macro" width="800"/>
-</p>
-<p align="center"><em>Example: Parameter scan array created using lym macro in KLayout</em></p>
 
 > **Note:** If the above images do not display, please add your screenshots as <code>lymtoolkit/example_single_device.png</code> and <code>lymtoolkit/example_array.png</code> in the repository.
 

@@ -72,8 +72,9 @@ class HallBar:
         self.mark_rotations = kwargs.get('mark_rotations', [0, 0, 2, 1])
         self.label_size = kwargs.get('label_size', 20.0)
         self.label_font = kwargs.get('label_font', 'C:/Windows/Fonts/OCRAEXT.TTF')
-        self.label_offset_x = kwargs.get('label_offset_x', 25.0)
-        self.label_offset_y = kwargs.get('label_offset_y', -35.0)
+        self.label_anchor = kwargs.get('label_cursor', 'left_top')  # 编号位置: 'right_bottom', 'right_top', 'left_bottom', 'left_top'
+        self.label_offset_x = kwargs.get('label_offset_x',  10.0)
+        self.label_offset_y = kwargs.get('label_offset_y', -10.0)
         self.electrode_text_label = kwargs.get('electrode_text_label', False)  # 是否为电极添加KLayout text label
 
     def setup_layers(self):
@@ -189,7 +190,8 @@ class HallBar:
             label_text, label_x, label_y,
             size_um=int(self.label_size),
             font_path=self.label_font,
-            spacing_um=0.5
+            spacing_um=0.5,
+            anchor=self.label_anchor
         )
         for shape in text_shapes:
             cell.shapes(layer_id).insert(shape)
@@ -209,7 +211,7 @@ class HallBar:
             mark_y = y - self.device_margin_y
             label_x = mark_x + 10
             label_y = mark_y + 10
-            param_text = f"W={self.bar_width}, L={self.bar_length}, VP={self.v_protrude_length}"
+            param_text = f"W={self.bar_width:.2f}, L={self.bar_length:.2f}, VP={self.v_protrude_length:.2f}"
             layer_id = LAYER_DEFINITIONS['labels']['id']
             text_obj = db.Text(param_text, int(label_x * 1000), int(label_y * 1000))
             cell.shapes(layer_id).insert(text_obj)
@@ -323,11 +325,11 @@ def main():
     # 优雅的参数扫描测试
     print("参数扫描测试：批量生成不同参数的HallBar器件...")
     param_ranges = {
-        'bar_width': [8.0, 16.0, 10],    # 行扫描
-        'bar_length': [40.0, 80.0, 10],  # 列扫描
+        'bar_width': [8.0, 16.0, 9],    # 行扫描
+        'bar_length': [40.0, 80.0, 9],  # 列扫描
         'v_protrude_length': [4.0, 8.0, 4],
     }
-    scan_cell = hallbar.scan_parameters_and_create_array(param_ranges, rows=10, cols=10, offset_x=0, offset_y=0)
+    scan_cell = hallbar.scan_parameters_and_create_array(param_ranges, rows=9, cols=9, offset_x=0, offset_y=0)
     print(f"参数扫描器件已创建: {scan_cell.name}")
 
     # 保存布局文件

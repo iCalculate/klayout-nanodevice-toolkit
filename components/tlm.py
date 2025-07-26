@@ -52,8 +52,9 @@ class TLM:
         self.channel_length = kwargs.get('channel_length', None)  # 沟道区长度，None时自动计算
         self.channel_width = kwargs.get('channel_width', 5.0)    # 沟道区宽度，默认5μm
         # ===== label offset 参数 =====
-        self.label_offset_x = kwargs.get('label_offset_x', 27.0)  # Excel label X偏移（相对左上mark中心）
-        self.label_offset_y = kwargs.get('label_offset_y', -35.0) # Excel label Y偏移（相对左上mark中心）
+        self.label_offset_x = kwargs.get('label_offset_x', 30.0)  # Excel label X偏移（相对左上mark中心）
+        self.label_offset_y = kwargs.get('label_offset_y', -10.0) # Excel label Y偏移（相对左上mark中心）
+        self.label_anchor = kwargs.get('label_cursor', 'left_top')  # 编号位置: 'right_bottom', 'right_top', 'left_bottom', 'left_top'
 
     def setup_layers(self):
         for layer_name, layer_info in LAYER_DEFINITIONS.items():
@@ -264,7 +265,8 @@ class TLM:
                 # 插入label（偏移由参数控制）
                 text_shapes = TextUtils.create_text_freetype(
                     excel_label, mark_x + self.label_offset_x, mark_y + self.label_offset_y,
-                    size_um=20, font_path='C:/Windows/Fonts/OCRAEXT.TTF', spacing_um=0.5
+                    size_um=20, font_path='C:/Windows/Fonts/OCRAEXT.TTF', spacing_um=0.5,
+                    anchor=self.label_anchor
                 )
                 for shape in text_shapes:
                     array_cell.shapes(label_layer).insert(shape)
