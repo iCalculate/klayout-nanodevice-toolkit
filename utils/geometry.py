@@ -684,4 +684,301 @@ class GeometryUtils:
             Point(int(cx + w2), int(cy + h2)),
             Point(int(cx - w2), int(cy + h2)),
         ]
-        return Polygon(points) 
+        return Polygon(points)
+
+    @staticmethod
+    def create_serpentine_wire(x, y, length, width, spacing, turns, direction='horizontal', curve_type='serpentine'):
+        """
+        创建蜿蜒线 - 支持蛇形、皮亚诺曲线、希尔伯特曲线
+        
+        Args:
+            x, y: 蜿蜒线中心坐标
+            length: 蜿蜒线总长度
+            width: 线宽
+            spacing: 线间距（相邻线段之间的距离）
+            turns: 转折次数（奇数）
+            direction: 起始方向 'horizontal' 或 'vertical'
+            curve_type: 曲线类型 'serpentine', 'peano', 'hilbert'
+            
+        Returns:
+            Polygon: 蜿蜒线多边形
+        """
+        s = GeometryUtils.UNIT_SCALE
+        x, y = x * s, y * s
+        length, width, spacing = length * s, width * s, spacing * s
+        
+        if curve_type == 'serpentine':
+            return GeometryUtils._create_serpentine_curve(x, y, length, width, spacing, turns, direction)
+        elif curve_type == 'peano':
+            return GeometryUtils._create_peano_curve(x, y, length, width, spacing, turns)
+        elif curve_type == 'hilbert':
+            return GeometryUtils._create_hilbert_curve(x, y, length, width, spacing, turns)
+        else:
+            return GeometryUtils._create_serpentine_curve(x, y, length, width, spacing, turns, direction)
+    
+    @staticmethod
+    def _create_serpentine_curve(x, y, region_width, region_height, line_width, line_spacing, direction, bend_style='rect', margin=0):
+        """创建蛇形曲线 - 连续路径，只有直角U形转折"""
+        
+        # 计算pitch（线宽+间距）
+        pitch = line_width + line_spacing
+        
+        # 验证区域尺寸
+        if direction == 'horizontal':
+            available_height = region_height - 2 * margin
+            num_lanes = int(available_height / pitch)
+            if num_lanes < 2:
+                print(f"Warning: Region height {region_height} too small for at least 2 lanes")
+                num_lanes = 2
+        else:
+            available_width = region_width - 2 * margin
+            num_lanes = int(available_width / pitch)
+            if num_lanes < 2:
+                print(f"Warning: Region width {region_width} too small for at least 2 lanes")
+                num_lanes = 2
+        
+        # 生成连续的中心线路径点（只有H/V段）
+        points = []
+        
+        if direction == 'horizontal':
+            # 水平蛇形：左右来回
+            # 计算实际使用的区域
+            actual_height = num_lanes * pitch
+            start_y = y - actual_height / 2 + line_width / 2
+            
+            # 边界位置（考虑边距）
+            left_bound = x - region_width / 2 + margin + line_width / 2
+            right_bound = x + region_width / 2 - margin - line_width / 2
+            
+            current_y = start_y
+            
+            for i in range(num_lanes):
+                if i % 2 == 0:
+                    # 偶数行：从左到右
+                    points.append((left_bound, current_y))
+                    points.append((right_bound, current_y))
+                else:
+                    # 奇数行：从右到左
+                    points.append((right_bound, current_y))
+                    points.append((left_bound, current_y))
+                
+                # 移动到下一行：添加垂直步进
+                if i < num_lanes - 1:
+                    current_y += pitch
+                    
+        else:
+            # 垂直蛇形：上下来回
+            # 计算实际使用的区域
+            actual_width = num_lanes * pitch
+            start_x = x - actual_width / 2 + line_width / 2
+            
+            # 边界位置（考虑边距）
+            bottom_bound = y - region_height / 2 + margin + line_width / 2
+            top_bound = y + region_height / 2 - margin - line_width / 2
+            
+            current_x = start_x
+            
+            for i in range(num_lanes):
+                if i % 2 == 0:
+                    # 偶数列：从下到上
+                    points.append((current_x, bottom_bound))
+                    points.append((current_x, top_bound))
+                else:
+                    # 奇数列：从上到下
+                    points.append((current_x, top_bound))
+                    points.append((current_x, bottom_bound))
+                
+                # 移动到下一列：添加水平步进
+                if i < num_lanes - 1:
+                    current_x += pitch
+        
+        # 使用pya.Path创建连续路径
+        return GeometryUtils._create_path_polygon(points, line_width)
+    
+    
+    @staticmethod
+    def _create_hilbert_curve(x, y, length, width, spacing, turns):
+        """创建希尔伯特曲线 - 连续路径"""
+        # 计算网格大小
+        grid_size = length / (2 ** turns)
+        current_x = x - length / 2
+        current_y = y - length / 2
+        
+        # 递归生成希尔伯特曲线路径
+        path_points = GeometryUtils._generate_hilbert_path(turns, current_x, current_y, grid_size)
+        
+        # 将路径转换为连续的多边形
+        return GeometryUtils._path_to_polygon(path_points, width)
+    
+    
+    @staticmethod
+    def _generate_hilbert_path(order, x, y, size):
+        """生成希尔伯特曲线路径点 - 递归实现"""
+        if order == 0:
+            return [(x, y)]
+        
+        # 递归生成希尔伯特曲线
+        points = []
+        step = size / 2
+        
+        # 基础2x2希尔伯特曲线
+        if order == 1:
+            pattern = [
+                (0, 0), (0, 1), (1, 1), (1, 0)
+            ]
+        else:
+            # 递归生成更高阶的希尔伯特曲线
+            pattern = GeometryUtils._hilbert_pattern(order)
+        
+        for px, py in pattern:
+            points.append((x + px * step, y + py * step))
+        
+        return points
+    
+    
+    @staticmethod
+    def _hilbert_pattern(order):
+        """生成希尔伯特曲线模式 - 递归实现"""
+        if order == 1:
+            return [(0, 0), (0, 1), (1, 1), (1, 0)]
+        
+        # 递归生成更高阶的希尔伯特曲线
+        prev_pattern = GeometryUtils._hilbert_pattern(order - 1)
+        new_pattern = []
+        
+        # 将前一个模式复制到四个象限
+        size = 2 ** (order - 1)
+        
+        # 左下象限（旋转180度）
+        for px, py in prev_pattern:
+            new_pattern.append((size - 1 - px, size - 1 - py))
+        
+        # 右下象限（不变）
+        for px, py in prev_pattern:
+            new_pattern.append((size + px, size - 1 - py))
+        
+        # 右上象限（不变）
+        for px, py in prev_pattern:
+            new_pattern.append((size + px, size + py))
+        
+        # 左上象限（旋转180度）
+        for px, py in prev_pattern:
+            new_pattern.append((size - 1 - px, size + py))
+        
+        return new_pattern
+    
+    
+    @staticmethod
+    def _create_path_polygon(points, line_width):
+        """使用pya.Path创建连续路径多边形"""
+        import pya
+        
+        if len(points) < 2:
+            return GeometryUtils.create_rectangle(points[0][0], points[0][1], line_width, line_width, center=True)
+        
+        # 创建pya.Path对象
+        # 使用方形端点，斜接连接，保持尖锐的角和恒定宽度
+        path = pya.Path(points, line_width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
+        
+        # 转换为多边形
+        polygon = path.polygon()
+        
+        # 转换为Region并合并（确保单一连续多边形）
+        region = pya.Region([polygon])
+        merged_region = region.merged()
+        
+        return merged_region
+    
+    @staticmethod
+    def make_hilbert(order, step, line_w, margin=0.0):
+        """
+        生成正交Hilbert曲线 - 使用整数网格Hilbert索引器
+        
+        Args:
+            order: 曲线阶数 (≥1)
+            step: 线段长度 (μm)
+            line_w: 线条宽度 (μm)
+            margin: 边距 (μm)
+            
+        Returns:
+            pya.Region: 连续的多边形区域
+        """
+        import pya
+        
+        if order < 1:
+            raise ValueError("Order must be >= 1")
+        
+        # 计算网格大小
+        N = 1 << order  # N = 2**order
+        
+        # 生成Hilbert曲线点
+        points = []
+        for d in range(N * N):
+            xi, yi = GeometryUtils._d2xy(N, d)
+            # 直接使用微米坐标，不转换DBU
+            x = margin + xi * step
+            y = margin + yi * step
+            points.append(pya.Point(x, y))
+        
+        # 验证点序列
+        GeometryUtils._validate_hilbert_points(points, order, step)
+        
+        # 创建单一连续路径
+        path = pya.Path(points, line_w, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
+        
+        # 转换为多边形并合并
+        polygon = path.polygon()
+        region = pya.Region([polygon])
+        merged_region = region.merged()
+        
+        return merged_region
+    
+    
+    @staticmethod
+    def _validate_hilbert_points(points, order, step):
+        """
+        验证Hilbert曲线点序列的正确性
+        
+        Args:
+            points: 点序列
+            order: 曲线阶数
+            step: 线段长度
+        """
+        if not points:
+            raise ValueError("Hilbert curve points list is empty")
+        
+        # 检查点数量是否正确
+        expected_points = (1 << order) * (1 << order)  # 2^(2*order)
+        if len(points) != expected_points:
+            print(f"Warning: Expected {expected_points} points, got {len(points)}")
+        
+        # 检查相邻点之间的距离
+        for i in range(len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
+            dx = abs(p2.x - p1.x)
+            dy = abs(p2.y - p1.y)
+            
+            # 相邻点应该要么水平相邻，要么垂直相邻
+            if not ((dx == step and dy == 0) or (dx == 0 and dy == step)):
+                print(f"Warning: Non-adjacent points at index {i}: ({p1.x}, {p1.y}) -> ({p2.x}, {p2.y})")
+                break
+    
+    @staticmethod
+    def _d2xy(N, d):
+        """Hilbert曲线d到(x,y)的映射"""
+        x = y = 0
+        s = 1
+        t = d
+        while s < N:
+            rx = 1 & (t // 2)
+            ry = 1 & (t ^ rx)
+            if ry == 0:
+                if rx == 1:
+                    x, y = (s-1 - x), (s-1 - y)
+                x, y = y, x
+            x += s * rx
+            y += s * ry
+            t //= 4
+            s *= 2
+        return x, y 
