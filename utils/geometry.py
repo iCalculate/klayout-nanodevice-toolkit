@@ -982,3 +982,196 @@ class GeometryUtils:
             t //= 4
             s *= 2
         return x, y 
+    
+    @staticmethod
+    def _create_peano_curve(x, y, length, width, spacing, turns):
+        """Create Peano curve - space-filling curve that divides space into 9 parts"""
+        import pya
+        s = GeometryUtils.UNIT_SCALE
+        x, y = x * s, y * s
+        length, width, spacing = length * s, width * s, spacing * s
+        
+        # Generate Peano curve points
+        points = GeometryUtils._generate_peano_path(turns, x, y, length)
+        
+        # Create path from points
+        path = pya.Path(points, width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
+        
+        # Convert to polygon
+        polygon = path.polygon()
+        
+        # Convert to Region and merge (ensure single continuous polygon)
+        region = pya.Region([polygon])
+        merged_region = region.merged()
+        
+        return merged_region
+    
+    @staticmethod
+    def _generate_peano_path(order, x, y, size):
+        """Generate Peano curve path points"""
+        points = []
+        step = size / (3 ** order)
+        
+        for i in range(3 ** (2 * order)):
+            px, py = GeometryUtils._peano_point(i, order)
+            points.append(Point(int(x + px * step), int(y + py * step)))
+        
+        return points
+    
+    @staticmethod
+    def _peano_point(t, order):
+        """Get point on Peano curve at parameter t"""
+        x, y = 0, 0
+        s = 1
+        
+        for i in range(order):
+            # Peano curve divides space into 3x3 grid
+            tx = t % 3
+            ty = (t // 3) % 3
+            
+            # Apply Peano transformation
+            if tx == 0:
+                if ty == 0:
+                    x, y = x, y
+                elif ty == 1:
+                    x, y = s - x, y
+                else:  # ty == 2
+                    x, y = x, y
+            elif tx == 1:
+                if ty == 0:
+                    x, y = x, s - y
+                elif ty == 1:
+                    x, y = s - x, s - y
+                else:  # ty == 2
+                    x, y = x, s - y
+            else:  # tx == 2
+                if ty == 0:
+                    x, y = x, y
+                elif ty == 1:
+                    x, y = s - x, y
+                else:  # ty == 2
+                    x, y = x, y
+            
+            t //= 9
+            s *= 3
+        
+        return x, y
+    
+    @staticmethod
+    def _create_gosper_curve(x, y, length, width, spacing, turns):
+        """Create Gosper curve (flowsnake) - hexagonal space-filling curve"""
+        import pya
+        from utils.gosper_curve import make_gosper_polygon
+        
+        s = GeometryUtils.UNIT_SCALE
+        x, y = x * s, y * s
+        length, width, spacing = length * s, width * s, spacing * s
+        
+        # Use the robust Gosper implementation
+        # Calculate step size based on length and order
+        order = max(1, turns)  # Ensure at least order 1
+        step = length / (7 ** order) if order > 0 else length
+        
+        # Generate Gosper polygon
+        dpolygon = make_gosper_polygon(order, step, width, origin=(x, y), dbu=1.0)
+        
+        # Convert to Region for compatibility
+        region = pya.Region([dpolygon])
+        merged_region = region.merged()
+        
+        return merged_region
+    
+    @staticmethod
+    def _generate_gosper_path(order, x, y, size):
+        """Generate Gosper curve path points"""
+        points = []
+        step = size / (7 ** order)
+        
+        for i in range(7 ** order):
+            px, py = GeometryUtils._gosper_point(i, order)
+            points.append(Point(int(x + px * step), int(y + py * step)))
+        
+        return points
+    
+    @staticmethod
+    def _gosper_point(t, order):
+        """Get point on Gosper curve at parameter t"""
+        x, y = 0, 0
+        s = 1
+        
+        for i in range(order):
+            # Gosper curve uses 7-fold symmetry
+            direction = t % 7
+            
+            # Apply Gosper transformation based on direction
+            if direction == 0:
+                x, y = x, y
+            elif direction == 1:
+                x, y = x + s, y
+            elif direction == 2:
+                x, y = x + s/2, y + s * 0.866  # sqrt(3)/2
+            elif direction == 3:
+                x, y = x - s/2, y + s * 0.866
+            elif direction == 4:
+                x, y = x - s, y
+            elif direction == 5:
+                x, y = x - s/2, y - s * 0.866
+            else:  # direction == 6
+                x, y = x + s/2, y - s * 0.866
+            
+            t //= 7
+            s *= 7
+        
+        return x, y
+    
+    @staticmethod
+    def _create_moore_curve(x, y, length, width, spacing, turns):
+        """Create Moore curve - closed version of Hilbert curve"""
+        import pya
+        s = GeometryUtils.UNIT_SCALE
+        x, y = x * s, y * s
+        length, width, spacing = length * s, width * s, spacing * s
+        
+        # Generate Moore curve points
+        points = GeometryUtils._generate_moore_path(turns, x, y, length)
+        
+        # Create path from points
+        path = pya.Path(points, width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
+        
+        # Convert to polygon
+        polygon = path.polygon()
+        
+        # Convert to Region and merge (ensure single continuous polygon)
+        region = pya.Region([polygon])
+        merged_region = region.merged()
+        
+        return merged_region
+    
+    @staticmethod
+    def _generate_moore_path(order, x, y, size):
+        """Generate Moore curve path points"""
+        points = []
+        step = size / (2 ** order)
+        
+        # Moore curve is a closed Hilbert curve
+        for i in range(4 ** order):
+            px, py = GeometryUtils._moore_point(i, order)
+            points.append(Point(int(x + px * step), int(y + py * step)))
+        
+        # Close the curve by connecting last point to first
+        if points:
+            points.append(points[0])
+        
+        return points
+    
+    @staticmethod
+    def _moore_point(t, order):
+        """Get point on Moore curve at parameter t"""
+        # Moore curve is essentially a Hilbert curve with connection
+        # Use the existing Hilbert pattern generation
+        pattern = GeometryUtils._hilbert_pattern(order)
+        if t < len(pattern):
+            return pattern[t]
+        else:
+            # If t exceeds pattern length, return the last point
+            return pattern[-1]
