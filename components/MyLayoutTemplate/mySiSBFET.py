@@ -82,9 +82,8 @@ class FET:
         self.label_size = kwargs.get('label_size', 20.0)           # 编号大小 (μm)
         self.label_spacing = kwargs.get('label_spacing', 0.5)      # 编号字符间距 (相对于字符大小的比例)
         self.label_font = kwargs.get('label_font', 'C:/Windows/Fonts/OCRAEXT.TTF')  # 编号字体路径
-        self.label_anchor = kwargs.get('label_cursor', 'left_top')  # 编号位置: 'right_bottom', 'right_top', 'left_bottom', 'left_top'
         self.label_offset_x = kwargs.get('label_offset_x', 0.0)    # 编号位置X偏移量 (μm)
-        self.label_offset_y = kwargs.get('label_offset_y', -0.0)  # 编号位置Y偏移量 (μm)
+        self.label_offset_y = kwargs.get('label_offset_y', 0.0)  # 编号位置Y偏移量 (μm)
         self.use_digital_display = kwargs.get('use_digital_display', False)  # 是否使用DigitalDisplay，默认False（使用TextUtils）
         
     def setup_layers(self):
@@ -177,22 +176,171 @@ class FET:
     
     def create_dielectric_layer(self, cell, x=0.0, y=0.0):
         """
-        创建绝缘层
-        
+        创建绝缘层：覆盖整个器件region的大矩形，只在source和drain的outer pad上开两个窗口（窗口略小于outer pad，带倒角）
         Args:
             cell: 目标单元格
             x, y: 器件中心坐标
         """
+        try:
+            import pya
+            Region = pya.Region
+        except Exception:
+            import klayout.db as db
+            Region = db.Region
         layer_id = LAYER_DEFINITIONS['top_dielectric']['id']
-        
-        # 绝缘层矩形
-        dielectric = GeometryUtils.create_rectangle(
-            x, y,
-            self.ch_len * 2,
-            self.ch_width * 2,
-            center=True
+
+        # 1. 生成大矩形region，覆盖整个器件区域
+        region_width = self.device_margin_x * 2
+        region_height = self.device_margin_y * 2
+        dielectric_rect = GeometryUtils.create_rectangle_polygon(x, y, region_width, region_height, center=True)
+        dielectric_region = Region(dielectric_rect)
+
+        # 2. 生成source/drain outer pad窗口（略小于pad，带倒角）
+        shrink_ratio = 0.85  # 窗口比pad略小
+        window_length = self.outer_pad_size * shrink_ratio
+        window_width = self.outer_pad_size * shrink_ratio
+        chamfer_size = self.chamfer_size * shrink_ratio if self.source_drain_outer_chamfer != 'none' else 0
+        chamfer_type = self.source_drain_outer_chamfer
+
+        # source outer pad中心
+        source_outer_center = (
+            x - self.ch_len/2 - self.source_drain_outer_offset_x,
+            y + self.source_drain_outer_offset_y
         )
-        cell.shapes(layer_id).insert(dielectric)
+        source_window = draw_pad(
+            center=source_outer_center,
+            length=window_length,
+            width=window_width,
+            chamfer_size=chamfer_size,
+            chamfer_type=chamfer_type
+        ).polygon
+
+        # drain outer pad中心
+        drain_outer_center = (
+            x + self.ch_len/2 + self.source_drain_outer_offset_x,
+            y + self.source_drain_outer_offset_y
+        )
+        drain_window = draw_pad(
+            center=drain_outer_center,
+            length=window_length,
+            width=window_width,
+            chamfer_size=chamfer_size,
+            chamfer_type=chamfer_type
+        ).polygon
+
+        # 3. 用Region布尔减法开窗口
+        dielectric_region -= Region(source_window)
+        dielectric_region -= Region(drain_window)
+
+        # 4. 插入到cell
+        cell.shapes(layer_id).insert(dielectric_region)
+    
+    def create_dielectric_layer_top_gate_outer(self, cell, x=0.0, y=0.0):
+        """
+        创建绝缘层：覆盖整个器件region的大矩形，只在source和drain的outer pad上开两个窗口（窗口略小于outer pad，带倒角）
+        Args:
+            cell: 目标单元格
+            x, y: 器件中心坐标
+        """
+        try:
+            import pya
+            Region = pya.Region
+        except Exception:
+            import klayout.db as db
+            Region = db.Region
+        layer_id = LAYER_DEFINITIONS['top_dielectric']['id']
+
+        # 1. 生成大矩形region，覆盖整个器件区域
+        region_width = self.device_margin_x * 2
+        region_height = self.device_margin_y * 2
+        dielectric_rect = GeometryUtils.create_rectangle_polygon(x, y, region_width, region_height, center=True)
+        dielectric_region = Region(dielectric_rect)
+
+        # 2. 生成source/drain outer pad窗口（略小于pad，带倒角）
+        shrink_ratio = 0.85  # 窗口比pad略小
+        window_length = self.outer_pad_size * shrink_ratio
+        window_width = self.outer_pad_size * shrink_ratio
+        chamfer_size = self.chamfer_size * shrink_ratio if self.source_drain_outer_chamfer != 'none' else 0
+        chamfer_type = self.source_drain_outer_chamfer
+
+        # top gate outer pad中心
+        source_outer_center = (
+            x,
+            y + self.top_gate_outer_offset_y
+        )
+        gate_window = draw_pad(
+            center=source_outer_center,
+            length=window_length,
+            width=window_width,
+            chamfer_size=chamfer_size,
+            chamfer_type=chamfer_type
+        ).polygon
+
+
+        # 3. 用Region布尔减法开窗口
+        dielectric_region -= Region(gate_window)
+
+        # 4. 插入到cell
+        cell.shapes(layer_id).insert(dielectric_region)
+
+    def create_dielectric_layer_inner_window(self, cell, x=0.0, y=0.0):
+        """
+        创建绝缘层：覆盖整个器件region的大矩形，只在source和drain的inner pad上开两个窗口（窗口与源漏inner pad形状完全一致，仅略小，倒角类型一致）
+        Args:
+            cell: 目标单元格
+            x, y: 器件中心坐标
+        """
+        try:
+            import pya
+            Region = pya.Region
+        except Exception:
+            import klayout.db as db
+            Region = db.Region
+        layer_id = LAYER_DEFINITIONS['top_dielectric']['id']
+
+        # 1. 生成大矩形region，覆盖整个器件区域
+        region_width = self.device_margin_x * 2
+        region_height = self.device_margin_y * 2
+        dielectric_rect = GeometryUtils.create_rectangle_polygon(x, y, region_width, region_height, center=True)
+        dielectric_region = Region(dielectric_rect)
+
+        # 2. 生成source/drain inner pad窗口（与源漏inner pad参数完全一致，仅略小）
+        shrink_ratio = 0.95  # 窗口比inner pad略小
+        inner_length = self.ch_len * shrink_ratio
+        inner_width = self.ch_width * self.source_drain_inner_width_ratio * shrink_ratio
+        chamfer_size = self.chamfer_size * shrink_ratio if self.source_drain_inner_chamfer != 'none' else 0
+        chamfer_type = self.source_drain_inner_chamfer
+
+        # source inner pad中心
+        source_inner_center = (
+            x - self.ch_len, y
+        )
+        source_window = draw_pad(
+            center=source_inner_center,
+            length=inner_length,
+            width=inner_width,
+            chamfer_size=chamfer_size,
+            chamfer_type=chamfer_type
+        ).polygon
+
+        # drain inner pad中心
+        drain_inner_center = (
+            x + self.ch_len, y
+        )
+        drain_window = draw_pad(
+            center=drain_inner_center,
+            length=inner_length,
+            width=inner_width,
+            chamfer_size=chamfer_size,
+            chamfer_type=chamfer_type
+        ).polygon
+
+        # 3. 用Region布尔减法开窗口
+        dielectric_region -= Region(source_window)
+        dielectric_region -= Region(drain_window)
+
+        # 4. 插入到cell
+        cell.shapes(layer_id).insert(dielectric_region)
     
     def create_channel_material(self, cell, x=0.0, y=0.0):
         """
@@ -283,7 +431,7 @@ class FET:
         inner_pad = draw_pad(
             center=(x, y),
             length=self.ch_len * self.top_gate_inner_width_ratio,
-            width=self.ch_width * self.top_gate_inner_width_ratio,
+            width=self.ch_width * self.bottom_gate_inner_width_ratio,  # 使用与底栅相同的宽度比例
             chamfer_size=0 if self.top_gate_inner_chamfer == 'none' else self.chamfer_size,
             chamfer_type=self.top_gate_inner_chamfer
         )
@@ -452,8 +600,7 @@ class FET:
                 char, char_x, char_y, 
                 size_um=int(char_size), 
                 font_path=self.label_font,
-                spacing_um=0.5,
-                anchor=self.label_anchor
+                spacing_um=0.5
             )
             
             for shape in text_shapes:
@@ -570,7 +717,9 @@ class FET:
         
         # 按层次顺序创建器件结构
         self.create_bottom_gate_electrodes(cell, x, y)
-        self.create_dielectric_layer(cell, x, y)
+        # self.create_dielectric_layer(cell, x, y)
+        self.create_dielectric_layer_top_gate_outer(cell, x, y)
+        # self.create_dielectric_layer_inner_window(cell, x, y)
         self.create_channel_material(cell, x, y)
         self.create_source_drain_electrodes(cell, x, y)
         self.create_top_gate_electrode(cell, x, y)
@@ -692,19 +841,12 @@ class FET:
                     else:
                         current_params['ch_len'] = ch_len_range[0]
                 
-                # 列扫描：gate_space
-                if 'gate_space' in param_ranges:
-                    gate_space_range = param_ranges['gate_space']
-                    if len(gate_space_range) == 3:
-                        min_val, max_val, steps = gate_space_range
-                        gate_space = min_val + col * (max_val - min_val) / (steps - 1)
-                        current_params['gate_space'] = gate_space
-                    else:
-                        current_params['gate_space'] = gate_space_range[0]
+                # gate_space 使用全局设置的值
+                current_params['gate_space'] = self.gate_space
                 
-                # gate_width 固定为 ch_len/2
+                # gate_width 为 (ch_len - 2μm) / 2
                 if 'ch_len' in current_params:
-                    current_params['gate_width'] = current_params['ch_len'] / 2
+                    current_params['gate_width'] = (current_params['ch_len'] - 5.0) / 2
                 
                 # 设置当前器件的参数
                 self.set_device_parameters(**current_params)
@@ -739,11 +881,13 @@ def main():
     # 创建FET器件实例
     fet = FET()
     
+    # 全局设置gate_space为2μm（用于参数扫描中的所有器件）
+    fet.gate_space = 2.0
+    
     # 设置器件参数
     fet.set_device_parameters(
         ch_width=5.0,    # 沟道宽度 5μm
-        ch_len=14.0,     # 沟道长度 10μm
-        gate_space=2.0,  # 栅极边缘到边缘间距 3.5μm
+        ch_len=14.0,     # 沟道长度 14μm
         gate_width=5.0   # 栅极宽度 5μm
     )
     
@@ -753,34 +897,30 @@ def main():
     print(f"单个器件已创建: {single_device.name}")
     
     # 创建10x10器件阵列
-    print("创建10x10器件阵列...")
-    device_array = fet.create_device_array(rows=10, cols=10)
-    print(f"器件阵列已创建: {device_array.name}")
+    #print("创建10x10器件阵列...")
+    #device_array = fet.create_device_array(rows=10, cols=10)
+    #print(f"器件阵列已创建: {device_array.name}")
     
     # 创建参数扫描阵列（行列扫描）
     print("创建参数扫描阵列...")
     param_ranges = {
-        'ch_width': [5.0, 15.0, 16],    # 行扫描：沟道宽度从5μm到15μm，5个值
-        'gate_space': [1.0, 5.0, 16],       # 列扫描：沟道长度从3μm到8μm，5个值
-        # gate_space 固定为 2
-        # gate_width 固定为 ch_len/2
+        'ch_width': [10.0, 45.0, 14],    # 行扫描：沟道宽度从5μm到30μm，12个值
+        'ch_len': [10.0, 30.0, 14],       # 列扫描：沟道长度从5μm到20μm，12个值
+        # gate_space 固定为 1μm（通过 fet.gate_space 全局设置）
+        # gate_width 为 (ch_len - 2μm) / 2
     }
     
-    # 计算阵列总尺寸并设置偏移
-    device_spacing_x = fet.device_margin_x * 2 + 50
-    device_spacing_y = fet.device_margin_y * 2 + 50
-    array_width = 10 * device_spacing_x
-    offset_x = array_width + 500  # 向右偏移阵列宽度+500μm
-    
-    scan_array = fet.scan_parameters_and_create_array(param_ranges, rows=16, cols=16, offset_x=int(offset_x), offset_y=0)
+    # 从原点开始创建参数扫描阵列
+    scan_array = fet.scan_parameters_and_create_array(param_ranges, rows=14, cols=14, offset_x=0, offset_y=0)
     print(f"参数扫描阵列已创建: {scan_array.name}")
-    
+
     # 保存布局文件
-    output_file = "TEST_FET_COMP.gds"
+    output_file = "TEST_mySiSBFET_COMP.gds"
     fet.layout.write(output_file)
     print(f"布局文件已保存: {output_file}")
     
-    print("FET器件生成测试完成！")
+    print("mySiSBFET器件生成测试完成！")
+    
 
 
 if __name__ == "__main__":
