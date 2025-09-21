@@ -86,7 +86,7 @@ class HallBar:
             setattr(self, k, v)
 
     def create_bar(self, cell, x=0.0, y=0.0):
-        layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+        layer_id = LAYER_DEFINITIONS['channel']['id']
         # 沟道主区
         bar = GeometryUtils.create_rectangle(
             x, y, self.bar_length, self.bar_width, center=True

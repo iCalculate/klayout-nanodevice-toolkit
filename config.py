@@ -17,14 +17,15 @@ PROCESS_CONFIG = {
 # Layer definitions
 LAYER_DEFINITIONS = {
     'bottom_gate': {'id': 1, 'name': 'Bottom Gate', 'color': 0xFF0000, 'description': '底栅电极'},
-    'channel_etch': {'id': 2, 'name': 'Channel Etch', 'color': 0x00FF00, 'description': '沟道材料刻蚀'},
-    'source_drain': {'id': 3, 'name': 'Source/Drain', 'color': 0x0000FF, 'description': '源漏电极'},
-    'dielectric': {'id': 4, 'name': 'Dielectric', 'color': 0xFFFF00, 'description': '介电层'},
-    'top_gate': {'id': 5, 'name': 'Top Gate', 'color': 0xFF00FF, 'description': '顶栅电极'},
-    'alignment_marks': {'id': 6, 'name': 'Alignment Marks', 'color': 0x00FFFF, 'description': '对准标记'},
-    'labels': {'id': 7, 'name': 'Labels', 'color': 0xFFFFFF, 'description': '标签'},
-    'pads': {'id': 8, 'name': 'Pads', 'color': 0xFF8000, 'description': '测试焊盘'},
-    'routing': {'id': 9, 'name': 'Routing', 'color': 0x8000FF, 'description': '布线层'},
+    'bottom_dielectric': {'id': 2, 'name': 'Bottom Dielectric', 'color': 0x00FF00, 'description': '底介电层'},
+    'channel': {'id': 3, 'name': 'Channel', 'color': 0x0000FF, 'description': '沟道材料'},
+    'source_drain': {'id': 4, 'name': 'Source/Drain', 'color': 0xFFFF00, 'description': '源漏电极'},
+    'top_dielectric': {'id': 5, 'name': 'Top Dielectric', 'color': 0xFF00FF, 'description': '顶介电层'},
+    'top_gate': {'id': 6, 'name': 'Top Gate', 'color': 0xFF8000, 'description': '顶栅电极'},
+    'alignment_marks': {'id': 7, 'name': 'Alignment Marks', 'color': 0x00FFFF, 'description': '对准标记'},
+    'labels': {'id': 8, 'name': 'Labels', 'color': 0xFFFFFF, 'description': '标签'},
+    'pads': {'id': 9, 'name': 'Pads', 'color': 0x8000FF, 'description': '测试焊盘'},
+    'routing': {'id': 10, 'name': 'Routing', 'color': 0xFF0080, 'description': '布线层'},
 }
 
 # 字体设置

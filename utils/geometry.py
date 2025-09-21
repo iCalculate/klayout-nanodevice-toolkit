@@ -935,6 +935,7 @@ class GeometryUtils:
     
     
     @staticmethod
+<<<<<<< Updated upstream
     def _validate_hilbert_points(points, order, step):
         """
         验证Hilbert曲线点序列的正确性
@@ -965,6 +966,8 @@ class GeometryUtils:
                 break
     
     @staticmethod
+=======
+>>>>>>> Stashed changes
     def _d2xy(N, d):
         """Hilbert曲线d到(x,y)的映射"""
         x = y = 0
@@ -981,6 +984,7 @@ class GeometryUtils:
             y += s * ry
             t //= 4
             s *= 2
+<<<<<<< Updated upstream
         return x, y 
     
     @staticmethod
@@ -1175,3 +1179,6 @@ class GeometryUtils:
         else:
             # If t exceeds pattern length, return the last point
             return pattern[-1]
+=======
+        return x, y 
+>>>>>>> Stashed changes

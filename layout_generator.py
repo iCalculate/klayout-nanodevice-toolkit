@@ -240,12 +240,12 @@ class LayoutGenerator:
         # 插入直接形状
         for device in self.devices:
             for shape_name, shapes in device.shapes.items():
-                if shape_name == 'channel_etch':
+                if shape_name == 'channel':
                     for shape in shapes:
-                        self.top_cell.shapes(LAYER_DEFINITIONS['channel_etch']['id']).insert(shape)
-                elif shape_name == 'dielectric':
+                        self.top_cell.shapes(LAYER_DEFINITIONS['channel']['id']).insert(shape)
+                elif shape_name == 'top_dielectric':
                     for shape in shapes:
-                        self.top_cell.shapes(LAYER_DEFINITIONS['dielectric']['id']).insert(shape)
+                        self.top_cell.shapes(LAYER_DEFINITIONS['top_dielectric']['id']).insert(shape)
                 elif shape_name in ['device_label', 'parameter_labels']:
                     for shape in shapes:
                         self.top_cell.shapes(LAYER_DEFINITIONS['labels']['id']).insert(shape)

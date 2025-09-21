@@ -165,7 +165,7 @@ class TLM:
                     fanout = draw_trapezoidal_fanout(inner, outer, inner_edge='D', outer_edge='U')
                 cell.shapes(layer_id).insert(fanout)
         # 沟道区域（可视化）
-        channel_layer = LAYER_DEFINITIONS['channel_etch']['id']
+        channel_layer = LAYER_DEFINITIONS['channel']['id']
         ch_x0 = xs[0] + x
         ch_x1 = xs[-1] + x
         # 支持自定义 channel 长宽
