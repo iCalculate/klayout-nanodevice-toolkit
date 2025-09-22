@@ -96,7 +96,7 @@ class Meander:
             cell: Target cell
             x, y: Device center coordinates
         """
-        layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+        layer_id = LAYER_DEFINITIONS['channel']['id']
         
         # Create meander channel based on curve type
         if self.curve_type == 'serpentine':
@@ -150,7 +150,7 @@ def main():
             margin=2.0
         )
         
-        layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+        layer_id = LAYER_DEFINITIONS['channel']['id']
         hilbert_cell.shapes(layer_id).insert(hilbert_region)
         top_cell.insert(pya.CellInstArray(hilbert_cell.cell_index(), pya.Trans()))
         
@@ -291,7 +291,7 @@ def main():
                 margin=2.0   # Fixed margin
             )
             
-            layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+            layer_id = LAYER_DEFINITIONS['channel']['id']
             hilbert_sub_cell.shapes(layer_id).insert(hilbert_region)
             
             # Calculate position
@@ -317,7 +317,7 @@ def main():
                 margin=2.0   # Fixed margin
             )
             
-            layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+            layer_id = LAYER_DEFINITIONS['channel']['id']
             hilbert_sub_cell.shapes(layer_id).insert(hilbert_region)
             
             # Calculate position
@@ -343,7 +343,7 @@ def main():
                 margin=2.0   # Fixed margin
             )
             
-            layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+            layer_id = LAYER_DEFINITIONS['channel']['id']
             hilbert_sub_cell.shapes(layer_id).insert(hilbert_region)
             
             # Calculate position
@@ -369,7 +369,7 @@ def main():
                 margin=margin
             )
             
-            layer_id = LAYER_DEFINITIONS['channel_etch']['id']
+            layer_id = LAYER_DEFINITIONS['channel']['id']
             hilbert_sub_cell.shapes(layer_id).insert(hilbert_region)
             
             # Calculate position

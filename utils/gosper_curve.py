@@ -161,27 +161,19 @@ def widen_centerline(points: List[Tuple[float, float]], width: float,
     dpoints = [pya.DPoint(x, y) for x, y in points]
     path = pya.DPath(dpoints, width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
     
-    # Use EdgeProcessor for robust widening with miter limits
-    ep = pya.EdgeProcessor()
+    # Convert path to polygon directly
+    polygon = path.polygon()
     
-    # Create edges from path
-    edges = []
-    for i in range(len(dpoints) - 1):
-        edge = pya.DEdge(dpoints[i], dpoints[i + 1])
-        edges.append(edge)
+    # Use Region.sized() method for widening
+    region = pya.Region([polygon])
+    sized_region = region.sized(width / 2)
     
-    # Size the edges (widen by width/2 on each side)
-    sized_edges = ep.size(edges, width / 2, 1, 1)  # width/2, mode=1, round=False
+    # Merge the sized region
+    merged_region = sized_region.merged()
     
-    # Convert to polygon
-    if sized_edges:
-        # Create region from sized edges
-        region = pya.DRegion(sized_edges)
-        merged_region = region.merged()
-        
-        if merged_region.size() > 0:
-            # Get the first (and should be only) polygon
-            return merged_region[0]
+    if merged_region.size() > 0:
+        # Get the first (and should be only) polygon
+        return merged_region[0]
     
     # Fallback: create simple rectangle if widening fails
     if len(points) >= 2:
@@ -255,11 +247,13 @@ def make_gosper_polygon(order: int, step: float, width: float,
         dpolygon = trans * dpolygon
     
     # Convert to integer coordinates with dbu scaling
-    ipolygon = pya.Polygon()
-    for point in dpolygon.each_point():
+    points = []
+    for point in dpolygon.each_point_hull():
         ix = int(round(point.x / dbu))
         iy = int(round(point.y / dbu))
-        ipolygon.insert_point(pya.Point(ix, iy))
+        points.append(pya.Point(ix, iy))
+    
+    ipolygon = pya.Polygon(points)
     
     return ipolygon
 

@@ -23,6 +23,8 @@ LAYER_DEFINITIONS = {
     'top_dielectric': {'id': 5, 'name': 'Top Dielectric', 'color': 0xFF00FF, 'description': '顶介电层'},
     'top_gate': {'id': 6, 'name': 'Top Gate', 'color': 0xFF8000, 'description': '顶栅电极'},
     'alignment_marks': {'id': 7, 'name': 'Alignment Marks', 'color': 0x00FFFF, 'description': '对准标记'},
+    'alignment_layer1': {'id': 11, 'name': 'Alignment Layer 1', 'color': 0x00FF80, 'description': '套刻对准层1'},
+    'alignment_layer2': {'id': 12, 'name': 'Alignment Layer 2', 'color': 0x80FF00, 'description': '套刻对准层2'},
     'labels': {'id': 8, 'name': 'Labels', 'color': 0xFFFFFF, 'description': '标签'},
     'pads': {'id': 9, 'name': 'Pads', 'color': 0x8000FF, 'description': '测试焊盘'},
     'routing': {'id': 10, 'name': 'Routing', 'color': 0xFF0080, 'description': '布线层'},
@@ -83,6 +85,21 @@ FANOUT_CONFIG = {
         'straight': 'straight',   # 直线扇出
         'curved': 'curved',       # 曲线扇出
         'stepped': 'stepped'      # 阶梯扇出
+    }
+}
+
+# 套刻对准配置
+# Alignment configuration
+ALIGNMENT_CONFIG = {
+    'caliper_size': 20.0,          # caliper标记尺寸 (μm)
+    'caliper_width': 2.0,          # caliper线条宽度 (μm)
+    'clearance': 5.0,              # 周围清空区域 (μm)
+    'min_spacing': 10.0,           # 最小间距 (μm)
+    'styles': {
+        'cross': 'cross',          # 十字形
+        'box': 'box',              # 方形
+        'circle': 'circle',        # 圆形
+        'diamond': 'diamond'       # 菱形
     }
 }
 
