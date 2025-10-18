@@ -68,20 +68,28 @@ class TLM:
         n = self.num_electrodes
         if n < 3:
             raise ValueError("num_electrodes 必须 >= 3")
+        
+        # 计算电极长度（用于边缘间距计算）
+        pad_length = self.inner_pad_length
+        
         if self.distribution == 'log':
-            spacings = [self.min_spacing * (self.max_spacing / self.min_spacing) ** (i / (n - 2)) for i in range(n - 1)]
+            edge_spacings = [self.min_spacing * (self.max_spacing / self.min_spacing) ** (i / (n - 2)) for i in range(n - 1)]
         elif self.distribution == 'exp':
             # 指数型插值
             import numpy as np
             a = np.log(self.min_spacing)
             b = np.log(self.max_spacing)
-            spacings = [np.exp(a + (b - a) * i / (n - 2)) for i in range(n - 1)]
+            edge_spacings = [np.exp(a + (b - a) * i / (n - 2)) for i in range(n - 1)]
         elif self.distribution == 'inv':
             # 倒数等间距
-            spacings = [1 / (1 / self.min_spacing + (1 / self.max_spacing - 1 / self.min_spacing) * i / (n - 2)) for i in range(n - 1)]
+            edge_spacings = [1 / (1 / self.min_spacing + (1 / self.max_spacing - 1 / self.min_spacing) * i / (n - 2)) for i in range(n - 1)]
         else:
             # 线性等间距
-            spacings = [self.min_spacing + (self.max_spacing - self.min_spacing) * i / (n - 2) for i in range(n - 1)]
+            edge_spacings = [self.min_spacing + (self.max_spacing - self.min_spacing) * i / (n - 2) for i in range(n - 1)]
+        
+        # 将边缘间距转换为中心间距
+        # 中心间距 = 边缘间距 + 电极长度
+        spacings = [edge_spacing + pad_length for edge_spacing in edge_spacings]
         # 根据 spacing_mode 排列间距
         if self.spacing_mode == 'centered':
             spacings_sorted = sorted(spacings)
@@ -111,8 +119,18 @@ class TLM:
         xs = self.generate_electrode_positions()
         # 以(x, y)为本单元中心
         y0 = y
-        # inner_pad_width 若为 None，自动设为 channel_width 的 1.2 倍
-        pad_width = self.inner_pad_width if self.inner_pad_width is not None else self.channel_width * 1.2
+        # inner_pad_width 若为 None，自动设为 channel_width 的 1.2 倍，但设置上下限
+        if self.inner_pad_width is not None:
+            pad_width = self.inner_pad_width
+        else:
+            # 计算相对宽度（沟道宽度的1.2倍）
+            relative_width = self.channel_width * 1.2
+            # 计算两侧总宽度（相对于沟道宽度的超出部分）
+            excess_width = relative_width - self.channel_width
+            # 设置上下限：最短不小于2μm（两侧加起来），最大不大于10μm
+            excess_width = max(2.0, min(10.0, excess_width))
+            # 最终pad宽度 = 沟道宽度 + 超出宽度
+            pad_width = self.channel_width + excess_width
         for i, xc in enumerate(xs):
             layer_id = LAYER_DEFINITIONS['source_drain']['id']
             # inner pad
@@ -174,43 +192,46 @@ class TLM:
         channel_center = (ch_x0 + ch_x1) / 2
         ch_box = GeometryUtils.create_rectangle(channel_center, y0, channel_length, channel_width, center=True)
         cell.shapes(channel_layer).insert(ch_box)
-        # 四角mark
-        margin_x = self.device_margin_x
-        margin_y = self.device_margin_y
-        mark_positions = [
-            (x - margin_x, y + margin_y),  # 左上
-            (x + margin_x, y + margin_y),  # 右上
-            (x - margin_x, y - margin_y),  # 左下
-            (x + margin_x, y - margin_y),  # 右下
-        ]
-        mark_layer = LAYER_DEFINITIONS['alignment_marks']['id']
-        for i, (mx, my) in enumerate(mark_positions):
-            mark_type = self.mark_types[i] if i < len(self.mark_types) else 'cross'
-            rotation = self.mark_rotations[i] if i < len(self.mark_rotations) else 0
-            if hasattr(MarkUtils, mark_type):
-                if mark_type == 'sq_missing':
-                    mark = getattr(MarkUtils, mark_type)(mx, my, self.mark_size).rotate(rotation)
+        # 四角mark - 只有在add_alignment_mark为True时才添加
+        if self.add_alignment_mark:
+            margin_x = self.device_margin_x
+            margin_y = self.device_margin_y
+            mark_positions = [
+                (x - margin_x, y + margin_y),  # 左上
+                (x + margin_x, y + margin_y),  # 右上
+                (x - margin_x, y - margin_y),  # 左下
+                (x + margin_x, y - margin_y),  # 右下
+            ]
+            mark_layer = LAYER_DEFINITIONS['alignment_marks']['id']
+            for i, (mx, my) in enumerate(mark_positions):
+                mark_type = self.mark_types[i] if i < len(self.mark_types) else 'cross'
+                rotation = self.mark_rotations[i] if i < len(self.mark_rotations) else 0
+                if hasattr(MarkUtils, mark_type):
+                    if mark_type == 'sq_missing':
+                        mark = getattr(MarkUtils, mark_type)(mx, my, self.mark_size).rotate(rotation)
+                    else:
+                        mark = getattr(MarkUtils, mark_type)(mx, my, self.mark_size, self.mark_width).rotate(rotation)
                 else:
-                    mark = getattr(MarkUtils, mark_type)(mx, my, self.mark_size, self.mark_width).rotate(rotation)
-            else:
-                mark = MarkUtils.cross(mx, my, self.mark_size, self.mark_width).rotate(rotation)
-            shapes = mark.get_shapes() if hasattr(mark, 'get_shapes') else [mark]
-            if isinstance(shapes, list):
-                for shape in shapes:
-                    if isinstance(shape, db.Region):
-                        for poly in shape.each():
+                    mark = MarkUtils.cross(mx, my, self.mark_size, self.mark_width).rotate(rotation)
+                shapes = mark.get_shapes() if hasattr(mark, 'get_shapes') else [mark]
+                if isinstance(shapes, list):
+                    for shape in shapes:
+                        if isinstance(shape, db.Region):
+                            for poly in shape.each():
+                                cell.shapes(mark_layer).insert(poly)
+                        elif isinstance(shape, (db.Polygon, db.Box)):
+                            cell.shapes(mark_layer).insert(shape)
+                else:
+                    if isinstance(shapes, db.Region):
+                        for poly in shapes.each():
                             cell.shapes(mark_layer).insert(poly)
-                    elif isinstance(shape, (db.Polygon, db.Box)):
-                        cell.shapes(mark_layer).insert(shape)
-            else:
-                if isinstance(shapes, db.Region):
-                    for poly in shapes.each():
-                        cell.shapes(mark_layer).insert(poly)
-                elif isinstance(shapes, (db.Polygon, db.Box)):
-                    cell.shapes(mark_layer).insert(shapes)
+                    elif isinstance(shapes, (db.Polygon, db.Box)):
+                        cell.shapes(mark_layer).insert(shapes)
         # 添加参数label（两行显示）
         label_layer = LAYER_DEFINITIONS['labels']['id']
         # 左下角mark中心
+        margin_x = self.device_margin_x
+        margin_y = self.device_margin_y
         mark_x = x - margin_x
         mark_y = y - margin_y
         label_x = mark_x + 10
