@@ -1,396 +1,235 @@
-# -*- coding: utf-8 -*-
 """
-套刻对准工具模块 - 基于gdsfactory实现caliper对准标记
-Alignment utilities module - implements caliper alignment marks based on gdsfactory
+对准标记工具模块
+基于已有版图文件创建对准标记
 """
 
-import sys
+import klayout.db as db
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-try:
-    import gdsfactory as gf
-    GDSFACTORY_AVAILABLE = True
-except ImportError:
-    GDSFACTORY_AVAILABLE = False
-    print("Warning: gdsfactory not available. Alignment features will be limited.")
 
-from config import LAYER_DEFINITIONS, ALIGNMENT_CONFIG, DEFAULT_UNIT_SCALE
-from utils.geometry import GeometryUtils
-
-class AlignmentUtils:
-    """套刻对准工具类
+class AlignmentMark:
+    """基于已有版图文件的对准标记类"""
     
-    Alignment utilities class for overlay alignment between different layers
-    """
-    
-    def __init__(self):
-        """初始化对准工具"""
-        self.layer1_id = LAYER_DEFINITIONS['alignment_layer1']['id']
-        self.layer2_id = LAYER_DEFINITIONS['alignment_layer2']['id']
-        self.config = ALIGNMENT_CONFIG
-        self.geo_utils = GeometryUtils()
-    
-    def create_caliper_cross(self, size=None, width=None, layer=None):
-        """创建十字形caliper对准标记
-        
-        Create cross-shaped caliper alignment mark
+    def __init__(self, layout=None):
+        """
+        初始化对准标记工具
         
         Args:
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm) 
-            layer: 图层ID
-            
-        Returns:
-            KLayout region对象
+            layout: KLayout数据库对象，如果为None则创建新的
         """
-        if size is None:
-            size = self.config['caliper_size']
-        if width is None:
-            width = self.config['caliper_width']
-        if layer is None:
-            layer = self.layer1_id
-            
-        # 转换为数据库单位
-        size_db = int(size * DEFAULT_UNIT_SCALE)
-        width_db = int(width * DEFAULT_UNIT_SCALE)
-        
-        # 创建十字形
-        from klayout.db import Region, Box
-        
-        region = Region()
-        
-        # 水平线
-        h_line = Box(-size_db//2, -width_db//2, size_db//2, width_db//2)
-        # 垂直线  
-        v_line = Box(-width_db//2, -size_db//2, width_db//2, size_db//2)
-        
-        region.insert(h_line)
-        region.insert(v_line)
-        
-        return region
-    
-    def create_caliper_box(self, size=None, width=None, layer=None):
-        """创建方形caliper对准标记
-        
-        Create box-shaped caliper alignment mark
-        
-        Args:
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer: 图层ID
-            
-        Returns:
-            KLayout region对象
-        """
-        if size is None:
-            size = self.config['caliper_size']
-        if width is None:
-            width = self.config['caliper_width']
-        if layer is None:
-            layer = self.layer1_id
-            
-        # 转换为数据库单位
-        size_db = int(size * DEFAULT_UNIT_SCALE)
-        width_db = int(width * DEFAULT_UNIT_SCALE)
-        
-        from klayout.db import Region, Box
-        
-        region = Region()
-        
-        # 外框
-        outer_box = Box(-size_db//2, -size_db//2, size_db//2, size_db//2)
-        # 内框
-        inner_box = Box(-size_db//2 + width_db, -size_db//2 + width_db, 
-                       size_db//2 - width_db, size_db//2 - width_db)
-        
-        region.insert(outer_box)
-        region = region - Region(inner_box)
-        
-        return region
-    
-    def create_caliper_circle(self, size=None, width=None, layer=None):
-        """创建圆形caliper对准标记
-        
-        Create circle-shaped caliper alignment mark
-        
-        Args:
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer: 图层ID
-            
-        Returns:
-            KLayout region对象
-        """
-        if size is None:
-            size = self.config['caliper_size']
-        if width is None:
-            width = self.config['caliper_width']
-        if layer is None:
-            layer = self.layer1_id
-            
-        # 转换为数据库单位
-        size_db = int(size * DEFAULT_UNIT_SCALE)
-        width_db = int(width * DEFAULT_UNIT_SCALE)
-        
-        from klayout.db import Region
-        
-        region = Region()
-        
-        # 外圆
-        outer_circle = self.geo_utils.create_circle(0, 0, size_db//2, layer)
-        # 内圆
-        inner_circle = self.geo_utils.create_circle(0, 0, size_db//2 - width_db, layer)
-        
-        region = Region(outer_circle) - Region(inner_circle)
-        
-        return region
-    
-    def create_caliper_diamond(self, size=None, width=None, layer=None):
-        """创建菱形caliper对准标记
-        
-        Create diamond-shaped caliper alignment mark
-        
-        Args:
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer: 图层ID
-            
-        Returns:
-            KLayout region对象
-        """
-        if size is None:
-            size = self.config['caliper_size']
-        if width is None:
-            width = self.config['caliper_width']
-        if layer is None:
-            layer = self.layer1_id
-            
-        # 转换为数据库单位
-        size_db = int(size * DEFAULT_UNIT_SCALE)
-        width_db = int(width * DEFAULT_UNIT_SCALE)
-        
-        from klayout.db import Region, Polygon, Point
-        
-        region = Region()
-        
-        # 外菱形
-        outer_diamond = Polygon([
-            Point(0, size_db//2),
-            Point(size_db//2, 0),
-            Point(0, -size_db//2),
-            Point(-size_db//2, 0)
-        ])
-        
-        # 内菱形
-        inner_diamond = Polygon([
-            Point(0, size_db//2 - width_db),
-            Point(size_db//2 - width_db, 0),
-            Point(0, -size_db//2 + width_db),
-            Point(-size_db//2 + width_db, 0)
-        ])
-        
-        region.insert(outer_diamond)
-        region = region - Region(inner_diamond)
-        
-        return region
-    
-    def create_caliper_mark(self, style='cross', size=None, width=None, layer=None):
-        """创建caliper对准标记
-        
-        Create caliper alignment mark with specified style
-        
-        Args:
-            style: 标记样式 ('cross', 'box', 'circle', 'diamond')
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer: 图层ID
-            
-        Returns:
-            KLayout region对象
-        """
-        if style == 'cross':
-            return self.create_caliper_cross(size, width, layer)
-        elif style == 'box':
-            return self.create_caliper_box(size, width, layer)
-        elif style == 'circle':
-            return self.create_caliper_circle(size, width, layer)
-        elif style == 'diamond':
-            return self.create_caliper_diamond(size, width, layer)
+        if layout is None:
+            self.layout = db.Layout()
         else:
-            raise ValueError(f"Unsupported caliper style: {style}")
-    
-    def create_alignment_pair(self, x, y, style='cross', size=None, width=None, 
-                            layer1=None, layer2=None, spacing=None):
-        """创建一对对准标记用于套刻对准
+            self.layout = layout
         
-        Create a pair of alignment marks for overlay alignment
+        # 默认对准标记文件路径
+        self.default_mark_path = os.path.join("utils", "layoutLib", "AlignmentMark_1.gds")
+    
+    def load_gds_file(self, gds_file_path, cell_name=None):
+        """
+        加载GDS文件并返回指定单元
         
         Args:
-            x, y: 中心坐标 (μm)
-            style: 标记样式
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer1: 第一层ID
-            layer2: 第二层ID
-            spacing: 两个标记间距 (μm)
+            gds_file_path: GDS文件路径
+            cell_name: 单元名称，如果为None则返回第一个单元
             
         Returns:
-            tuple: (layer1_region, layer2_region)
+            Cell对象
         """
-        if layer1 is None:
-            layer1 = self.layer1_id
-        if layer2 is None:
-            layer2 = self.layer2_id
-        if spacing is None:
-            spacing = self.config['min_spacing']
+        if not os.path.exists(gds_file_path):
+            raise FileNotFoundError(f"GDS文件不存在: {gds_file_path}")
+        
+        # 创建新的布局来读取GDS文件
+        temp_layout = db.Layout()
+        temp_layout.read(gds_file_path)
+        
+        # 获取所有单元
+        cells = []
+        for i in range(temp_layout.cells()):
+            cell = temp_layout.cell(i)
+            cells.append(cell)
+        
+        if not cells:
+            raise ValueError(f"GDS文件中没有找到单元: {gds_file_path}")
+        
+        # 选择要加载的单元
+        if cell_name is None:
+            target_cell = cells[0]
+        else:
+            target_cell = None
+            for cell in cells:
+                if cell.name == cell_name:
+                    target_cell = cell
+                    break
             
-        # 转换为数据库单位
-        x_db = int(x * DEFAULT_UNIT_SCALE)
-        y_db = int(y * DEFAULT_UNIT_SCALE)
-        spacing_db = int(spacing * DEFAULT_UNIT_SCALE)
+            if target_cell is None:
+                raise ValueError(f"未找到指定单元: {cell_name}")
         
-        # 创建第一个标记
-        mark1 = self.create_caliper_mark(style, size, width, layer1)
-        mark1.move(x_db - spacing_db//2, y_db)
+        # 将单元复制到当前布局 - 简化版本，只复制实例
+        new_cell = self.layout.create_cell(target_cell.name)
         
-        # 创建第二个标记
-        mark2 = self.create_caliper_mark(style, size, width, layer2)
-        mark2.move(x_db + spacing_db//2, y_db)
+        # 复制所有子单元实例
+        for inst in target_cell.each_inst():
+            new_cell.insert(inst)
         
-        return mark1, mark2
+        return new_cell
     
-    def create_alignment_array(self, positions, style='cross', size=None, width=None,
-                             layer1=None, layer2=None, spacing=None):
-        """创建对准标记阵列
-        
-        Create an array of alignment mark pairs
+    def create_text(self, text, position, layer=1, size=10000):
+        """
+        创建文本标签
         
         Args:
-            positions: 位置列表 [(x1, y1), (x2, y2), ...]
-            style: 标记样式
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer1: 第一层ID
-            layer2: 第二层ID
-            spacing: 两个标记间距 (μm)
+            text: 文本内容
+            position: 位置 (x, y)
+            layer: 图层
+            size: 字体大小
             
         Returns:
-            tuple: (layer1_regions, layer2_regions)
+            Cell对象
         """
-        if layer1 is None:
-            layer1 = self.layer1_id
-        if layer2 is None:
-            layer2 = self.layer2_id
+        text_cell = self.layout.create_cell(f"TEXT_{text}")
+        
+        # 创建文本形状
+        text_shape = db.Text(text, db.Trans(db.Point(int(position[0]), int(position[1]))))
+        text_shape.size = size
+        
+        # 获取或创建图层
+        text_layer = self.layout.layer(layer, 0, f"Text_Layer_{layer}")
+        text_cell.shapes(text_layer).insert(text_shape)
+        
+        return text_cell
+    
+    def create_four_quadrant_marks(self, positions=None, mark_file=None, spacing=1000000):
+        """
+        创建四个象限的对准标记
+        
+        Args:
+            positions: 四个位置列表 [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
+                      如果为None，则基于原点对称生成
+            mark_file: 对准标记GDS文件路径，如果为None则使用默认文件
+            spacing: 默认间距（当positions为None时使用）
             
-        from klayout.db import Region
+        Returns:
+            Cell对象（包含四个象限的对准标记）
+        """
+        if mark_file is None:
+            mark_file = self.default_mark_path
         
-        layer1_regions = Region()
-        layer2_regions = Region()
+        if not os.path.exists(mark_file):
+            raise FileNotFoundError(f"默认对准标记文件不存在: {mark_file}")
         
-        for x, y in positions:
-            mark1, mark2 = self.create_alignment_pair(
-                x, y, style, size, width, layer1, layer2, spacing
+        # 创建主单元
+        main_cell = self.layout.create_cell("FOUR_QUADRANT_ALIGNMENT_MARKS")
+        
+        # 确定四个位置
+        if positions is None:
+            # 基于原点对称生成四个位置
+            positions = [
+                (spacing, spacing),      # 右上 (NE)
+                (-spacing, spacing),     # 左上 (NW)
+                (-spacing, -spacing),    # 左下 (SW)
+                (spacing, -spacing)      # 右下 (SE)
+            ]
+        
+        # 象限标签
+        labels = ["NE", "NW", "SW", "SE"]
+        
+        # 加载对准标记
+        mark_cell = self.load_gds_file(mark_file)
+        
+        # 创建四个象限的对准标记
+        for i, (x, y) in enumerate(positions):
+            # 插入对准标记实例
+            main_cell.insert(db.CellInstArray(
+                mark_cell.cell_index(),
+                db.Trans(db.Point(int(x), int(y)))
+            ))
+            
+            # 创建象限标签
+            label_cell = self.create_text(
+                labels[i],
+                (x, y + 50000),  # 标签位置稍微偏移
+                layer=1,
+                size=20000
             )
-            layer1_regions = layer1_regions + mark1
-            layer2_regions = layer2_regions + mark2
             
-        return layer1_regions, layer2_regions
-    
-    def create_gdsfactory_caliper(self, style='cross', size=None, width=None, layer=None):
-        """使用gdsfactory创建caliper标记（如果可用）
+            # 插入标签实例
+            main_cell.insert(db.CellInstArray(
+                label_cell.cell_index(),
+                db.Trans(db.Point(int(x), int(y + 50000)))
+            ))
         
-        Create caliper mark using gdsfactory if available
+        return main_cell
+    
+    def create_single_mark(self, position=(0, 0), mark_file=None):
+        """
+        创建单个对准标记
         
         Args:
-            style: 标记样式
-            size: 标记尺寸 (μm)
-            width: 线条宽度 (μm)
-            layer: 图层ID
+            position: 位置 (x, y)
+            mark_file: 对准标记GDS文件路径，如果为None则使用默认文件
             
         Returns:
-            gdsfactory Component对象或None
+            Cell对象
         """
-        if not GDSFACTORY_AVAILABLE:
-            print("gdsfactory not available, falling back to KLayout implementation")
-            return None
-            
-        if size is None:
-            size = self.config['caliper_size']
-        if width is None:
-            width = self.config['caliper_width']
-        if layer is None:
-            layer = (self.layer1_id, 0)
-            
-        c = gf.Component()
+        if mark_file is None:
+            mark_file = self.default_mark_path
         
-        if style == 'cross':
-            # 创建十字形
-            h_line = gf.components.rectangle(size=(size, width), layer=layer)
-            v_line = gf.components.rectangle(size=(width, size), layer=layer)
-            
-            h_ref = c.add_ref(h_line)
-            v_ref = c.add_ref(v_line)
-            
-            # 居中对齐
-            h_ref.move(origin=(0, 0), destination=(-size/2, -width/2))
-            v_ref.move(origin=(0, 0), destination=(-width/2, -size/2))
-            
-        elif style == 'box':
-            # 创建方形框
-            outer = gf.components.rectangle(size=(size, size), layer=layer)
-            inner = gf.components.rectangle(size=(size-2*width, size-2*width), layer=layer)
-            
-            outer_ref = c.add_ref(outer)
-            inner_ref = c.add_ref(inner)
-            
-            # 居中对齐
-            outer_ref.move(origin=(0, 0), destination=(-size/2, -size/2))
-            inner_ref.move(origin=(0, 0), destination=(-(size-2*width)/2, -(size-2*width)/2))
-            
-        elif style == 'circle':
-            # 创建圆形
-            outer = gf.components.circle(radius=size/2, layer=layer)
-            inner = gf.components.circle(radius=size/2-width, layer=layer)
-            
-            outer_ref = c.add_ref(outer)
-            inner_ref = c.add_ref(inner)
-            
-        elif style == 'diamond':
-            # 创建菱形 - 使用add_polygon方法
-            points = [
-                (0, size/2),
-                (size/2, 0),
-                (0, -size/2),
-                (-size/2, 0)
-            ]
-            c.add_polygon(points, layer=layer)
-            
-            inner_points = [
-                (0, size/2-width),
-                (size/2-width, 0),
-                (0, -size/2+width),
-                (-size/2+width, 0)
-            ]
-            c.add_polygon(inner_points, layer=layer)
-            
+        if not os.path.exists(mark_file):
+            raise FileNotFoundError(f"默认对准标记文件不存在: {mark_file}")
+        
+        # 创建主单元
+        main_cell = self.layout.create_cell("SINGLE_ALIGNMENT_MARK")
+        
+        # 加载对准标记
+        mark_cell = self.load_gds_file(mark_file)
+        
+        # 插入对准标记实例
+        main_cell.insert(db.CellInstArray(
+            mark_cell.cell_index(),
+            db.Trans(db.Point(int(position[0]), int(position[1])))
+        ))
+        
+        return main_cell
+    
+    def save_to_gds(self, filename, cell=None):
+        """
+        保存到GDS文件
+        
+        Args:
+            filename: 输出文件名
+            cell: 要保存的单元，如果为None则保存整个布局
+        """
+        if cell is not None:
+            # 直接保存整个布局（包含所有单元）
+            self.layout.write(filename)
         else:
-            raise ValueError(f"Unsupported caliper style: {style}")
-            
-        return c
+            # 保存整个布局
+            self.layout.write(filename)
+
+
+def main():
+    """主函数 - 演示对准标记功能"""
+    print("对准标记工具演示")
+    print("=" * 30)
     
-    def get_layer_info(self, layer_id):
-        """获取图层信息
+    # 创建对准标记工具
+    align_mark = AlignmentMark()
+    
+    try:
+        # 创建四个象限的对准标记
+        print("创建四个象限的对准标记...")
+        four_marks = align_mark.create_four_quadrant_marks()
+        align_mark.save_to_gds("TEST_ALIGNMENT_UTILS.gds", four_marks)
+        print("四个象限对准标记已保存到: TEST_ALIGNMENT_UTILS.gds")
         
-        Get layer information
+        print("\n对准标记工具演示完成！")
         
-        Args:
-            layer_id: 图层ID
-            
-        Returns:
-            dict: 图层信息
-        """
-        for layer_name, layer_info in LAYER_DEFINITIONS.items():
-            if layer_info['id'] == layer_id:
-                return layer_info
-        return None
+    except Exception as e:
+        print(f"错误: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()

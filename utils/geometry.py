@@ -935,36 +935,6 @@ class GeometryUtils:
     
     
     @staticmethod
-    def _validate_hilbert_points(points, order, step):
-        """
-        验证Hilbert曲线点序列的正确性
-        
-        Args:
-            points: 点序列
-            order: 曲线阶数
-            step: 线段长度
-        """
-        if not points:
-            raise ValueError("Hilbert curve points list is empty")
-        
-        # 检查点数量是否正确
-        expected_points = (1 << order) * (1 << order)  # 2^(2*order)
-        if len(points) != expected_points:
-            print(f"Warning: Expected {expected_points} points, got {len(points)}")
-        
-        # 检查相邻点之间的距离
-        for i in range(len(points) - 1):
-            p1 = points[i]
-            p2 = points[i + 1]
-            dx = abs(p2.x - p1.x)
-            dy = abs(p2.y - p1.y)
-            
-            # 相邻点应该要么水平相邻，要么垂直相邻
-            if not ((dx == step and dy == 0) or (dx == 0 and dy == step)):
-                print(f"Warning: Non-adjacent points at index {i}: ({p1.x}, {p1.y}) -> ({p2.x}, {p2.y})")
-                break
-    
-    @staticmethod
     def _d2xy(N, d):
         """Hilbert曲线d到(x,y)的映射"""
         x = y = 0
