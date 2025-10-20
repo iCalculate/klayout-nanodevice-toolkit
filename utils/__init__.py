@@ -6,6 +6,6 @@
 from .geometry import GeometryUtils
 from .text_utils import TextUtils
 from .mark_utils import MarkUtils
-from .alignment_utils import AlignmentUtils
+from .alignment_utils import AlignmentMark
 
-__all__ = ['GeometryUtils', 'TextUtils', 'MarkUtils', 'AlignmentUtils'] 
+__all__ = ['GeometryUtils', 'TextUtils', 'MarkUtils', 'AlignmentMark'] 

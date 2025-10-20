@@ -164,56 +164,24 @@ class UVLithoTLMArray:
                 db.Trans(device_x, device_y)
             ))
             
-            # 添加分布方式标签 - 使用gdsfactory生成
-            label_x = device_x - tlm.device_margin_x + 10
-            label_y = device_y + tlm.device_margin_y - 40
-            
-            dist_label = f"{distribution[:3]}"  # 只显示前3个字符
-            
-            # 使用gdsfactory生成文本
-            try:
-                import gdsfactory as gf
-                text_component = gf.components.text(
-                    text=dist_label,
-                    size=20,  # 20μm
-                    position=(label_x, label_y),
-                    layer=(LAYER_DEFINITIONS['labels']['id'], 0)
-                )
-                # 将gdsfactory组件转换为KLayout shapes
-                for poly in text_component.get_polygons():
-                    unit_cell.shapes(label_layer).insert(poly)
-            except ImportError:
-                # 如果gdsfactory不可用，回退到原来的方法
-                dist_text = db.Text(dist_label, int(label_x * 1000), int(label_y * 1000))
-                unit_cell.shapes(label_layer).insert(dist_text)
+            # 移除分布方式标签 - 不再需要
             
             device_id += 1
         
-        # 添加单个mark - 基于当前位置向右10μm，向上20μm
-        mark_x = x - self.unit_size/2 + self.mark_size/2 - 20 + 10  # 向左移动20μm，再向右10μm = 向左10μm
-        mark_y = y + self.unit_size/2 - self.mark_size/2 - 10 + 20  # 向下移动10μm，再向上20μm = 向上10μm
+        # 添加单个mark - 使用固定的相对偏移，确保一致性
+        # mark相对于unit的固定位置：左上角偏移
+        mark_offset_x = -self.unit_size/2 + self.mark_size/2 - 10  # 单元左边缘向左10μm
+        mark_offset_y = self.unit_size/2 - self.mark_size/2 + 10   # 单元上边缘向上10μm
         
-        # 添加单元标签（沟道宽度） - 位于mark的右侧，向上移动15μm
-        unit_label_x = mark_x + self.mark_size/2 + 10  # 位于mark的右侧
-        unit_label_y = mark_y + 15  # 向上移动15μm
-        unit_label = f"W={channel_width}"
+        # mark在unit cell中的位置（相对于unit cell中心）
+        mark_x_in_unit = mark_offset_x
+        mark_y_in_unit = mark_offset_y
         
-        # 使用gdsfactory生成文本
-        try:
-            import gdsfactory as gf
-            text_component = gf.components.text(
-                text=unit_label,
-                size=20,  # 20μm
-                position=(unit_label_x, unit_label_y),
-                layer=(LAYER_DEFINITIONS['labels']['id'], 0)
-            )
-            # 将gdsfactory组件转换为KLayout shapes
-            for poly in text_component.get_polygons():
-                unit_cell.shapes(label_layer).insert(poly)
-        except ImportError:
-            # 如果gdsfactory不可用，回退到原来的方法
-            unit_text = db.Text(unit_label, int(unit_label_x * 1000), int(unit_label_y * 1000))
-            unit_cell.shapes(label_layer).insert(unit_text)
+        # mark的全局位置（用于创建mark对象）
+        mark_x = x + mark_offset_x
+        mark_y = y + mark_offset_y
+        
+        # 移除单元标签（W=xxx） - 不再需要
         
         # 导入MarkUtils
         from utils.mark_utils import MarkUtils
@@ -243,6 +211,7 @@ class UVLithoTLMArray:
                     unit_cell.shapes(mark_layer).insert(poly)
             elif isinstance(shapes, (db.Polygon, db.Box)):
                 unit_cell.shapes(mark_layer).insert(shapes)
+        
         
         return unit_cell
     
@@ -310,26 +279,46 @@ class UVLithoTLMArray:
                     db.Trans(unit_x, unit_y)
                 ))
                 
-                # 添加Excel格式标签 - 位于mark的右侧
-                excel_label = f"{chr(ord('A') + col)}{row + 1}"
-                # 计算mark位置（与单元内mark位置一致）
-                mark_x = unit_x - self.unit_size/2 + self.mark_size/2 - 20 + 10  # 向左10μm
-                mark_y = unit_y + self.unit_size/2 - self.mark_size/2 - 10 + 20  # 向上10μm
-                label_x = mark_x + self.mark_size/2 + 10  # 位于mark的右侧
-                label_y = mark_y + 15  # 向上移动15μm
+                # 添加Excel格式标签 - 相对于mark有固定的相对位置
+                excel_label = f"{chr(ord('A') + col)}{row + 1} W={channel_width}"
+                
+                # 计算mark位置 - 使用固定的相对偏移，确保一致性
+                # mark相对于unit的固定位置：左上角偏移
+                mark_offset_x = -self.unit_size/2 + self.mark_size/2 - 10  # 单元左边缘向左10μm
+                mark_offset_y = self.unit_size/2 - self.mark_size/2 + 10   # 单元上边缘向上10μm
+                
+                mark_x = unit_x + mark_offset_x
+                mark_y = unit_y + mark_offset_y
+                
+                # label相对于mark的固定偏移量
+                label_offset_from_mark_x = self.mark_size/2 + 10  # mark右侧30μm
+                label_offset_from_mark_y = 2  # mark上方2μm（固定值）
+                
+                # 计算label的绝对位置
+                label_x = mark_x + label_offset_from_mark_x
+                label_y = mark_y + label_offset_from_mark_y
                 
                 # 使用gdsfactory生成文本
                 try:
                     import gdsfactory as gf
                     text_component = gf.components.text(
                         text=excel_label,
-                        size=30,  # 30μm
-                        position=(label_x, label_y),
+                        size=21000,  # 21μm = 21000nm (70% of 30μm)
+                        position=(label_x * 1000, label_y * 1000),  # 转换为nm
+                        justify="left",  # 明确指定左对齐，确保定位点一致
                         layer=(LAYER_DEFINITIONS['labels']['id'], 0)
                     )
                     # 将gdsfactory组件转换为KLayout shapes
-                    for poly in text_component.get_polygons():
-                        array_cell.shapes(label_layer).insert(poly)
+                    for polygon in text_component.polygons:
+                        # Convert gdsfactory polygon to KLayout polygon
+                        points = []
+                        for p in polygon.points:
+                            # gdsfactory返回nm，需要转换为μm再转换为dbu
+                            px = int((p[0] / 1000) * 1000)  # nm -> μm -> dbu
+                            py = int((p[1] / 1000) * 1000)  # nm -> μm -> dbu
+                            points.append(db.Point(px, py))
+                        klayout_polygon = db.Polygon(points)
+                        array_cell.shapes(label_layer).insert(klayout_polygon)
                 except ImportError:
                     # 如果gdsfactory不可用，回退到原来的方法
                     text_shapes = TextUtils.create_text_freetype(
