@@ -47,7 +47,7 @@ def image_to_parameter_matrix(
         print(f"Saved debug image to {debug_filename}")
 
     # Flip vertically to match layout coordinates (y up) vs Image (y down)
-    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     
     if mode == 'grayscale':
         # Convert to grayscale
@@ -150,7 +150,7 @@ def create_grating_cell(
     
     # Perform boolean AND
     # We return the result of the boolean operation
-    c_final = gf.boolean(A=c_rotated, B=c_mask, operation="and", layer=layer)
+    c_final = gf.geometry.boolean(A=c_rotated, B=c_mask, operation="and", layer=layer)
     
     return c_final
 
@@ -300,13 +300,13 @@ if __name__ == "__main__":
     print("Layout written to grating_array_sample.gds")
     
     # Example 2: From Image
-    image_path = "components/MyLayoutTemplate/NUS_Logo_emblem.jpg"
+    image_path = "components/MyLayoutTemplate/PixelArt-KIRBY.jpg"
     # Fallback to dummy if not found, just for robustness in script
     import os
     if not os.path.exists(image_path):
         print(f"Image {image_path} not found, creating dummy.")
         image_path = "temp_test_pattern.png"
-        img_size = (100, 100)
+        img_size = (32, 32)
         dummy_img = Image.new('RGB', img_size) # RGB for Hue
         # Create a gradient pattern
         for x in range(img_size[0]):
@@ -321,7 +321,7 @@ if __name__ == "__main__":
     
     # Calculate grid size for 8000um active area and 200um cell
     active_width = 8000.0
-    cell_size = 100.0 # Smaller cell size for better resolution
+    cell_size = active_width/32.0 # Smaller cell size for better resolution
     nx = int(active_width // cell_size)
     ny = int(active_width // cell_size)
     
@@ -333,7 +333,7 @@ if __name__ == "__main__":
         target_resolution=(nx, ny),
         value_range=(0.0, 180.0),
         mode='hue',
-        save_debug_image=False
+        save_debug_image=True
     )
     
     # Generate Spacing Matrix from Grayscale (Luminance)
