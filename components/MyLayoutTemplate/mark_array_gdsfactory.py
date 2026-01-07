@@ -347,14 +347,14 @@ if __name__ == "__main__":
     # Generate and show with different mark types
     # Example 1: Standard cross mark (default)
     c1 = generate_mark_array(mark_type="cross")
-    c1.show()
+    #c1.show()
     c1.write_gds("mark_array_cross.gds")
     print("Cross mark array written to mark_array_cross.gds")
     
     # Example 2: Chessboard mark
     c2 = generate_mark_array(
         mark_type="chessboard",
-        mark_width=0.0,
+        mark_width=1.5,
         mark_size=5.0,
         mark_pitch_x=150.0,
         mark_pitch_y=150.0,
@@ -362,7 +362,7 @@ if __name__ == "__main__":
         label_size=5.0,
         label_offset=(2.0, 2.0)
     )
-    c2.show()
+    #c2.show()
     c2.write_gds("mark_array_chessboard.gds")
     print("Chessboard mark array written to mark_array_chessboard.gds")
     
