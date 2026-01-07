@@ -36,7 +36,7 @@ def create_mark(
     Create a mark component based on the specified type.
     
     Args:
-        mark_type: Type of mark - 'cross', 'chessboard', or 'bone_cross'
+        mark_type: Type of mark - 'cross', 'chessboard', or 'bonecross'
         mark_size: Size (length) of the mark in um
         mark_width: Width of the mark lines/features in um
         layer: GDS layer for the mark
@@ -125,7 +125,7 @@ def create_mark(
         # Move so top-left corner is at origin
         ref2.move((square_size / 2, -square_size / 2))
         
-    elif mark_type == "bone_cross":
+    elif mark_type == "bonecross":
         # Bone cross: a cross with thickened ends (like a bone shape)
         # size: overall shape size (total length of each arm)
         # width: external line width (width at ends)
@@ -237,7 +237,7 @@ def generate_mark_array(
         mark_pitch_x: Horizontal pitch between marks in um.
         mark_pitch_y: Vertical pitch between marks in um.
         mark_type: Type of mark - 'cross' (standard cross), 'chessboard' (two squares in quadrants II and IV), 
-                   or 'bone_cross' (cross with thickened ends). Default 'cross'.
+                   or 'bonecross' (cross with thickened ends). Default 'cross'.
         label_interval: Generate a label every N marks.
         layer_mechanical: GDS layer for the mechanical edge (sample boundary).
         layer_active: GDS layer for the active area.
@@ -356,18 +356,27 @@ if __name__ == "__main__":
         mark_type="chessboard",
         mark_width=0.0,
         mark_size=5.0,
-        mark_pitch_x=120.0,
-        mark_pitch_y=120.0,
+        mark_pitch_x=150.0,
+        mark_pitch_y=150.0,
         label_interval=1,
-        label_size=5.0
+        label_size=5.0,
+        label_offset=(2.0, 2.0)
     )
     c2.show()
     c2.write_gds("mark_array_chessboard.gds")
     print("Chessboard mark array written to mark_array_chessboard.gds")
     
     # Example 3: Bone cross mark
-    c3 = generate_mark_array(mark_type="bone_cross")
+    c3 = generate_mark_array(mark_type="bonecross",
+        mark_size=10.0,
+        mark_width=1.0,
+        mark_pitch_x=150.0,
+        mark_pitch_y=150.0,
+        label_interval=1,
+        label_size=5.0,
+        label_offset=(2.0, 2.0)
+    )
     c3.show()
-    c3.write_gds("mark_array_bone_cross.gds")
-    print("Bone cross mark array written to mark_array_bone_cross.gds")
+    c3.write_gds("mark_array_bonecross.gds")
+    print("Bonecross mark array written to mark_array_bonecross.gds")
 
