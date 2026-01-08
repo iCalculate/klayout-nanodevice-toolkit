@@ -84,7 +84,7 @@ def create_mark(
         square1_hollow_comp << square1_hollow
         
         # Perform boolean subtraction
-        square1_final = gf.geometry.boolean(
+        square1_final = gf.boolean(
             A=square1_outer_comp,
             B=square1_hollow_comp,
             operation="A-B",
@@ -115,7 +115,7 @@ def create_mark(
         square2_hollow_comp << square2_hollow
         
         # Perform boolean subtraction
-        square2_final = gf.geometry.boolean(
+        square2_final = gf.boolean(
             A=square2_outer_comp,
             B=square2_hollow_comp,
             operation="A-B",
@@ -223,6 +223,7 @@ def generate_mark_array(
     layer_mark: tuple = (3, 0),
     label_offset: tuple = None,
     label_size: float = 40.0,
+    name: str = "mark_array_sample",
 ) -> gf.Component:
     """
     Generates a layout with a mechanical layer, active area layer, and a mark array with labels.
@@ -245,8 +246,9 @@ def generate_mark_array(
         label_offset: (x, y) offset for the label relative to the mark center. 
                       If None, defaults to (mark_size, mark_size * 0.4).
         label_size: Font size for the labels in um. Default 40.0.
+        name: Name of the component.
     """
-    c = gf.Component("mark_array_sample")
+    c = gf.Component(name)
     
     if label_offset is None:
         label_offset = (mark_size, mark_size * 0.4)
@@ -333,7 +335,7 @@ def generate_mark_array(
                     text=label_text_str,
                     size=label_size,
                     layer=layer_mark,
-                    justify='center'
+                    justify='left'
                 )
                 
                 text_ref = c << text_comp
@@ -346,7 +348,7 @@ def generate_mark_array(
 if __name__ == "__main__":
     # Generate and show with different mark types
     # Example 1: Standard cross mark (default)
-    c1 = generate_mark_array(mark_type="cross")
+    c1 = generate_mark_array(mark_type="cross", name="mark_array_cross_sample")
     #c1.show()
     c1.write_gds("mark_array_cross.gds")
     print("Cross mark array written to mark_array_cross.gds")
@@ -360,7 +362,8 @@ if __name__ == "__main__":
         mark_pitch_y=150.0,
         label_interval=1,
         label_size=5.0,
-        label_offset=(2.0, 2.0)
+        label_offset=(2.0, 2.0),
+        name="mark_array_chessboard_sample"
     )
     #c2.show()
     c2.write_gds("mark_array_chessboard.gds")
@@ -374,9 +377,10 @@ if __name__ == "__main__":
         mark_pitch_y=150.0,
         label_interval=1,
         label_size=5.0,
-        label_offset=(2.0, 2.0)
+        label_offset=(2.0, 2.0),
+        name="mark_array_bonecross_sample"
     )
-    c3.show()
+    #c3.show()
     c3.write_gds("mark_array_bonecross.gds")
     print("Bonecross mark array written to mark_array_bonecross.gds")
 
