@@ -2,7 +2,7 @@
 import gdsfactory as gf
 import numpy as np
 import string
-
+from datetime import datetime
 # Cache to store created components and avoid name collisions
 _component_cache = {}
 
@@ -133,18 +133,26 @@ def create_composite_mark(
     small_width: float = 3.0,
     small_offset_dist: float = 35.0,
     layer: tuple = (1, 0),
-    is_main_mark: bool = False
+    is_main_mark: bool = False,
+    enable_frame: bool = False,
+    frame_width: float = None,
+    layer_frame: tuple = (4, 0)
 ) -> gf.Component:
     """
     Create a composite mark:
     - Center: Large crossbone
     - Corners: 4 small crossbones
+    - Optional: Crosshair frame (L4) attached to the center mark
     
     Args:
         is_main_mark: If True, adds a special feature (e.g. an enclosing frame) to distinguish it.
+        enable_frame: If True, adds a crosshair frame on layer_frame.
+        frame_width: Line width of the frame arms.
+        layer_frame: Layer for the frame.
     """
     suffix = "Main" if is_main_mark else "Standard"
-    name = f"CompositeMark_{suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
+    f_suffix = "WFrame" if enable_frame else ""
+    name = f"CompositeMark_{suffix}{f_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
         return _component_cache[name]
@@ -177,6 +185,16 @@ def create_composite_mark(
         add_line(line_length, line_width, 0, -line_offset)
         add_line(line_width, line_length, -line_offset, 0)
         add_line(line_width, line_length, line_offset, 0)
+
+    # 4. Add Crosshair Frame if enabled
+    if enable_frame:
+        frame = create_crosshair_frame(
+            mark_size=main_size,
+            mark_width=main_width,
+            frame_width=frame_width,
+            layer=layer_frame
+        )
+        c << frame
             
     _component_cache[name] = c
     return c
@@ -223,6 +241,73 @@ def create_caliper(
             ref = c << current_comp
             ref.move((tick_direction * current_len / 2.0, pos))
             
+    _component_cache[name] = c
+    return c
+
+def create_crosshair_frame(
+    mark_size: float,
+    mark_width: float,
+    frame_width: float = None,
+    layer: tuple = (4, 0)
+) -> gf.Component:
+    """
+    Create a crosshair frame made of four L-shapes that frame the inner thin cross of a bonecross mark.
+    The L-shapes match the dimensions of the internal cross arms exactly based on bonecross logic.
+    
+    Args:
+        mark_size: Size parameter of the bonecross mark
+        mark_width: Width parameter of the bonecross mark (the 'wide' part)
+        frame_width: Line width of the L-shape arms. Defaults to (mark_width - internal_width).
+        layer: Layer for the frame
+    """
+    # Use the exact same logic as create_bonecross to find internal dimensions
+    internal_width = mark_width / 2.0
+    internal_length = (mark_width + mark_size) / 2.0
+    
+    # Default frame_width is the single-sided difference between wide and narrow parts
+    if frame_width is None:
+        frame_width = (mark_width - internal_width) / 2.0
+        
+    name = f"CrosshairFrame_MS{mark_size}_MW{mark_width}_W{frame_width:.3g}_L{layer[0]}_{layer[1]}"
+    
+    if name in _component_cache:
+        return _component_cache[name]
+    
+    c = gf.Component(name)
+    
+    # The tips of the thin part and the inner corner positions
+    tip = internal_length / 2.0
+    corner = internal_width / 2.0
+    
+    # The L-shape arm length is exactly the protruding part of the thin cross
+    arm_len = tip - corner
+    
+    # Helper to add rectangle (center position)
+    def add_rect(w, h, center_x, center_y):
+        ref = c << get_rect_component(w, h, layer)
+        ref.move((center_x, center_y))
+    
+    # Top-Left L: vertex at (-corner, corner), arms extend Left (to -tip) and Up (to tip)
+    # Vertical arm (Up): x is fixed at -corner, y extends from corner to tip
+    add_rect(frame_width, arm_len, -corner - frame_width / 2.0, corner + arm_len / 2.0)
+    # Horizontal arm (Left): y is fixed at corner, x extends from -corner to -tip
+    add_rect(arm_len, frame_width, -corner - arm_len / 2.0, corner + frame_width / 2.0)
+    
+    # Top-Right L: arms extend Right (to tip) and Up (to tip)
+    add_rect(frame_width, arm_len, corner + frame_width / 2.0, corner + arm_len / 2.0)
+    add_rect(arm_len, frame_width, corner + arm_len / 2.0, corner + frame_width / 2.0)
+    
+    # Bottom-Left L: arms extend Left (to -tip) and Down (to -tip)
+    add_rect(frame_width, arm_len, -corner - frame_width / 2.0, -corner - arm_len / 2.0)
+    add_rect(arm_len, frame_width, -corner - arm_len / 2.0, -corner - frame_width / 2.0)
+    
+    # Bottom-Right L: arms extend Right (to tip) and Down (to -tip)
+    add_rect(frame_width, arm_len, corner + frame_width / 2.0, -corner - arm_len / 2.0)
+    add_rect(arm_len, frame_width, corner + arm_len / 2.0, -corner - frame_width / 2.0)
+    
+    _component_cache[name] = c
+    return c
+    
     _component_cache[name] = c
     return c
 
@@ -289,7 +374,8 @@ def create_single_writefield(
     label_layer: tuple,
     label_offset: tuple,
     mark_offset_from_corner: tuple,
-    enable_caliper: bool
+    enable_caliper: bool,
+    marker_l_l4: gf.Component = None  # L4 L-marker (same as L3 but on L4 layer)
 ) -> gf.Component:
     """
     Create a single write field component containing marks, labels, and calipers.
@@ -306,13 +392,13 @@ def create_single_writefield(
     pos_TL = (-h_size + ox, h_size - oy)
     pos_TR = (h_size - ox, h_size - oy)
     
-    # Place Marks
+    # Place Marks (Frames are now included inside the composite mark cells)
     c.add_ref(mark_standard).move(pos_BL)
     c.add_ref(mark_standard).move(pos_BR)
     c.add_ref(mark_main).move(pos_TL)
     c.add_ref(mark_standard).move(pos_TR)
     
-    # Place L-Markers at Corners (TL and BR)
+    # Place L-Markers at Corners (TL and BR) on L3
     if marker_l:
         # TL Corner (-h_size, h_size) -> Top-Left of Field
         # Base L is Bottom-Left (Extends +x, +y)
@@ -340,6 +426,18 @@ def create_single_writefield(
         # This fits BR corner of field perfectly (extends INTO the field).
         # Position: (h_size, -h_size)
         c.add_ref(marker_l).rotate(90).move((h_size, -h_size))
+    
+    # Place L-Markers at Corners (BL and TR) on L4
+    if marker_l_l4:
+        # BL Corner (-h_size, -h_size) -> Bottom-Left of Field
+        # Base L extends +x and +y from origin
+        # Position: (-h_size, -h_size)
+        c.add_ref(marker_l_l4).move((-h_size, -h_size))
+        
+        # TR Corner (h_size, h_size) -> Top-Right of Field
+        # Rotate 180 to point inward
+        # Position: (h_size, h_size)
+        c.add_ref(marker_l_l4).rotate(180).move((h_size, h_size))
 
     # Place Labels
     label_offsets = [
@@ -379,8 +477,8 @@ def create_single_writefield(
 def generate_writefield_array(
     sample_width: float = 10000.0,
     sample_height: float = 10000.0,
-    active_width: float = 8000.0,
-    active_height: float = 8000.0,
+    active_width: float = 7000.0,
+    active_height: float = 7000.0,
     writefield_size: float = 1000.0,
     
     # Mark parameters
@@ -399,6 +497,14 @@ def generate_writefield_array(
     
     # Mark placement parameters
     mark_offset_from_corner: tuple = (60.0, 60.0),
+    
+    # Global corner marks parameters
+    global_mark_offset: float = 200.0,  # Distance from active area corner to global mark center (outward)
+    global_mark_main_size: float = 400.0,  # Size of main crossbone in global marks
+    global_mark_main_width: float = 10.0,  # Width of main crossbone in global marks
+    global_mark_small_size: float = 50.0,  # Size of small crossbones in global marks
+    global_mark_small_width: float = 4.0,  # Width of small crossbones in global marks
+    global_mark_small_dist: float = 175.0,  # Distance from center to small marks in global marks
     
     # Label parameters
     label_size: float = 15.0,
@@ -423,7 +529,17 @@ def generate_writefield_array(
     # Layers
     layer_mechanical: tuple = (1, 0),
     layer_active: tuple = (2, 0),
-    layer_mark: tuple = (3, 0),
+    layer_mark: tuple = (3, 0),  # L3: All marks
+    layer_mark_frame: tuple = (4, 0),  # L4: Crosshair frames for main marks
+    layer_caliper: tuple = (5, 0),  # L5: Calipers
+    
+    # L4 frame parameters
+    frame_width: float = None,  # Line width of the L-shape arms. Defaults to mark_width difference if None.
+    
+    # Info parameters
+    user_name: str = "Xinchuan",
+    info_text_size: float = 50.0,
+    info_text_line_width: float = 0.0,  # Bolder if > 0, thinner if < 0 (uses polygon offset)
 ) -> gf.Component:
     """
     Generates an array of EBL write fields with alignment marks and labels.
@@ -456,7 +572,10 @@ def generate_writefield_array(
         small_width=mark_small_width,
         small_offset_dist=mark_small_dist,
         layer=layer_mark,
-        is_main_mark=False
+        is_main_mark=False,
+        enable_frame=True,
+        frame_width=frame_width,
+        layer_frame=layer_mark_frame
     )
     
     mark_main = create_composite_mark(
@@ -466,15 +585,122 @@ def generate_writefield_array(
         small_width=mark_small_width,
         small_offset_dist=mark_small_dist,
         layer=layer_mark,
-        is_main_mark=True
+        is_main_mark=True,
+        enable_frame=True,
+        frame_width=frame_width,
+        layer_frame=layer_mark_frame
     )
     
-    # Create L-Marker
+    # Create L-Marker (L3)
     marker_l = create_corner_marker(
         length=l_marker_length,
         width=l_marker_width,
         layer=layer_mark
     )
+    
+    # Create L-Marker for L4 (same structure, different layer)
+    marker_l_l4 = create_corner_marker(
+        length=l_marker_length,
+        width=l_marker_width,
+        layer=layer_mark_frame
+    )
+
+    # 3.5. Create Global Corner Alignment Marks (with custom sizes)
+    global_mark_standard = create_composite_mark(
+        main_size=global_mark_main_size,
+        main_width=global_mark_main_width,
+        small_size=global_mark_small_size,
+        small_width=global_mark_small_width,
+        small_offset_dist=global_mark_small_dist,
+        layer=layer_mark,
+        is_main_mark=False,
+        enable_frame=True,
+        frame_width=frame_width,
+        layer_frame=layer_mark_frame
+    )
+    
+    global_mark_main = create_composite_mark(
+        main_size=global_mark_main_size,
+        main_width=global_mark_main_width,
+        small_size=global_mark_small_size,
+        small_width=global_mark_small_width,
+        small_offset_dist=global_mark_small_dist,
+        layer=layer_mark,
+        is_main_mark=True,
+        enable_frame=True,
+        frame_width=frame_width,
+        layer_frame=layer_mark_frame
+    )
+
+    # 5. Tiling Write Fields
+    nx = int(np.ceil(active_width / writefield_size))
+    ny = int(np.ceil(active_height / writefield_size))
+
+    # 3.6. Place Global Corner Alignment Marks (outside active area)
+    # Calculate corner positions relative to active area boundaries
+    h_active_w = active_width / 2.0
+    h_active_h = active_height / 2.0
+    
+    # Four corners
+    # Top-Left corner (Main mark, relative to active area, offset outward)
+    tl_mark_pos = (-h_active_w - global_mark_offset, h_active_h + global_mark_offset)
+    c.add_ref(global_mark_main).move(tl_mark_pos)
+    
+    # Add info text to the right of the Top-Left global mark
+    info_lines = [
+        f"WF: {writefield_size} um, Mark Offset: -{mark_offset_from_corner} um",
+        f"AA: {active_width} * {active_height} um, Mark Offset: +{global_mark_offset} um",
+        f"User: {user_name}, Date: {datetime.now().strftime('%Y-%m-%d')}"
+    ]
+    
+    info_x = tl_mark_pos[0] + global_mark_main_size  # Start text after the mark
+    info_y_start = tl_mark_pos[1] + global_mark_main_size / 2.0
+    
+    for idx, line in enumerate(info_lines):
+        text_comp = gf.components.text(
+            text=line,
+            size=info_text_size,
+            layer=layer_mark,
+            justify='top'
+        )
+        
+        # Apply offset to change line width (boldness) if specified
+        if info_text_line_width != 0:
+            text_comp = gf.geometry.offset(
+                text_comp, 
+                distance=info_text_line_width, 
+                layer=layer_mark
+            )
+            
+        text_ref = c << text_comp
+        
+        # Position each line so its handle is Top-Left:
+        # 1. Left edge (xmin) aligns with info_x
+        # 2. Top edge (ymax) aligns with the calculated Y position for this line
+        line_top_y = info_y_start - idx * info_text_size * 1.5
+        text_ref.move((info_x - text_ref.xmin, line_top_y - text_ref.ymax))
+    
+    # Top-Right corner (relative to active area, offset outward)
+    c.add_ref(global_mark_standard).move((h_active_w + global_mark_offset, h_active_h + global_mark_offset))
+    
+    # Bottom-Left corner (relative to active area, offset outward)
+    c.add_ref(global_mark_standard).move((-h_active_w - global_mark_offset, -h_active_h - global_mark_offset))
+    
+    # Bottom-Right corner (relative to active area, offset outward)
+    c.add_ref(global_mark_standard).move((h_active_w + global_mark_offset, -h_active_h - global_mark_offset))
+    
+    # Four edges (midpoints)
+    # Top edge (center)
+    c.add_ref(global_mark_standard).move((0, h_active_h + global_mark_offset))
+    
+    # Bottom edge (center)
+    c.add_ref(global_mark_standard).move((0, -h_active_h - global_mark_offset))
+    
+    # Left edge (center)
+    c.add_ref(global_mark_standard).move((-h_active_w - global_mark_offset, 0))
+    
+    # Right edge (center)
+    c.add_ref(global_mark_standard).move((h_active_w + global_mark_offset, 0))
 
     # 4. Create Shared Components (Calipers)
     caliper_top = None
@@ -490,7 +716,7 @@ def generate_writefield_array(
             width=caliper_width,
             tick_length=caliper_top_right_tick_length,
             center_tick_length=caliper_top_right_center_length,
-            layer=layer_mark,
+            layer=layer_caliper,
             orientation="horizontal",
             tick_direction=-1,
             limit_length=writefield_size
@@ -503,7 +729,7 @@ def generate_writefield_array(
             width=caliper_width,
             tick_length=caliper_top_right_tick_length,
             center_tick_length=caliper_top_right_center_length,
-            layer=layer_mark,
+            layer=layer_caliper,
             orientation="vertical",
             tick_direction=-1,
             limit_length=writefield_size
@@ -516,7 +742,7 @@ def generate_writefield_array(
             width=caliper_width,
             tick_length=caliper_bottom_left_tick_length,
             center_tick_length=caliper_bottom_left_center_length,
-            layer=layer_mark,
+            layer=layer_caliper,
             orientation="horizontal",
             tick_direction=1,
             limit_length=writefield_size
@@ -529,16 +755,13 @@ def generate_writefield_array(
             width=caliper_width,
             tick_length=caliper_bottom_left_tick_length,
             center_tick_length=caliper_bottom_left_center_length,
-            layer=layer_mark,
+            layer=layer_caliper,
             orientation="vertical",
             tick_direction=1,
             limit_length=writefield_size
         )
 
-    # 5. Tiling Write Fields
-    nx = int(np.ceil(active_width / writefield_size))
-    ny = int(np.ceil(active_height / writefield_size))
-    
+    # 5. Tiling Write Fields (nx, ny already calculated above)
     total_grid_width = nx * writefield_size
     total_grid_height = ny * writefield_size
     
@@ -549,11 +772,12 @@ def generate_writefield_array(
         for j in range(ny):
             # Calculate Center of the WriteField
             wf_center_x = start_x + i * writefield_size + writefield_size / 2.0
-            wf_center_y = start_y + j * writefield_size + writefield_size / 2.0
+            # Reverse j order so that j=0 corresponds to top row (A1 at top-left)
+            wf_center_y = start_y + (ny - 1 - j) * writefield_size + writefield_size / 2.0
             
-            row_label = index_to_letters(j)
-            col_label = str(i + 1)
-            label_text = f"{row_label}{col_label}"
+            col_label = index_to_letters(i)  # Column (x-direction) uses letters
+            row_label = str(j + 1)  # Row (y-direction) uses numbers
+            label_text = f"{col_label}{row_label}"
             
             cell_name = f"Field_{label_text}"
             
@@ -572,7 +796,8 @@ def generate_writefield_array(
                 label_layer=layer_mark,
                 label_offset=label_offset,
                 mark_offset_from_corner=mark_offset_from_corner,
-                enable_caliper=enable_caliper
+                enable_caliper=enable_caliper,
+                marker_l_l4=marker_l_l4
             )
             
             c.add_ref(wf_cell).move((wf_center_x, wf_center_y))
