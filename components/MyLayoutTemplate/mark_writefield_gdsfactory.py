@@ -136,7 +136,8 @@ def create_composite_mark(
     is_main_mark: bool = False,
     enable_frame: bool = False,
     frame_width: float = None,
-    layer_frame: tuple = (4, 0)
+    layer_frame: tuple = (4, 0),
+    quadrant_indicator: int = None
 ) -> gf.Component:
     """
     Create a composite mark:
@@ -149,10 +150,12 @@ def create_composite_mark(
         enable_frame: If True, adds a crosshair frame on layer_frame.
         frame_width: Line width of the frame arms.
         layer_frame: Layer for the frame.
+        quadrant_indicator: If set (1-4), adds a small circle in the corresponding quadrant of the inner narrowed area.
     """
     suffix = "Main" if is_main_mark else "Standard"
     f_suffix = "WFrame" if enable_frame else ""
-    name = f"CompositeMark_{suffix}{f_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
+    q_suffix = f"_Q{quadrant_indicator}" if quadrant_indicator else ""
+    name = f"CompositeMark_{suffix}{f_suffix}{q_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
         return _component_cache[name]
@@ -195,6 +198,32 @@ def create_composite_mark(
             layer=layer_frame
         )
         c << frame
+
+    # 5. Quadrant Indicator Circle
+    if quadrant_indicator:
+        # Determine position based on quadrant
+        # 1: TR (+,+), 2: TL (-,+), 3: BL (-,-), 4: BR (+,-)
+        # Position: "inner narrowed area".
+        # internal_width of main cross = main_width / 2.0
+        internal_width = main_width
+        
+        # Place it in the corner formed by the cross arms
+        dist = internal_width
+        
+        # Circle parameters
+        circle_radius = internal_width / 4.0
+        
+        # Coordinates
+        qx = 1 if quadrant_indicator in [1, 4] else -1
+        qy = 1 if quadrant_indicator in [1, 2] else -1
+        
+        # Move to position
+        cx = qx * dist
+        cy = qy * dist
+        
+        # Create circle (polygon)
+        circle = gf.components.circle(radius=circle_radius, layer=layer)
+        c.add_ref(circle).move((cx, cy))
             
     _component_cache[name] = c
     return c
@@ -362,8 +391,10 @@ def create_corner_marker(
 def create_single_writefield(
     name: str,
     size: float,
-    mark_main: gf.Component,
-    mark_standard: gf.Component,
+    mark_q1: gf.Component,
+    mark_q2: gf.Component,
+    mark_q3: gf.Component,
+    mark_q4: gf.Component,
     marker_l: gf.Component,
     caliper_top: gf.Component,
     caliper_right: gf.Component,
@@ -393,10 +424,11 @@ def create_single_writefield(
     pos_TR = (h_size - ox, h_size - oy)
     
     # Place Marks (Frames are now included inside the composite mark cells)
-    c.add_ref(mark_standard).move(pos_BL)
-    c.add_ref(mark_standard).move(pos_BR)
-    c.add_ref(mark_main).move(pos_TL)
-    c.add_ref(mark_standard).move(pos_TR)
+    # Q1: TR, Q2: TL, Q3: BL, Q4: BR
+    c.add_ref(mark_q3).move(pos_BL)
+    c.add_ref(mark_q4).move(pos_BR)
+    c.add_ref(mark_q2).move(pos_TL)
+    c.add_ref(mark_q1).move(pos_TR)
     
     # Place L-Markers at Corners (TL and BR) on L3
     if marker_l:
@@ -440,16 +472,18 @@ def create_single_writefield(
         c.add_ref(marker_l_l4).rotate(180).move((h_size, h_size))
 
     # Place Labels
-    label_offsets = [
-        (pos_BL, (1, 1)),
-        (pos_BR, (-1, 1)),
-        (pos_TL, (1, -1)),
-        (pos_TR, (-1, -1))
+    # Format: (Position, OffsetDirection, Suffix)
+    label_configs = [
+        (pos_BL, (1, 1), ",3"),   # Q3
+        (pos_BR, (-1, 1), ",4"),  # Q4
+        (pos_TL, (1, -1), ",2"),  # Q2
+        (pos_TR, (-1, -1), ",1")  # Q1
     ]
     
-    for (mx, my), (dx, dy) in label_offsets:
+    for (mx, my), (dx, dy), suffix in label_configs:
+        full_label = f"{label_text}{suffix}"
         text_comp = gf.components.text(
-            text=label_text,
+            text=full_label,
             size=label_size,
             layer=label_layer,
             justify='center'
@@ -565,7 +599,9 @@ def generate_writefield_array(
     c.add_ref(active_boundary).move((0, 0))
 
     # 3. Create Shared Components (Marks)
-    mark_standard = create_composite_mark(
+    # Create 4 variants for the 4 quadrants of the writefield
+    # Q1: Top-Right (Standard + Circle Q1)
+    mark_q1 = create_composite_mark(
         main_size=mark_main_size,
         main_width=mark_main_width,
         small_size=mark_small_size,
@@ -575,20 +611,53 @@ def generate_writefield_array(
         is_main_mark=False,
         enable_frame=True,
         frame_width=frame_width,
-        layer_frame=layer_mark_frame
+        layer_frame=layer_mark_frame,
+        quadrant_indicator=1
     )
     
-    mark_main = create_composite_mark(
+    # Q2: Top-Left (Main Mark + Circle Q2)
+    mark_q2 = create_composite_mark(
         main_size=mark_main_size,
         main_width=mark_main_width,
         small_size=mark_small_size,
         small_width=mark_small_width,
         small_offset_dist=mark_small_dist,
         layer=layer_mark,
-        is_main_mark=True,
+        is_main_mark=True, # Main mark is at TL
         enable_frame=True,
         frame_width=frame_width,
-        layer_frame=layer_mark_frame
+        layer_frame=layer_mark_frame,
+        quadrant_indicator=2
+    )
+    
+    # Q3: Bottom-Left (Standard + Circle Q3)
+    mark_q3 = create_composite_mark(
+        main_size=mark_main_size,
+        main_width=mark_main_width,
+        small_size=mark_small_size,
+        small_width=mark_small_width,
+        small_offset_dist=mark_small_dist,
+        layer=layer_mark,
+        is_main_mark=False,
+        enable_frame=True,
+        frame_width=frame_width,
+        layer_frame=layer_mark_frame,
+        quadrant_indicator=3
+    )
+    
+    # Q4: Bottom-Right (Standard + Circle Q4)
+    mark_q4 = create_composite_mark(
+        main_size=mark_main_size,
+        main_width=mark_main_width,
+        small_size=mark_small_size,
+        small_width=mark_small_width,
+        small_offset_dist=mark_small_dist,
+        layer=layer_mark,
+        is_main_mark=False,
+        enable_frame=True,
+        frame_width=frame_width,
+        layer_frame=layer_mark_frame,
+        quadrant_indicator=4
     )
     
     # Create L-Marker (L3)
@@ -661,7 +730,7 @@ def generate_writefield_array(
             text=line,
             size=info_text_size,
             layer=layer_mark,
-            justify='top'
+            justify='left'
         )
         
         # Apply offset to change line width (boldness) if specified
@@ -784,8 +853,10 @@ def generate_writefield_array(
             wf_cell = create_single_writefield(
                 name=cell_name,
                 size=writefield_size,
-                mark_main=mark_main,
-                mark_standard=mark_standard,
+                mark_q1=mark_q1,
+                mark_q2=mark_q2,
+                mark_q3=mark_q3,
+                mark_q4=mark_q4,
                 marker_l=marker_l,
                 caliper_top=caliper_top,
                 caliper_right=caliper_right,
