@@ -137,7 +137,11 @@ def create_composite_mark(
     enable_frame: bool = False,
     frame_width: float = None,
     layer_frame: tuple = (4, 0),
-    quadrant_indicator: int = None
+    quadrant_indicator: int = None,
+    center_coords: tuple = None,
+    layer_auto_align: tuple = (61, 0),
+    layer_manual_align: tuple = (63, 0),
+    enable_alignment_layers: bool = True
 ) -> gf.Component:
     """
     Create a composite mark:
@@ -151,11 +155,17 @@ def create_composite_mark(
         frame_width: Line width of the frame arms.
         layer_frame: Layer for the frame.
         quadrant_indicator: If set (1-4), adds a small circle in the corresponding quadrant of the inner narrowed area.
+        center_coords: If provided as (x, y), adds coordinate text labels in the 2nd and 4th quadrants of the inner narrowed area.
+        layer_auto_align: Layer for L61 auto alignment marks.
+        layer_manual_align: Layer for L63 manual alignment marks.
+        enable_alignment_layers: If True, adds L61 and L63 features.
     """
     suffix = "Main" if is_main_mark else "Standard"
     f_suffix = "WFrame" if enable_frame else ""
     q_suffix = f"_Q{quadrant_indicator}" if quadrant_indicator else ""
-    name = f"CompositeMark_{suffix}{f_suffix}{q_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
+    coords_suffix = f"_XY{int(center_coords[0])}_{int(center_coords[1])}" if center_coords else ""
+    align_suffix = "_Align" if enable_alignment_layers else ""
+    name = f"CompositeMark_{suffix}{f_suffix}{q_suffix}{coords_suffix}{align_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
         return _component_cache[name]
@@ -224,6 +234,60 @@ def create_composite_mark(
         # Create circle (polygon)
         circle = gf.components.circle(radius=circle_radius, layer=layer)
         c.add_ref(circle).move((cx, cy))
+
+    # 6. Coordinate Labels: Q2 (X, right-aligned), Q4 (Y, left-aligned)
+    if center_coords is not None:
+        cx_val, cy_val = center_coords
+        c_text_size = main_size / 25.0 # Slightly larger for better readability
+        
+        # Use main_width as a reference for spacing
+        # Place text slightly away from the center thin arms
+        offset = main_width * 1.5
+        
+        # Q2 (Top-Left): X coordinate, right-aligned
+        txt_x_comp = gf.components.text(text=f"{cx_val:+.1f}", size=c_text_size, layer=layer)
+        ref_x = c.add_ref(txt_x_comp)
+        # Right-aligned: xmax at -offset.
+        # Use .y = offset to center the text vertically at the offset, accounting for character height.
+        ref_x.xmax = -offset
+        ref_x.y = offset + main_width/2
+        
+        # Q4 (Bottom-Right): Y coordinate, left-aligned
+        txt_y_comp = gf.components.text(text=f"{cy_val:+.1f}", size=c_text_size, layer=layer)
+        ref_y = c.add_ref(txt_y_comp)
+        # Left-aligned: xmin at offset.
+        # Use .y = -offset to center the text vertically at -offset, accounting for character height.
+        ref_y.xmin = offset
+        ref_y.y = -offset - main_width/2
+
+    # 7. Alignment Layers (L61 and L63)
+    if enable_alignment_layers:
+        # L63 Manual Alignment: Square framing the center bonecross tips
+        manual_box = get_rect_component(width=main_size, height=main_size, layer=layer_manual_align)
+        c.add_ref(manual_box)
+        
+        # Calculate wide part center offsets (same as create_bonecross)
+        internal_length = (main_width + main_size) / 2.0
+        end_length = (main_size - internal_length) / 2.0
+        wide_part_offset = (internal_length + end_length) / 2.0
+        
+        # L61 Auto Alignment: Thin slits perpendicular to arms
+        slit_w = 2.0
+        slit_h = main_size * 0.6
+        
+        # Left arm (horizontal) -> Vertical slit
+        auto_left = get_rect_component(width=slit_w, height=slit_h, layer=layer_auto_align)
+        c.add_ref(auto_left).move((-wide_part_offset, 0))
+        
+        # Top arm (vertical) -> Horizontal slit
+        auto_top = get_rect_component(width=slit_h, height=slit_w, layer=layer_auto_align)
+        c.add_ref(auto_top).move((0, wide_part_offset))
+            
+    _component_cache[name] = c
+    return c
+            
+    _component_cache[name] = c
+    return c
             
     _component_cache[name] = c
     return c
@@ -516,11 +580,11 @@ def generate_writefield_array(
     writefield_size: float = 1000.0,
     
     # Mark parameters
-    mark_main_size: float = 60.0,
+    mark_main_size: float = 80.0,
     mark_main_width: float = 5.0,
     mark_small_size: float = 15.0,
     mark_small_width: float = 2.0,
-    mark_small_dist: float = 35.0,
+    mark_small_dist: float = 50.0,
     
     # L-Marker parameters
     l_marker_length: float = 100.0,
@@ -530,7 +594,7 @@ def generate_writefield_array(
     boundary_line_width: float = 10.0,
     
     # Mark placement parameters
-    mark_offset_from_corner: tuple = (60.0, 60.0),
+    mark_offset_from_corner: tuple = (100.0, 100.0),
     
     # Global corner marks parameters
     global_mark_offset: float = 200.0,  # Distance from active area corner to global mark center (outward)
@@ -542,7 +606,7 @@ def generate_writefield_array(
     
     # Label parameters
     label_size: float = 15.0,
-    label_offset: tuple = (0.0, 50.0), # Distance from mark center to label center (x, y)
+    label_offset: tuple = (-70.0, -75.0), # Distance from mark center to label center (x, y)
     
     # Caliper parameters
     enable_caliper: bool = True,
@@ -566,6 +630,8 @@ def generate_writefield_array(
     layer_mark: tuple = (3, 0),  # L3: All marks
     layer_mark_frame: tuple = (4, 0),  # L4: Crosshair frames for main marks
     layer_caliper: tuple = (5, 0),  # L5: Calipers
+    layer_auto_align: tuple = (61, 0), # L61: Auto alignment slits
+    layer_manual_align: tuple = (63, 0), # L63: Manual alignment boxes
     
     # L4 frame parameters
     frame_width: float = None,  # Line width of the L-shape arms. Defaults to mark_width difference if None.
@@ -573,7 +639,9 @@ def generate_writefield_array(
     # Info parameters
     user_name: str = "Xinchuan",
     info_text_size: float = 50.0,
+    info_text_offset: tuple = (-100.0, -95.0), # Offset from the Top-Left global mark (x, y)
     info_text_line_width: float = 0.0,  # Bolder if > 0, thinner if < 0 (uses polygon offset)
+    enable_alignment_layers: bool = True
 ) -> gf.Component:
     """
     Generates an array of EBL write fields with alignment marks and labels.
@@ -612,7 +680,10 @@ def generate_writefield_array(
         enable_frame=True,
         frame_width=frame_width,
         layer_frame=layer_mark_frame,
-        quadrant_indicator=1
+        quadrant_indicator=1,
+        layer_auto_align=layer_auto_align,
+        layer_manual_align=layer_manual_align,
+        enable_alignment_layers=enable_alignment_layers
     )
     
     # Q2: Top-Left (Main Mark + Circle Q2)
@@ -627,7 +698,10 @@ def generate_writefield_array(
         enable_frame=True,
         frame_width=frame_width,
         layer_frame=layer_mark_frame,
-        quadrant_indicator=2
+        quadrant_indicator=2,
+        layer_auto_align=layer_auto_align,
+        layer_manual_align=layer_manual_align,
+        enable_alignment_layers=enable_alignment_layers
     )
     
     # Q3: Bottom-Left (Standard + Circle Q3)
@@ -642,7 +716,10 @@ def generate_writefield_array(
         enable_frame=True,
         frame_width=frame_width,
         layer_frame=layer_mark_frame,
-        quadrant_indicator=3
+        quadrant_indicator=3,
+        layer_auto_align=layer_auto_align,
+        layer_manual_align=layer_manual_align,
+        enable_alignment_layers=enable_alignment_layers
     )
     
     # Q4: Bottom-Right (Standard + Circle Q4)
@@ -657,7 +734,10 @@ def generate_writefield_array(
         enable_frame=True,
         frame_width=frame_width,
         layer_frame=layer_mark_frame,
-        quadrant_indicator=4
+        quadrant_indicator=4,
+        layer_auto_align=layer_auto_align,
+        layer_manual_align=layer_manual_align,
+        enable_alignment_layers=enable_alignment_layers
     )
     
     # Create L-Marker (L3)
@@ -675,31 +755,24 @@ def generate_writefield_array(
     )
 
     # 3.5. Create Global Corner Alignment Marks (with custom sizes)
-    global_mark_standard = create_composite_mark(
-        main_size=global_mark_main_size,
-        main_width=global_mark_main_width,
-        small_size=global_mark_small_size,
-        small_width=global_mark_small_width,
-        small_offset_dist=global_mark_small_dist,
-        layer=layer_mark,
-        is_main_mark=False,
-        enable_frame=True,
-        frame_width=frame_width,
-        layer_frame=layer_mark_frame
-    )
-    
-    global_mark_main = create_composite_mark(
-        main_size=global_mark_main_size,
-        main_width=global_mark_main_width,
-        small_size=global_mark_small_size,
-        small_width=global_mark_small_width,
-        small_offset_dist=global_mark_small_dist,
-        layer=layer_mark,
-        is_main_mark=True,
-        enable_frame=True,
-        frame_width=frame_width,
-        layer_frame=layer_mark_frame
-    )
+    def add_global_mark(pos, is_main=False):
+        mark = create_composite_mark(
+            main_size=global_mark_main_size,
+            main_width=global_mark_main_width,
+            small_size=global_mark_small_size,
+            small_width=global_mark_small_width,
+            small_offset_dist=global_mark_small_dist,
+            layer=layer_mark,
+            is_main_mark=is_main,
+            enable_frame=True,
+            frame_width=frame_width,
+            layer_frame=layer_mark_frame,
+            center_coords=pos,
+            layer_auto_align=layer_auto_align,
+            layer_manual_align=layer_manual_align,
+            enable_alignment_layers=enable_alignment_layers
+        )
+        return c.add_ref(mark).move(pos)
 
     # 5. Tiling Write Fields
     nx = int(np.ceil(active_width / writefield_size))
@@ -713,7 +786,7 @@ def generate_writefield_array(
     # Four corners
     # Top-Left corner (Main mark, relative to active area, offset outward)
     tl_mark_pos = (-h_active_w - global_mark_offset, h_active_h + global_mark_offset)
-    c.add_ref(global_mark_main).move(tl_mark_pos)
+    add_global_mark(tl_mark_pos, is_main=True)
     
     # Add info text to the right of the Top-Left global mark
     info_lines = [
@@ -722,8 +795,8 @@ def generate_writefield_array(
         f"User: {user_name}, Date: {datetime.now().strftime('%Y-%m-%d')}"
     ]
     
-    info_x = tl_mark_pos[0] + global_mark_main_size  # Start text after the mark
-    info_y_start = tl_mark_pos[1] + global_mark_main_size / 2.0
+    info_x = tl_mark_pos[0] + global_mark_main_size + info_text_offset[0]  # Start text after the mark + offset
+    info_y_start = tl_mark_pos[1] + global_mark_main_size / 2.0 + info_text_offset[1]
     
     for idx, line in enumerate(info_lines):
         text_comp = gf.components.text(
@@ -750,26 +823,26 @@ def generate_writefield_array(
         text_ref.move((info_x - text_ref.xmin, line_top_y - text_ref.ymax))
     
     # Top-Right corner (relative to active area, offset outward)
-    c.add_ref(global_mark_standard).move((h_active_w + global_mark_offset, h_active_h + global_mark_offset))
+    add_global_mark((h_active_w + global_mark_offset, h_active_h + global_mark_offset))
     
     # Bottom-Left corner (relative to active area, offset outward)
-    c.add_ref(global_mark_standard).move((-h_active_w - global_mark_offset, -h_active_h - global_mark_offset))
+    add_global_mark((-h_active_w - global_mark_offset, -h_active_h - global_mark_offset))
     
     # Bottom-Right corner (relative to active area, offset outward)
-    c.add_ref(global_mark_standard).move((h_active_w + global_mark_offset, -h_active_h - global_mark_offset))
+    add_global_mark((h_active_w + global_mark_offset, -h_active_h - global_mark_offset))
     
     # Four edges (midpoints)
     # Top edge (center)
-    c.add_ref(global_mark_standard).move((0, h_active_h + global_mark_offset))
+    add_global_mark((0, h_active_h + global_mark_offset))
     
     # Bottom edge (center)
-    c.add_ref(global_mark_standard).move((0, -h_active_h - global_mark_offset))
+    add_global_mark((0, -h_active_h - global_mark_offset))
     
     # Left edge (center)
-    c.add_ref(global_mark_standard).move((-h_active_w - global_mark_offset, 0))
+    add_global_mark((-h_active_w - global_mark_offset, 0))
     
     # Right edge (center)
-    c.add_ref(global_mark_standard).move((h_active_w + global_mark_offset, 0))
+    add_global_mark((h_active_w + global_mark_offset, 0))
 
     # 4. Create Shared Components (Calipers)
     caliper_top = None
@@ -885,7 +958,8 @@ if __name__ == "__main__":
 
     if GENERATE_MERGED_GDS:
         print("Generating merged GDS...")
-        c_merged = c.copy()
-        c_merged.name = f"{c.name}_merged"
-        c_merged.flatten()
+        # gf.geometry.union(by_layer=True) flattens the hierarchy and merges polygons 
+        # within each layer independently, ensuring no cross-layer merging.
+        c_merged = gf.geometry.union(c, by_layer=True)
+        c_merged.name = "TOP"
         c_merged.write_gds("mark_writefield_array_merged.gds")
