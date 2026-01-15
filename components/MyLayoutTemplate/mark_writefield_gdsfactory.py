@@ -960,6 +960,15 @@ if __name__ == "__main__":
         print("Generating merged GDS...")
         # gf.geometry.union(by_layer=True) flattens the hierarchy and merges polygons 
         # within each layer independently, ensuring no cross-layer merging.
-        c_merged = gf.geometry.union(c, by_layer=True)
-        c_merged.name = "TOP"
+        # c_merged = gf.geometry.union(c, by_layer=True)
+        # c_merged.name = "TOP"
+
+        # Update for gdsfactory >= 8.0 (geometry module removed)
+        c_merged = gf.Component("TOP")
+        polygons_dict = c.get_polygons(merge=True, by='tuple')
+        for layer_spec, polygons in polygons_dict.items():
+            layer_index = c_merged.layer(layer_spec)
+            for p in polygons:
+                c_merged.shapes(layer_index).insert(p)
+
         c_merged.write_gds("mark_writefield_array_merged.gds")
