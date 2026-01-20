@@ -29,7 +29,10 @@ except ImportError:
     HAS_PYQTGRAPH = False
 
 # Fallback backend
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    plt = None
 
 try:
     import tkinter as tk
@@ -213,6 +216,10 @@ def run_pyqtgraph(path: Path, polys: List[Poly], segs: List[Seg], draw_polys=Tru
     pg.exec()
 
 def run_matplotlib(path: Path, polys: List[Poly], segs: List[Seg], args, draw_polys, draw_lines):
+    if plt is None:
+        print("Error: Matplotlib not available.")
+        return
+
     # Use collections for speed if possible
     from matplotlib.collections import PolyCollection, LineCollection
     

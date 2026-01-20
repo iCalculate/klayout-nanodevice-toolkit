@@ -85,6 +85,29 @@ def get_rect_outline_component(
     _component_cache[name] = c
     return c
 
+def create_simple_cross(
+    size: float,
+    width: float,
+    layer: tuple
+) -> gf.Component:
+    """
+    Create a simple cross mark.
+    """
+    name = f"SimpleCross_S{size}_W{width}_L{layer[0]}_{layer[1]}"
+    
+    if name in _component_cache:
+        return _component_cache[name]
+        
+    c = gf.Component(name)
+    
+    # Horizontal
+    c.add_ref(get_rect_component(size, width, layer))
+    # Vertical
+    c.add_ref(get_rect_component(width, size, layer))
+    
+    _component_cache[name] = c
+    return c
+
 def create_bonecross(
     size: float = 50.0,
     width: float = 10.0,
@@ -102,8 +125,8 @@ def create_bonecross(
     
     total_length = size
     external_width = width
-    internal_width = width / 2.0
-    internal_length = (width + size) / 2.0
+    internal_width = width / 5.0
+    internal_length = min(1.5*width, 20.0) # Minimum length of 20 um
     
     end_length = (total_length - internal_length) / 2.0
     
@@ -123,6 +146,81 @@ def create_bonecross(
     add_rect(external_width, end_length, 0, -(internal_length + end_length) / 2.0)
     add_rect(external_width, end_length, 0, (internal_length + end_length) / 2.0)
     
+    _component_cache[name] = c
+    return c
+
+def create_split_bonecross(
+    size: float = 50.0,
+    width: float = 10.0,
+    layer: tuple = (1, 0),
+    mode: str = "main" # "main" or "complement"
+) -> gf.Component:
+    """
+    Create a split bonecross mark.
+    mode='main': External pads + Q2/Q4 internal L-shapes.
+    mode='complement': Q1/Q3 internal L-shapes.
+    """
+    suffix = "Main" if mode == "main" else "Comp"
+    name = f"SplitBoneCross_{suffix}_S{size}_W{width}_L{layer[0]}_{layer[1]}"
+    
+    if name in _component_cache:
+        return _component_cache[name]
+        
+    c = gf.Component(name)
+    
+    total_length = size
+    external_width = width
+    internal_width = 2.0 * width / 5.0
+    internal_length = min(1.5 * width, 20.0)
+    
+    end_length = (total_length - internal_length) / 2.0
+    
+    # Helper to add centered rectangle ref
+    def add_rect(w, h, dx, dy):
+        ref = c << get_rect_component(w, h, layer)
+        ref.move((dx, dy))
+        return ref
+    
+    if mode == "main":
+        # 1. External Pads (All 4)
+        # Horizontal
+        add_rect(end_length, external_width, -(internal_length + end_length) / 2.0, 0)
+        add_rect(end_length, external_width, (internal_length + end_length) / 2.0, 0)
+        # Vertical
+        add_rect(external_width, end_length, 0, -(internal_length + end_length) / 2.0)
+        add_rect(external_width, end_length, 0, (internal_length + end_length) / 2.0)
+        
+        # 2. Internal L-shapes (Q2 and Q4)
+        # Q2 (Top-Left): x in [-L/2, 0], y in [0, L/2]
+        # Horizontal Leg (Left half of top-left-quadrant of cross center?)
+        # Wait, cross arms are centered.
+        # H-arm: y in [-w/2, w/2]. V-arm: x in [-w/2, w/2].
+        # Q2 implies x<0, y>0.
+        # H-arm part: x in [-L/2, 0], y in [0, w/2].
+        add_rect(internal_length / 2.0, internal_width / 2.0, -internal_length / 4.0, internal_width / 4.0)
+        # V-arm part: x in [-w/2, 0], y in [0, L/2].
+        add_rect(internal_width / 2.0, internal_length / 2.0, -internal_width / 4.0, internal_length / 4.0)
+        
+        # Q4 (Bottom-Right): x in [0, L/2], y in [-L/2, 0]
+        # H-arm part: x in [0, L/2], y in [-w/2, 0].
+        add_rect(internal_length / 2.0, internal_width / 2.0, internal_length / 4.0, -internal_width / 4.0)
+        # V-arm part: x in [0, w/2], y in [-L/2, 0].
+        add_rect(internal_width / 2.0, internal_length / 2.0, internal_width / 4.0, -internal_length / 4.0)
+        
+    elif mode == "complement":
+        # Internal L-shapes (Q1 and Q3)
+        # Q1 (Top-Right): x in [0, L/2], y in [0, L/2]
+        # H-arm part: x in [0, L/2], y in [0, w/2].
+        add_rect(internal_length / 2.0, internal_width / 2.0, internal_length / 4.0, internal_width / 4.0)
+        # V-arm part: x in [0, w/2], y in [0, L/2].
+        add_rect(internal_width / 2.0, internal_length / 2.0, internal_width / 4.0, internal_length / 4.0)
+        
+        # Q3 (Bottom-Left): x in [-L/2, 0], y in [-L/2, 0]
+        # H-arm part: x in [-L/2, 0], y in [-w/2, 0].
+        add_rect(internal_length / 2.0, internal_width / 2.0, -internal_length / 4.0, -internal_width / 4.0)
+        # V-arm part: x in [-w/2, 0], y in [-L/2, 0].
+        add_rect(internal_width / 2.0, internal_length / 2.0, -internal_width / 4.0, -internal_length / 4.0)
+
     _component_cache[name] = c
     return c
 
@@ -172,11 +270,12 @@ def create_composite_mark(
         
     c = gf.Component(name)
     
-    # 1. Main Center Crossbone
-    c << create_bonecross(size=main_size, width=main_width, layer=layer)
+    # 1. Main Center Crossbone (Updated to SplitBoneCross)
+    # Replaces the default crossbone with the split version (Pads + Q2/Q4 Ls)
+    c << create_split_bonecross(size=main_size, width=main_width, layer=layer, mode="main")
     
     # 2. Small Corner Crossbones
-    small_mark = create_bonecross(size=small_size, width=small_width, layer=layer)
+    small_mark = create_simple_cross(size=small_size, width=small_width, layer=layer)
     
     for dx in [-1, 1]:
         for dy in [-1, 1]:
@@ -199,23 +298,24 @@ def create_composite_mark(
         add_line(line_width, line_length, -line_offset, 0)
         add_line(line_width, line_length, line_offset, 0)
 
-    # 4. Add Crosshair Frame if enabled
+    # 4. Add Crosshair Frame if enabled (Now L4 Complementary Graphics: Q1/Q3 Ls)
     if enable_frame:
-        frame = create_crosshair_frame(
-            mark_size=main_size,
-            mark_width=main_width,
-            frame_width=frame_width,
-            layer=layer_frame
+        # Instead of the old frame, we add the complementary parts of the split cross
+        complement = create_split_bonecross(
+            size=main_size,
+            width=main_width,
+            layer=layer_frame,
+            mode="complement"
         )
-        c << frame
+        c << complement
 
     # 5. Quadrant Indicator Circle
     if quadrant_indicator:
         # Determine position based on quadrant
         # 1: TR (+,+), 2: TL (-,+), 3: BL (-,-), 4: BR (+,-)
         # Position: "inner narrowed area".
-        # internal_width of main cross = main_width / 2.0
-        internal_width = main_width
+        # internal_width of main cross (synced with create_bonecross)
+        internal_width = 2.0 * main_width / 5.0
         
         # Place it in the corner formed by the cross arms
         dist = internal_width
@@ -266,13 +366,13 @@ def create_composite_mark(
         manual_box = get_rect_component(width=main_size, height=main_size, layer=layer_manual_align)
         c.add_ref(manual_box)
         
-        # Calculate wide part center offsets (same as create_bonecross)
-        internal_length = (main_width + main_size) / 2.0
+        # Calculate wide part center offsets (synced with create_bonecross)
+        internal_length = min(1.5 * main_width, 20.0)
         end_length = (main_size - internal_length) / 2.0
         wide_part_offset = (internal_length + end_length) / 2.0
         
         # L61 Auto Alignment: Thin slits perpendicular to arms
-        slit_w = 2.0
+        slit_w = 4.0
         slit_h = main_size * 0.6
         
         # Left arm (horizontal) -> Vertical slit
@@ -354,8 +454,8 @@ def create_crosshair_frame(
         layer: Layer for the frame
     """
     # Use the exact same logic as create_bonecross to find internal dimensions
-    internal_width = mark_width / 2.0
-    internal_length = (mark_width + mark_size) / 2.0
+    internal_width = mark_width / 5.0
+    internal_length = min(1.5 * mark_width, 20.0)
     
     # Default frame_width is the single-sided difference between wide and narrow parts
     if frame_width is None:
@@ -581,7 +681,7 @@ def generate_writefield_array(
     
     # Mark parameters
     mark_main_size: float = 80.0,
-    mark_main_width: float = 5.0,
+    mark_main_width: float = 10.0,
     mark_small_size: float = 15.0,
     mark_small_width: float = 2.0,
     mark_small_dist: float = 50.0,
