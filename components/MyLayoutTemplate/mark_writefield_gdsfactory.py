@@ -385,12 +385,6 @@ def create_composite_mark(
             
     _component_cache[name] = c
     return c
-            
-    _component_cache[name] = c
-    return c
-            
-    _component_cache[name] = c
-    return c
 
 def create_caliper(
     num_ticks_side: int,
@@ -497,9 +491,6 @@ def create_crosshair_frame(
     # Bottom-Right L: arms extend Right (to tip) and Down (to -tip)
     add_rect(frame_width, arm_len, corner + frame_width / 2.0, -corner - arm_len / 2.0)
     add_rect(arm_len, frame_width, corner + arm_len / 2.0, -corner - frame_width / 2.0)
-    
-    _component_cache[name] = c
-    return c
     
     _component_cache[name] = c
     return c
@@ -908,11 +899,89 @@ def generate_writefield_array(
         
         # Apply offset to change line width (boldness) if specified
         if info_text_line_width != 0:
-            text_comp = gf.geometry.offset(
-                text_comp, 
-                distance=info_text_line_width, 
-                layer=layer_mark
-            )
+            try:
+                # Try gdsfactory offset method if available
+                if hasattr(gf.geometry, 'offset'):
+                    text_comp = gf.geometry.offset(
+                        text_comp, 
+                        distance=info_text_line_width, 
+                        layer=layer_mark
+                    )
+                elif hasattr(text_comp, 'offset'):
+                    # Use component's offset method if available
+                    text_comp = text_comp.offset(distance=info_text_line_width)
+                else:
+                    # Fallback: manually offset using KLayout Region API
+                    import klayout.db as db
+                    offset_comp = gf.Component(f"{text_comp.name}_offset")
+                    # Get polygons - try different API methods
+                    polygons_dict = {}
+                    try:
+                        # Try get_polygons() without 'by' parameter
+                        polygons_list = text_comp.get_polygons()
+                        if polygons_list and len(polygons_list) > 0:
+                            first_item = polygons_list[0]
+                            if isinstance(first_item, tuple) and len(first_item) == 2:
+                                # Returns (poly, layer) tuples
+                                for poly, layer in polygons_list:
+                                    if layer not in polygons_dict:
+                                        polygons_dict[layer] = []
+                                    polygons_dict[layer].append(poly)
+                            else:
+                                # Returns polygon objects directly
+                                for poly in polygons_list:
+                                    layer = getattr(poly, 'layer', layer_mark)
+                                    if layer not in polygons_dict:
+                                        polygons_dict[layer] = []
+                                    polygons_dict[layer].append(poly)
+                    except (AttributeError, TypeError, ValueError):
+                        # Fallback: use polygons attribute
+                        try:
+                            for poly in text_comp.polygons:
+                                layer = getattr(poly, 'layer', layer_mark)
+                                if layer not in polygons_dict:
+                                    polygons_dict[layer] = []
+                                polygons_dict[layer].append(poly)
+                        except (AttributeError, TypeError):
+                            # Last resort: get polygons by layer
+                            try:
+                                polygons = text_comp.get_polygons(layer=layer_mark)
+                                polygons_dict[layer_mark] = polygons
+                            except:
+                                pass
+                    
+                    # Get dbu from component if available, otherwise use default (1nm = 0.001um)
+                    dbu = getattr(getattr(text_comp, 'kcl', None), 'dbu', 0.001)
+                    for layer_spec, polygons in polygons_dict.items():
+                        if layer_spec == layer_mark:
+                            region = db.Region()
+                            for poly in polygons:
+                                if isinstance(poly, db.DPolygon):
+                                    region.insert(db.Polygon.from_dpoly(poly))
+                                elif isinstance(poly, db.Polygon):
+                                    region.insert(poly)
+                                else:
+                                    try:
+                                        dpoly = db.DPolygon(poly)
+                                        region.insert(db.Polygon.from_dpoly(dpoly))
+                                    except:
+                                        offset_comp.add_polygon(poly, layer=layer_spec)
+                            # Apply offset (size expects distance in database units)
+                            # info_text_line_width is in microns, convert to database units
+                            offset_dbu = int(info_text_line_width / dbu)
+                            if offset_dbu != 0:
+                                region.size(offset_dbu)
+                            # Add offset polygons back
+                            for merged_poly in region.each():
+                                offset_comp.add_polygon(merged_poly.to_dtype(dbu), layer=layer_spec)
+                        else:
+                            # Copy other layers as-is
+                            for poly in polygons:
+                                offset_comp.add_polygon(poly, layer=layer_spec)
+                    text_comp = offset_comp
+            except Exception as e:
+                # If offset fails, use original text component
+                print(f"Warning: Text offset failed, using original text: {e}")
             
         text_ref = c << text_comp
         
@@ -1051,6 +1120,11 @@ def generate_writefield_array(
 if __name__ == "__main__":
     # Parameters
     GENERATE_MERGED_GDS = True # Set to True to generate a flattened (no hierarchy) GDS file
+    # MERGE_LAYERS: List of layers to merge. If None or empty, merge all layers.
+    # Only the specified layers will be included in the merged GDS file.
+    # Example: MERGE_LAYERS = [(3, 0), (4, 0)]  # Only merge and include layers 3 and 4
+    # Example: MERGE_LAYERS = None  # Merge all layers (default)
+    MERGE_LAYERS = [(3, 0), (4, 0)]  # Set to None to merge all layers, or specify a list like [(3, 0), (4, 0)]
 
     c = generate_writefield_array()
     c.show()
@@ -1058,17 +1132,260 @@ if __name__ == "__main__":
 
     if GENERATE_MERGED_GDS:
         print("Generating merged GDS...")
-        # gf.geometry.union(by_layer=True) flattens the hierarchy and merges polygons 
-        # within each layer independently, ensuring no cross-layer merging.
-        # c_merged = gf.geometry.union(c, by_layer=True)
-        # c_merged.name = "TOP"
-
-        # Update for gdsfactory >= 8.0 (geometry module removed)
+        
+        # Simple and reliable merge method
+        # Step 1: Flatten the component to remove all hierarchy
+        c_flat = c.flatten()
         c_merged = gf.Component("TOP")
-        polygons_dict = c.get_polygons(merge=True, by='tuple')
-        for layer_spec, polygons in polygons_dict.items():
-            layer_index = c_merged.layer(layer_spec)
-            for p in polygons:
-                c_merged.shapes(layer_index).insert(p)
-
+        
+        # Step 2: Get all layers from the flattened component
+        all_layers = set()
+        try:
+            # Try get_layers() method first
+            all_layers = set(c_flat.get_layers())
+            print(f"Found {len(all_layers)} layers using get_layers()")
+        except (AttributeError, TypeError):
+            # Fallback: iterate through polygons to collect layers
+            print("Using fallback method to collect layers...")
+            try:
+                # Try accessing polygons directly
+                for poly in c_flat.polygons:
+                    try:
+                        layer = poly.layer
+                        all_layers.add(layer)
+                    except:
+                        pass
+            except:
+                pass
+        
+        if not all_layers:
+            print("Warning: No layers found, trying alternative method...")
+            # Try to get polygons by iterating through known layers
+            known_layers = [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (61, 0), (63, 0)]
+            for layer in known_layers:
+                try:
+                    polys = c_flat.get_polygons(layer=layer)
+                    if polys:
+                        all_layers.add(layer)
+                except:
+                    pass
+        
+        # Step 2.5: Filter layers based on MERGE_LAYERS setting
+        if MERGE_LAYERS is not None and len(MERGE_LAYERS) > 0:
+            # Convert MERGE_LAYERS to set for easier comparison
+            merge_layers_set = set(tuple(l) if isinstance(l, (list, tuple)) else l for l in MERGE_LAYERS)
+            # Filter to only include layers that exist and are in MERGE_LAYERS
+            layers = all_layers.intersection(merge_layers_set)
+            print(f"Filtering layers: {len(layers)} layers selected from {len(all_layers)} total layers")
+            if len(layers) < len(merge_layers_set):
+                missing = merge_layers_set - layers
+                print(f"Warning: Some specified layers not found: {missing}")
+        else:
+            # Merge all layers
+            layers = all_layers
+            print(f"Processing all {len(layers)} layers for merging...")
+        
+        # Step 3: Process each layer - collect and merge polygons
+        import klayout.db as db
+        
+        # Use get_polygons_dict() or iterate through layers directly
+        polygons_by_layer = {}
+        
+        # Method 1: Try get_polygons_dict() if available
+        try:
+            if hasattr(c_flat, 'get_polygons_dict'):
+                polygons_dict = c_flat.get_polygons_dict()
+                if polygons_dict:
+                    polygons_by_layer = polygons_dict
+                    print(f"Using get_polygons_dict(): found {len(polygons_by_layer)} layers")
+        except:
+            pass
+        
+        # Method 2: Try get_polygons(by_spec=True) if available
+        if not polygons_by_layer:
+            try:
+                polygons_dict = c_flat.get_polygons(by_spec=True)
+                if polygons_dict:
+                    polygons_by_layer = polygons_dict
+                    print(f"Using get_polygons(by_spec=True): found {len(polygons_by_layer)} layers")
+            except:
+                pass
+        
+        # Method 3: Direct layer-by-layer retrieval
+        if not polygons_by_layer:
+            print("Using direct layer-by-layer retrieval...")
+            for layer_spec in layers:
+                try:
+                    # Try get_polygons with layer parameter
+                    polys = c_flat.get_polygons(layer=layer_spec)
+                    if polys:
+                        if isinstance(polys, list):
+                            polygons_by_layer[layer_spec] = polys
+                        else:
+                            polygons_by_layer[layer_spec] = list(polys)
+                except:
+                    pass
+        
+        # Method 4: Use polygons attribute and group by layer
+        if not polygons_by_layer:
+            print("Using .polygons attribute...")
+            try:
+                for poly in c_flat.polygons:
+                    try:
+                        layer = poly.layer
+                        if layer not in polygons_by_layer:
+                            polygons_by_layer[layer] = []
+                        polygons_by_layer[layer].append(poly)
+                    except:
+                        pass
+            except:
+                pass
+        
+        print(f"Found polygons in {len(polygons_by_layer)} layers")
+        for layer, polys in polygons_by_layer.items():
+            print(f"  Layer {layer}: {len(polys)} polygons")
+        
+        # Filter polygons_by_layer to only include layers we want to merge
+        if MERGE_LAYERS is not None and len(MERGE_LAYERS) > 0:
+            merge_layers_set = set(tuple(l) if isinstance(l, (list, tuple)) else l for l in MERGE_LAYERS)
+            polygons_by_layer = {k: v for k, v in polygons_by_layer.items() if k in merge_layers_set}
+            print(f"Filtered to {len(polygons_by_layer)} layers for merging")
+        
+        for layer_spec in layers:
+            try:
+                # Get polygons for this layer
+                polygons_for_layer = polygons_by_layer.get(layer_spec, [])
+                
+                if not polygons_for_layer:
+                    print(f"  Layer {layer_spec}: No polygons found")
+                    continue
+                
+                print(f"  Layer {layer_spec}: Found {len(polygons_for_layer)} polygons")
+                
+                # Step 4: Add polygons directly to merged component (simple approach)
+                # For merging, we'll use KLayout Region, but first add all polygons
+                poly_count = 0
+                region = db.Region()
+                
+                for poly in polygons_for_layer:
+                    try:
+                        # Convert polygon to KLayout format for merging
+                        points_list = None
+                        
+                        # Handle numpy array format (most common from gdsfactory)
+                        if isinstance(poly, np.ndarray):
+                            # numpy array of shape (N, 2) with points
+                            if poly.ndim == 2 and poly.shape[1] == 2:
+                                points_list = [db.DPoint(float(p[0]), float(p[1])) for p in poly]
+                        
+                        # Handle list/tuple of points
+                        elif isinstance(poly, (list, tuple)):
+                            if len(poly) > 0:
+                                first = poly[0]
+                                if isinstance(first, (list, tuple, np.ndarray)) and len(first) >= 2:
+                                    # Format: [[x,y], [x,y], ...]
+                                    points_list = [db.DPoint(float(p[0]), float(p[1])) for p in poly]
+                                elif len(poly) >= 6:
+                                    # Format: [x1,y1,x2,y2,...]
+                                    points_list = [db.DPoint(float(poly[i]), float(poly[i+1])) 
+                                                  for i in range(0, len(poly)-1, 2)]
+                        
+                        # Handle KLayout polygon types
+                        elif isinstance(poly, db.Polygon):
+                            region.insert(poly)
+                            continue
+                        elif isinstance(poly, db.DPolygon):
+                            region.insert(db.Polygon.from_dpoly(poly))
+                            continue
+                        
+                        # Handle polygon objects with points attribute
+                        else:
+                            if hasattr(poly, 'points'):
+                                pts = poly.points
+                                if isinstance(pts, np.ndarray) and pts.ndim == 2 and pts.shape[1] == 2:
+                                    points_list = [db.DPoint(float(p[0]), float(p[1])) for p in pts]
+                            elif hasattr(poly, 'xy'):
+                                pts = poly.xy
+                                if isinstance(pts, np.ndarray) and pts.ndim == 2 and pts.shape[1] == 2:
+                                    points_list = [db.DPoint(float(p[0]), float(p[1])) for p in pts]
+                        
+                        # Add to region if we have valid points
+                        if points_list and len(points_list) >= 3:
+                            try:
+                                dpoly = db.DPolygon(points_list)
+                                region.insert(db.Polygon.from_dpoly(dpoly))
+                            except:
+                                # If region insert fails, add directly
+                                try:
+                                    c_merged.add_polygon(poly, layer=layer_spec)
+                                    poly_count += 1
+                                except:
+                                    pass
+                        else:
+                            # If we can't convert, try adding directly
+                            try:
+                                c_merged.add_polygon(poly, layer=layer_spec)
+                                poly_count += 1
+                            except:
+                                pass
+                                
+                    except Exception as e:
+                        # Last resort: add polygon directly
+                        try:
+                            c_merged.add_polygon(poly, layer=layer_spec)
+                            poly_count += 1
+                        except:
+                            pass
+                
+                # Step 5: Merge region and add merged polygons
+                if region.size() > 0:
+                    try:
+                        merged_region = region.merged()
+                        for merged_poly in merged_region.each():
+                            try:
+                                # Convert polygon points back to list format for gdsfactory
+                                points = []
+                                for i in range(merged_poly.num_points_hull()):
+                                    pt = merged_poly.point_hull(i)
+                                    points.append([pt.x, pt.y])
+                                
+                                if len(points) >= 3:
+                                    c_merged.add_polygon(points, layer=layer_spec)
+                                    poly_count += 1
+                            except Exception as e2:
+                                # Fallback: try to_dtype conversion
+                                try:
+                                    dbu = getattr(getattr(c_flat, 'kcl', None), 'dbu', 0.001)
+                                    poly_db = merged_poly.to_dtype(dbu)
+                                    c_merged.add_polygon(poly_db, layer=layer_spec)
+                                    poly_count += 1
+                                except:
+                                    pass
+                    except Exception as e:
+                        print(f"  Layer {layer_spec}: Region merge error: {e}")
+                        # If merge fails, add polygons directly
+                        for poly in polygons_for_layer:
+                            try:
+                                c_merged.add_polygon(poly, layer=layer_spec)
+                                poly_count += 1
+                            except:
+                                pass
+                
+                print(f"  Layer {layer_spec}: Added {poly_count} polygons")
+                    
+            except Exception as e:
+                print(f"  Layer {layer_spec}: Error - {e}")
+                # Last resort: try to add polygons directly
+                try:
+                    polys = c_flat.get_polygons(layer=layer_spec)
+                    for p in polys:
+                        try:
+                            c_merged.add_polygon(p, layer=layer_spec)
+                        except:
+                            pass
+                except:
+                    pass
+        
+        print(f"Writing merged GDS file...")
         c_merged.write_gds("mark_writefield_array_merged.gds")
+        print(f"Merged GDS file written successfully!")
