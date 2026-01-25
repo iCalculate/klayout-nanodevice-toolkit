@@ -175,3 +175,7 @@ Thumbs.db
 test_outputs/
 generated_layouts/
 *.log 
+components/greyscale/greyscale_microlens_1024.bmp
+components/greyscale/greyscale_microlens_1024.png
+components/greyscale/greyscale_fresnel_lens_1024.png
+components/greyscale/greyscale_fresnel_lens_1024.bmp
