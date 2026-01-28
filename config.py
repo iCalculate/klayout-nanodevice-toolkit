@@ -106,4 +106,55 @@ ALIGNMENT_CONFIG = {
 # 默认缩放参数
 # Default scaling parameters
 DEFAULT_UNIT_SCALE = 1000      # 1 um = 1000 nm
-DEFAULT_DBU = 0.001           # 1 dbu = 0.001 um = 1 nm 
+DEFAULT_DBU = 0.001           # 1 dbu = 0.001 um = 1 nm
+
+# 输出路径配置
+# Output path configuration
+import os
+
+def get_project_root():
+    """获取项目根目录路径"""
+    # config.py在项目根目录，所以直接返回所在目录
+    return os.path.dirname(os.path.abspath(__file__))
+
+def get_output_dir():
+    """获取输出目录路径（output文件夹）"""
+    root = get_project_root()
+    output_dir = os.path.join(root, "output")
+    # 确保目录存在
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+def get_grayscale_img_dir():
+    """获取灰度图像输出目录路径（output/grayscaleImg文件夹）"""
+    output_dir = get_output_dir()
+    grayscale_dir = os.path.join(output_dir, "grayscaleImg")
+    # 确保目录存在
+    os.makedirs(grayscale_dir, exist_ok=True)
+    return grayscale_dir
+
+def get_gds_path(filename):
+    """
+    获取GDS文件的完整输出路径
+    
+    Args:
+        filename: GDS文件名（如 "test.gds"）
+    
+    Returns:
+        str: 完整的文件路径
+    """
+    output_dir = get_output_dir()
+    return os.path.join(output_dir, filename)
+
+def get_image_path(filename):
+    """
+    获取图像文件的完整输出路径（灰度图等）
+    
+    Args:
+        filename: 图像文件名（如 "test.bmp" 或 "test.png"）
+    
+    Returns:
+        str: 完整的文件路径
+    """
+    grayscale_dir = get_grayscale_img_dir()
+    return os.path.join(grayscale_dir, filename) 

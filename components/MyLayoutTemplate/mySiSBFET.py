@@ -915,7 +915,12 @@ def main():
     print(f"参数扫描阵列已创建: {scan_array.name}")
 
     # 保存布局文件
-    output_file = "TEST_mySiSBFET_COMP.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("TEST_mySiSBFET_COMP.gds")
     fet.layout.write(output_file)
     print(f"布局文件已保存: {output_file}")
     

@@ -52,9 +52,12 @@ CORNER_MARK_THICKNESS = 10  # Thickness of corner mark lines
 CORNER_MARK_GRAY = 255  # Color of corner marks
 CORNER_MARK_OFFSET = 0  # No offset - marks at exact corners
 
-# Output filename (in same directory as script)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PNG_FILENAME = os.path.join(SCRIPT_DIR, "greyscale_fresnel_lens_1024.png")
+# Output filename (using configured output directory)
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from config import get_image_path
+
+PNG_FILENAME = get_image_path("greyscale_fresnel_lens_1024.png")
 
 # =============================================================================
 # FUNCTIONS

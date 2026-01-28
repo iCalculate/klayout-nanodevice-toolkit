@@ -785,7 +785,12 @@ def main():
     print(f"Complex array created: {complex_array.name}")
     
     # Save layout file
-    output_file = "FET_Device_Examples.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("FET_Device_Examples.gds")
     device5.layout.write(output_file)
     print(f"\nLayout file saved: {output_file}")
     print("All examples completed!")

@@ -88,5 +88,11 @@ if __name__ == "__main__":
     layer = layout.layer(layer_info['id'], 0, layer_info['name'])
     for poly in polys:
         cell.shapes(layer).insert(poly)
-    layout.write('TEST_QRCODE_UTILS.gds')
-    print('二维码GDS文件 TEST_QRCODE_UTILS.gds 已生成。') 
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_path = get_gds_path('TEST_QRCODE_UTILS.gds')
+    layout.write(output_path)
+    print(f'二维码GDS文件已生成: {output_path}') 

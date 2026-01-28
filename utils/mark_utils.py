@@ -400,6 +400,11 @@ if __name__ == "__main__":
         cell.shapes(text_layer_id).insert(pya.Text(desc, int(text_x / layout.dbu), int(text_y / layout.dbu)))
 
     print("All mark types (10um) have been generated and arranged in a grid with text labels.")
-    output_gds = "TEST_MARK_UTILS.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_gds = get_gds_path("TEST_MARK_UTILS.gds")
     layout.write(output_gds)
     print(f"Layout saved to {output_gds}") 

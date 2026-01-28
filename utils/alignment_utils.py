@@ -220,8 +220,14 @@ def main():
         # 创建四个象限的对准标记
         print("创建四个象限的对准标记...")
         four_marks = align_mark.create_four_quadrant_marks()
-        align_mark.save_to_gds("TEST_ALIGNMENT_UTILS.gds", four_marks)
-        print("四个象限对准标记已保存到: TEST_ALIGNMENT_UTILS.gds")
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from config import get_gds_path
+        
+        output_path = get_gds_path("TEST_ALIGNMENT_UTILS.gds")
+        align_mark.save_to_gds(output_path, four_marks)
+        print(f"四个象限对准标记已保存到: {output_path}")
         
         print("\n对准标记工具演示完成！")
         

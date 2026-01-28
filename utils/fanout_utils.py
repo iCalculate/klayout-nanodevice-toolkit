@@ -411,7 +411,13 @@ if __name__ == '__main__':
             ly = int((y0 + pad_dy/2 - 10) * unit_scale)
             test_cell.shapes(layer_text).insert(pya.Text.new(label, lx, ly))
 
-        layout.write("TEST_FANOUT_UTILS.gds")
-        print("GDS file TEST_FANOUT_UTILS.gds generated in project root.")
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from config import get_gds_path
+        
+        output_path = get_gds_path("TEST_FANOUT_UTILS.gds")
+        layout.write(output_path)
+        print(f"GDS file generated: {output_path}")
     except Exception as e:
         print("[WARN] GDS export failed:", e) 

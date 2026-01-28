@@ -333,7 +333,12 @@ def main():
     print(f"参数扫描器件已创建: {scan_cell.name}")
 
     # 保存布局文件
-    output_file = "TEST_HALLBAR_COMP.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("TEST_HALLBAR_COMP.gds")
     hallbar.layout.write(output_file)
     print(f"布局文件已保存: {output_file}")
 

@@ -347,11 +347,17 @@ def generate_mark_array(
 
 if __name__ == "__main__":
     # Generate and show with different mark types
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path
+    
     # Example 1: Standard cross mark (default)
     c1 = generate_mark_array(mark_type="cross", name="mark_array_cross_sample")
     #c1.show()
-    c1.write_gds("mark_array_cross.gds")
-    print("Cross mark array written to mark_array_cross.gds")
+    output_path = get_gds_path("mark_array_cross.gds")
+    c1.write_gds(output_path)
+    print(f"Cross mark array written to {output_path}")
     
     # Example 2: Chessboard mark
     c2 = generate_mark_array(
@@ -366,8 +372,9 @@ if __name__ == "__main__":
         name="mark_array_chessboard_sample"
     )
     #c2.show()
-    c2.write_gds("mark_array_chessboard.gds")
-    print("Chessboard mark array written to mark_array_chessboard.gds")
+    output_path = get_gds_path("mark_array_chessboard.gds")
+    c2.write_gds(output_path)
+    print(f"Chessboard mark array written to {output_path}")
     
     # Example 3: Bone cross mark
     c3 = generate_mark_array(mark_type="bonecross",
@@ -381,6 +388,7 @@ if __name__ == "__main__":
         name="mark_array_bonecross_sample"
     )
     #c3.show()
-    c3.write_gds("mark_array_bonecross.gds")
-    print("Bonecross mark array written to mark_array_bonecross.gds")
+    output_path = get_gds_path("mark_array_bonecross.gds")
+    c3.write_gds(output_path)
+    print(f"Bonecross mark array written to {output_path}")
 

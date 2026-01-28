@@ -3,6 +3,7 @@
 版图生成器主模块 - 实现阵列排布和参数扫描
 """
 
+import os
 import pya
 from config import LAYER_DEFINITIONS, PROCESS_CONFIG
 from components.mosfet import MOSFET
@@ -288,6 +289,10 @@ class LayoutGenerator:
     
     def save_layout(self, filename="mosfet_array.gds"):
         """保存版图文件"""
+        # 如果filename是相对路径，使用配置的输出目录
+        if not os.path.isabs(filename):
+            from config import get_gds_path
+            filename = get_gds_path(filename)
         self.layout.write(filename)
         print(f"版图已保存为: {filename}")
     

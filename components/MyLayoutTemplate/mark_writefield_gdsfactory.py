@@ -3,6 +3,17 @@ import gdsfactory as gf
 import numpy as np
 import string
 from datetime import datetime
+
+# Ensure PDK is activated (gdsfactory should auto-activate generic PDK, but we ensure it)
+# The PDK will be activated automatically when first used, but we can force it here
+try:
+    from gdsfactory.pdk import get_active_pdk
+    if get_active_pdk() is None:
+        # Force activation by accessing a component or layer
+        _ = gf.components.rectangle()  # This will trigger PDK activation
+except:
+    pass  # PDK will be activated automatically
+
 # Cache to store created components and avoid name collisions
 _component_cache = {}
 
@@ -109,10 +120,13 @@ def get_path_component(
     if name in _component_cache:
         return _component_cache[name]
     
+    # Create component using gdsfactory
     c = gf.Component(name)
     
-    # Use KLayout API directly to create path
+    # Use KLayout API directly to create true path element
     import klayout.db as db
+    import tempfile
+    import os
     
     # Path is centered at origin: extends from -length/2 to +length/2
     if orientation == "horizontal":
@@ -128,16 +142,62 @@ def get_path_component(
     path_points = [start_point, end_point]
     klayout_path = db.DPath(path_points, width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
     
-    # Get KLayout layout and cell from gdsfactory component
-    _ = c.bbox()  # Initialize layout
-    klayout_layout = c.kcl
-    # Get cell index and then access cell directly
-    cell_index = klayout_layout.cell_by_name(c.name)
-    klayout_cell = klayout_layout[cell_index]  # Access cell by index
-    
-    # Get layer index and insert path
-    layer_index = klayout_layout.layer(layer[0], layer[1])
-    klayout_cell.shapes(layer_index).insert(klayout_path)
+    # Method: Write component to temporary GDS, read with KLayout, insert path, write back, read with gdsfactory
+    # This ensures we get a true path element in the final GDS
+    try:
+        # Create temporary GDS file
+        temp_gds = tempfile.NamedTemporaryFile(suffix='.gds', delete=False)
+        temp_gds.close()
+        
+        # Write empty component to get the structure
+        c.write_gds(temp_gds.name)
+        
+        # Read with KLayout and insert path
+        layout = db.Layout()
+        layout.read(temp_gds.name)
+        
+        # Get the cell (should be the only one)
+        cell = layout.top_cell()
+        
+        # Get layer index
+        layer_index = layout.layer(layer[0], layer[1])
+        
+        # Insert the path element
+        cell.shapes(layer_index).insert(klayout_path)
+        
+        # Write back
+        layout.write(temp_gds.name)
+        
+        # Read back with gdsfactory
+        c = gf.import_gds(temp_gds.name)
+        c.name = name  # Restore original name
+        
+        # Clean up temp file
+        os.unlink(temp_gds.name)
+        
+    except Exception as e:
+        # Fallback: use polygon if path insertion fails
+        print(f"Warning: Could not create true path element, using polygon instead: {e}")
+        if orientation == "horizontal":
+            c.add_polygon(
+                [
+                    (-length/2.0, -width/2.0), 
+                    (length/2.0, -width/2.0), 
+                    (length/2.0, width/2.0), 
+                    (-length/2.0, width/2.0)
+                ], 
+                layer=layer
+            )
+        else:
+            c.add_polygon(
+                [
+                    (-width/2.0, -length/2.0), 
+                    (width/2.0, -length/2.0), 
+                    (width/2.0, length/2.0), 
+                    (-width/2.0, length/2.0)
+                ], 
+                layer=layer
+            )
     
     _component_cache[name] = c
     return c
@@ -1180,6 +1240,42 @@ def generate_writefield_array(
     return c
 
 if __name__ == "__main__":
-    c = generate_writefield_array()
-    c.show()
-    c.write_gds("mark_writefield_array.gds")
+    import sys
+    import os
+    
+    # 确保输出立即显示（无缓冲模式）
+    sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+    sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
+    
+    # 立即输出，确保能看到
+    print("Script started", file=sys.stdout, flush=True)
+    print("=" * 60, file=sys.stdout, flush=True)
+    
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        print("Importing config...", file=sys.stdout, flush=True)
+        from config import get_gds_path
+        print("Config imported", file=sys.stdout, flush=True)
+        
+        print("开始生成版图...", file=sys.stdout, flush=True)
+        c = generate_writefield_array()
+        print("版图生成完成", file=sys.stdout, flush=True)
+        
+        output_path = get_gds_path("mark_writefield_array.gds")
+        print(f"正在保存GDS文件到: {output_path}", file=sys.stdout, flush=True)
+        c.write_gds(output_path)
+        print(f"[OK] GDS文件已保存到: {output_path}", file=sys.stdout, flush=True)
+        print("=" * 60, file=sys.stdout, flush=True)
+        
+        # 尝试显示（如果环境支持图形界面，但不阻塞）
+        try:
+            print("尝试在KLayout中显示版图...", file=sys.stdout, flush=True)
+            c.show()
+        except Exception as e:
+            print(f"注意: 无法显示图形界面 ({e})", file=sys.stdout, flush=True)
+            print("您可以在KLayout中打开生成的GDS文件查看", file=sys.stdout, flush=True)
+    except Exception as e:
+        print(f"错误: {e}", file=sys.stderr, flush=True)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)

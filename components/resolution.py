@@ -855,7 +855,9 @@ if __name__ == "__main__":
         gds_filename = "TEST_RESOLUTION_COMP_AUTO.gds"
         cell_name = "Resolution_Test_Auto"
     
-    gds_path = os.path.join(root_dir, gds_filename)
+    # 使用配置的输出目录
+    from config import get_gds_path
+    gds_path = get_gds_path(gds_filename)
     
     if create_gds_file(shapes, gds_path, cell_name):
         print(f"✓ {gds_filename} 生成完成")

@@ -395,7 +395,12 @@ def main():
         return
     
     # ===== Save results =====
-    output_file = "TEST_MEANDER.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("TEST_MEANDER.gds")
     print(f"Saving to: {output_file}")
     try:
         meander.layout.write(output_file)

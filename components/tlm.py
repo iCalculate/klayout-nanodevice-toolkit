@@ -409,7 +409,12 @@ def main():
     }
     scan_cell = tlm_scan.scan_parameters_and_create_array(param_ranges, rows=3, cols=3, offset_x=0, offset_y=0)
     print(f"参数扫描器件已创建: {scan_cell.name}")
-    output_file = "TEST_TLM_COMP.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("TEST_TLM_COMP.gds")
     layout.write(output_file)
     print(f"布局文件已保存: {output_file}")
     print("TLM单元器件与2x2阵列生成测试完成！")

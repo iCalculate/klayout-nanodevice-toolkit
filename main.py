@@ -7,6 +7,7 @@ Main entry - integrates modules and provides simple usage examples.
 import pya
 from layout_generator import LayoutGenerator
 from gui_interface import show_mosfet_layout_gui
+from config import get_gds_path
 
 def create_simple_array():
     """创建简单的器件阵列示例
@@ -85,7 +86,7 @@ def create_parameter_scan():
     generator.generate_layout()
     
     # 保存文件
-    generator.save_layout("parameter_scan_array.gds")
+    generator.save_layout(get_gds_path("parameter_scan_array.gds"))
     
     # 加载到GUI
     generator.load_to_gui()

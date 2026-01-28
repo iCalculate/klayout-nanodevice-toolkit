@@ -354,7 +354,12 @@ def main():
     print(f"主阵列已创建: {main_array.name}")
     
     # 保存文件
-    output_file = "UV_TLM_Array_6mm.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("UV_TLM_Array_6mm.gds")
     layout.write(output_file)
     print(f"布局文件已保存: {output_file}")
     

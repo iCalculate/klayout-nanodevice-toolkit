@@ -276,7 +276,12 @@ def main():
         return
     
     # Save results
-    output_file = "MicroHeater_Array_6x6.gds"
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path
+    
+    output_file = get_gds_path("MicroHeater_Array_6x6.gds")
     print(f"Saving to: {output_file}")
     try:
         microheater.layout.write(output_file)

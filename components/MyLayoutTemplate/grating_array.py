@@ -42,7 +42,12 @@ def image_to_parameter_matrix(
     if save_debug_image:
         # Save debug image before flipping (so it looks upright in viewer)
         # We append mode and resolution to filename
-        debug_filename = f"debug_resized_{mode}_{target_resolution[0]}x{target_resolution[1]}.png"
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        from config import get_image_path
+        
+        debug_filename = get_image_path(f"debug_resized_{mode}_{target_resolution[0]}x{target_resolution[1]}.png")
         img.save(debug_filename)
         print(f"Saved debug image to {debug_filename}")
 
@@ -295,17 +300,23 @@ if __name__ == "__main__":
         angle_range=(0.0, 90.0),
         name="grating_array_gradient"
     )
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path, get_image_path
+    
     c.show()
-    c.write_gds("grating_array_sample.gds")
-    print("Layout written to grating_array_sample.gds")
+    output_path = get_gds_path("grating_array_sample.gds")
+    c.write_gds(output_path)
+    print(f"Layout written to {output_path}")
     
     # Example 2: From Image
     image_path = "components/MyLayoutTemplate/PixelArt-KIRBY.jpg"
     # Fallback to dummy if not found, just for robustness in script
-    import os
+    
     if not os.path.exists(image_path):
         print(f"Image {image_path} not found, creating dummy.")
-        image_path = "temp_test_pattern.png"
+        image_path = get_image_path("temp_test_pattern.png")
         img_size = (32, 32)
         dummy_img = Image.new('RGB', img_size) # RGB for Hue
         # Create a gradient pattern
@@ -317,7 +328,7 @@ if __name__ == "__main__":
                 dummy_img.putpixel((x, y), (hue, 255, val)) # This is actually RGB values, not HSV
                 # To verify HSV logic we need real image or proper HSV->RGB conversion. 
                 # But for dummy fallback this is fine.
-        dummy_img.save("temp_test_pattern.png")
+        dummy_img.save(image_path)
     
     # Calculate grid size for 8000um active area and 200um cell
     active_width = 8000.0
@@ -359,9 +370,11 @@ if __name__ == "__main__":
         name="grating_array_from_image"
     )
     c_img.show()
-    c_img.write_gds("grating_array_from_image.gds")
-    print("Layout written to grating_array_from_image.gds")
+    output_path = get_gds_path("grating_array_from_image.gds")
+    c_img.write_gds(output_path)
+    print(f"Layout written to {output_path}")
     
     # Clean up dummy
-    if image_path == "temp_test_pattern.png" and os.path.exists("temp_test_pattern.png"):
-        os.remove("temp_test_pattern.png")
+    temp_path = get_image_path("temp_test_pattern.png")
+    if image_path == temp_path and os.path.exists(temp_path):
+        os.remove(temp_path)

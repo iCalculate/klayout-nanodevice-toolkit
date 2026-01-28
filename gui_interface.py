@@ -4,6 +4,7 @@ GUI界面模块 - 提供用户友好的参数配置界面
 GUI interface module providing a user-friendly parameter configuration UI.
 """
 
+import os
 import pya
 from layout_generator import LayoutGenerator
 
@@ -393,7 +394,11 @@ class MOSFETLayoutGUI:
             self.generator.generate_layout()
             
             # 保存文件
+            from config import get_gds_path
             filename = self.filename_edit.text()
+            # 确保使用配置的输出目录
+            if not os.path.isabs(filename):
+                filename = get_gds_path(filename)
             self.generator.save_layout(filename)
             
             # 自动加载到GUI

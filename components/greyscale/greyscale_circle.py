@@ -51,10 +51,13 @@ COLORBAR_Y = HEIGHT - COLORBAR_HEIGHT - 60  # Move up to balance with circle
 OUTPUT_FORMAT = "BMP"  # Options: "BMP", "TIFF", "BOTH"
 OUTPUT_BOTH = False  # If True, save both formats regardless of OUTPUT_FORMAT
 
-# Output filenames (in same directory as script)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-TIFF_FILENAME = os.path.join(SCRIPT_DIR, "greyscale_angular_circle_1024.tif")
-BMP_FILENAME = os.path.join(SCRIPT_DIR, "greyscale_angular_circle_1024.bmp")
+# Output filenames (using configured output directory)
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from config import get_image_path
+
+TIFF_FILENAME = get_image_path("greyscale_angular_circle_1024.tif")
+BMP_FILENAME = get_image_path("greyscale_angular_circle_1024.bmp")
 
 # =============================================================================
 # FUNCTIONS

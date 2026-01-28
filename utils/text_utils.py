@@ -190,5 +190,11 @@ if __name__ == "__main__":
         shapes = TextUtils.create_text_freetype(line, start_x, y_pos,font_path='C:/Windows/Fonts/OCRAEXT.TTF', size_um=size, spacing_um=2.0)
         for shape in shapes:
             top.shapes(layer).insert(shape)
-    layout.write('TEST_TEXT_UTILS.gds')
-    print('TEST_TEXT_UTILS.gds generated successfully.')
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_path = get_gds_path('TEST_TEXT_UTILS.gds')
+    layout.write(output_path)
+    print(f'TEST_TEXT_UTILS.gds generated successfully: {output_path}')

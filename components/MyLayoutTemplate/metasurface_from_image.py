@@ -298,8 +298,13 @@ def generate_metasurface_from_image(
 # =============================================================================
 
 if __name__ == "__main__":
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from config import get_gds_path, get_image_path
+    
     # Create a dummy gradient image for demonstration if one doesn't exist
-    demo_image_path = "gradient_test.png"
+    demo_image_path = get_image_path("gradient_test.png")
     width, height = 50, 50
     gradient = np.zeros((height, width), dtype=np.uint8)
     for i in range(width):
@@ -319,7 +324,7 @@ if __name__ == "__main__":
     
     generate_metasurface_from_image(
         image_path=demo_image_path,
-        output_gds="metasurface_pb_rect.gds",
+        output_gds=get_gds_path("metasurface_pb_rect.gds"),
         pitch_x=1.0,
         pitch_y=1.0,
         cell_function=cell_rectangle,
@@ -340,7 +345,7 @@ if __name__ == "__main__":
         
     generate_metasurface_from_image(
         image_path=demo_image_path,
-        output_gds="metasurface_variable_circle.gds",
+        output_gds=get_gds_path("metasurface_variable_circle.gds"),
         pitch_x=1.0,
         pitch_y=1.0,
         cell_function=cell_variable_size,
@@ -359,7 +364,7 @@ if __name__ == "__main__":
 
     generate_metasurface_from_image(
         image_path=demo_image_path,
-        output_gds="metasurface_split_ring.gds",
+        output_gds=get_gds_path("metasurface_split_ring.gds"),
         pitch_x=1.0,
         pitch_y=1.0,
         cell_function=cell_split_ring,

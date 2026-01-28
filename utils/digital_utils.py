@@ -304,5 +304,11 @@ if __name__ == "__main__":
         text = Text(char, int(x * unit_scale), int((y - size*2) * unit_scale))
         top.shapes(layer).insert(text)
 
-    layout.write('TEST_DIGITS_UTILS.gds')
-    print('GDS file TEST_DIGITS_UTILS.gds generated.') 
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import get_gds_path
+    
+    output_path = get_gds_path('TEST_DIGITS_UTILS.gds')
+    layout.write(output_path)
+    print(f'GDS file generated: {output_path}') 
