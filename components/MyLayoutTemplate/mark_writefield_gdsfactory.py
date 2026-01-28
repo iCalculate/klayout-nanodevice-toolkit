@@ -85,6 +85,63 @@ def get_rect_outline_component(
     _component_cache[name] = c
     return c
 
+def get_path_component(
+    length: float,
+    width: float,
+    layer: tuple,
+    orientation: str = "horizontal"  # "horizontal" or "vertical"
+) -> gf.Component:
+    """
+    Get or create a path component (straight line) as a true path element, not a box.
+    Path is centered at origin (0, 0).
+    Uses KLayout API directly to create path element.
+    
+    Args:
+        length: Path length
+        width: Path width (line width)
+        layer: Layer tuple
+        orientation: "horizontal" or "vertical"
+    """
+    l_str = f"{length:.3g}".replace('.', 'p')
+    w_str = f"{width:.3g}".replace('.', 'p')
+    name = f"Path_L{l_str}_W{w_str}_{orientation}_L{layer[0]}_{layer[1]}"
+    
+    if name in _component_cache:
+        return _component_cache[name]
+    
+    c = gf.Component(name)
+    
+    # Use KLayout API directly to create path
+    import klayout.db as db
+    
+    # Path is centered at origin: extends from -length/2 to +length/2
+    if orientation == "horizontal":
+        # Horizontal path: from (-length/2, 0) to (length/2, 0)
+        start_point = db.DPoint(-length/2, 0)
+        end_point = db.DPoint(length/2, 0)
+    else:
+        # Vertical path: from (0, -length/2) to (0, length/2)
+        start_point = db.DPoint(0, -length/2)
+        end_point = db.DPoint(0, length/2)
+    
+    # Create KLayout Path object (true path element, not box)
+    path_points = [start_point, end_point]
+    klayout_path = db.DPath(path_points, width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
+    
+    # Get KLayout layout and cell from gdsfactory component
+    _ = c.bbox()  # Initialize layout
+    klayout_layout = c.kcl
+    # Get cell index and then access cell directly
+    cell_index = klayout_layout.cell_by_name(c.name)
+    klayout_cell = klayout_layout[cell_index]  # Access cell by index
+    
+    # Get layer index and insert path
+    layer_index = klayout_layout.layer(layer[0], layer[1])
+    klayout_cell.shapes(layer_index).insert(klayout_path)
+    
+    _component_cache[name] = c
+    return c
+
 def create_simple_cross(
     size: float,
     width: float,
@@ -367,21 +424,26 @@ def create_composite_mark(
         c.add_ref(manual_box)
         
         # Calculate wide part center offsets (synced with create_bonecross)
+        # Bone structure: external wide parts are at the ends of each arm
         internal_length = min(1.5 * main_width, 20.0)
         end_length = (main_size - internal_length) / 2.0
-        wide_part_offset = (internal_length + end_length) / 2.0
+        # Wide part center position: center of the external wide rectangle
+        # Left arm (horizontal): wide part center at x = -(internal_length + end_length) / 2.0, y = 0
+        # Top arm (vertical): wide part center at x = 0, y = (internal_length + end_length) / 2.0
+        wide_part_center_x = -(internal_length + end_length) / 2.0  # Left arm wide part center
+        wide_part_center_y = (internal_length + end_length) / 2.0   # Top arm wide part center
         
-        # L61 Auto Alignment: Thin slits perpendicular to arms
-        slit_w = 4.0
-        slit_h = main_size * 0.6
+        # L61 Auto Alignment: Paths perpendicular to arms, centered in the external wide parts
+        path_width = 5.0  # Default line width
+        path_length = 50.0  # Default line length
         
-        # Left arm (horizontal) -> Vertical slit
-        auto_left = get_rect_component(width=slit_w, height=slit_h, layer=layer_auto_align)
-        c.add_ref(auto_left).move((-wide_part_offset, 0))
+        # Left arm (horizontal) -> Vertical path, centered at wide part center, aligned with arm center (y=0)
+        auto_left = get_path_component(length=path_length, width=path_width, layer=layer_auto_align, orientation="vertical")
+        c.add_ref(auto_left).move((wide_part_center_x, 0))  # Centered in left arm's wide part, aligned with arm
         
-        # Top arm (vertical) -> Horizontal slit
-        auto_top = get_rect_component(width=slit_h, height=slit_w, layer=layer_auto_align)
-        c.add_ref(auto_top).move((0, wide_part_offset))
+        # Top arm (vertical) -> Horizontal path, centered at wide part center, aligned with arm center (x=0)
+        auto_top = get_path_component(length=path_length, width=path_width, layer=layer_auto_align, orientation="horizontal")
+        c.add_ref(auto_top).move((0, wide_part_center_y))  # Centered in top arm's wide part, aligned with arm
             
     _component_cache[name] = c
     return c
@@ -1118,274 +1180,6 @@ def generate_writefield_array(
     return c
 
 if __name__ == "__main__":
-    # Parameters
-    GENERATE_MERGED_GDS = True # Set to True to generate a flattened (no hierarchy) GDS file
-    # MERGE_LAYERS: List of layers to merge. If None or empty, merge all layers.
-    # Only the specified layers will be included in the merged GDS file.
-    # Example: MERGE_LAYERS = [(3, 0), (4, 0)]  # Only merge and include layers 3 and 4
-    # Example: MERGE_LAYERS = None  # Merge all layers (default)
-    MERGE_LAYERS = [(3, 0), (4, 0)]  # Set to None to merge all layers, or specify a list like [(3, 0), (4, 0)]
-
     c = generate_writefield_array()
     c.show()
     c.write_gds("mark_writefield_array.gds")
-
-    if GENERATE_MERGED_GDS:
-        print("Generating merged GDS...")
-        
-        # Simple and reliable merge method
-        # Step 1: Flatten the component to remove all hierarchy
-        c_flat = c.flatten()
-        c_merged = gf.Component("TOP")
-        
-        # Step 2: Get all layers from the flattened component
-        all_layers = set()
-        try:
-            # Try get_layers() method first
-            all_layers = set(c_flat.get_layers())
-            print(f"Found {len(all_layers)} layers using get_layers()")
-        except (AttributeError, TypeError):
-            # Fallback: iterate through polygons to collect layers
-            print("Using fallback method to collect layers...")
-            try:
-                # Try accessing polygons directly
-                for poly in c_flat.polygons:
-                    try:
-                        layer = poly.layer
-                        all_layers.add(layer)
-                    except:
-                        pass
-            except:
-                pass
-        
-        if not all_layers:
-            print("Warning: No layers found, trying alternative method...")
-            # Try to get polygons by iterating through known layers
-            known_layers = [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (61, 0), (63, 0)]
-            for layer in known_layers:
-                try:
-                    polys = c_flat.get_polygons(layer=layer)
-                    if polys:
-                        all_layers.add(layer)
-                except:
-                    pass
-        
-        # Step 2.5: Filter layers based on MERGE_LAYERS setting
-        if MERGE_LAYERS is not None and len(MERGE_LAYERS) > 0:
-            # Convert MERGE_LAYERS to set for easier comparison
-            merge_layers_set = set(tuple(l) if isinstance(l, (list, tuple)) else l for l in MERGE_LAYERS)
-            # Filter to only include layers that exist and are in MERGE_LAYERS
-            layers = all_layers.intersection(merge_layers_set)
-            print(f"Filtering layers: {len(layers)} layers selected from {len(all_layers)} total layers")
-            if len(layers) < len(merge_layers_set):
-                missing = merge_layers_set - layers
-                print(f"Warning: Some specified layers not found: {missing}")
-        else:
-            # Merge all layers
-            layers = all_layers
-            print(f"Processing all {len(layers)} layers for merging...")
-        
-        # Step 3: Process each layer - collect and merge polygons
-        import klayout.db as db
-        
-        # Use get_polygons_dict() or iterate through layers directly
-        polygons_by_layer = {}
-        
-        # Method 1: Try get_polygons_dict() if available
-        try:
-            if hasattr(c_flat, 'get_polygons_dict'):
-                polygons_dict = c_flat.get_polygons_dict()
-                if polygons_dict:
-                    polygons_by_layer = polygons_dict
-                    print(f"Using get_polygons_dict(): found {len(polygons_by_layer)} layers")
-        except:
-            pass
-        
-        # Method 2: Try get_polygons(by_spec=True) if available
-        if not polygons_by_layer:
-            try:
-                polygons_dict = c_flat.get_polygons(by_spec=True)
-                if polygons_dict:
-                    polygons_by_layer = polygons_dict
-                    print(f"Using get_polygons(by_spec=True): found {len(polygons_by_layer)} layers")
-            except:
-                pass
-        
-        # Method 3: Direct layer-by-layer retrieval
-        if not polygons_by_layer:
-            print("Using direct layer-by-layer retrieval...")
-            for layer_spec in layers:
-                try:
-                    # Try get_polygons with layer parameter
-                    polys = c_flat.get_polygons(layer=layer_spec)
-                    if polys:
-                        if isinstance(polys, list):
-                            polygons_by_layer[layer_spec] = polys
-                        else:
-                            polygons_by_layer[layer_spec] = list(polys)
-                except:
-                    pass
-        
-        # Method 4: Use polygons attribute and group by layer
-        if not polygons_by_layer:
-            print("Using .polygons attribute...")
-            try:
-                for poly in c_flat.polygons:
-                    try:
-                        layer = poly.layer
-                        if layer not in polygons_by_layer:
-                            polygons_by_layer[layer] = []
-                        polygons_by_layer[layer].append(poly)
-                    except:
-                        pass
-            except:
-                pass
-        
-        print(f"Found polygons in {len(polygons_by_layer)} layers")
-        for layer, polys in polygons_by_layer.items():
-            print(f"  Layer {layer}: {len(polys)} polygons")
-        
-        # Filter polygons_by_layer to only include layers we want to merge
-        if MERGE_LAYERS is not None and len(MERGE_LAYERS) > 0:
-            merge_layers_set = set(tuple(l) if isinstance(l, (list, tuple)) else l for l in MERGE_LAYERS)
-            polygons_by_layer = {k: v for k, v in polygons_by_layer.items() if k in merge_layers_set}
-            print(f"Filtered to {len(polygons_by_layer)} layers for merging")
-        
-        for layer_spec in layers:
-            try:
-                # Get polygons for this layer
-                polygons_for_layer = polygons_by_layer.get(layer_spec, [])
-                
-                if not polygons_for_layer:
-                    print(f"  Layer {layer_spec}: No polygons found")
-                    continue
-                
-                print(f"  Layer {layer_spec}: Found {len(polygons_for_layer)} polygons")
-                
-                # Step 4: Add polygons directly to merged component (simple approach)
-                # For merging, we'll use KLayout Region, but first add all polygons
-                poly_count = 0
-                region = db.Region()
-                
-                for poly in polygons_for_layer:
-                    try:
-                        # Convert polygon to KLayout format for merging
-                        points_list = None
-                        
-                        # Handle numpy array format (most common from gdsfactory)
-                        if isinstance(poly, np.ndarray):
-                            # numpy array of shape (N, 2) with points
-                            if poly.ndim == 2 and poly.shape[1] == 2:
-                                points_list = [db.DPoint(float(p[0]), float(p[1])) for p in poly]
-                        
-                        # Handle list/tuple of points
-                        elif isinstance(poly, (list, tuple)):
-                            if len(poly) > 0:
-                                first = poly[0]
-                                if isinstance(first, (list, tuple, np.ndarray)) and len(first) >= 2:
-                                    # Format: [[x,y], [x,y], ...]
-                                    points_list = [db.DPoint(float(p[0]), float(p[1])) for p in poly]
-                                elif len(poly) >= 6:
-                                    # Format: [x1,y1,x2,y2,...]
-                                    points_list = [db.DPoint(float(poly[i]), float(poly[i+1])) 
-                                                  for i in range(0, len(poly)-1, 2)]
-                        
-                        # Handle KLayout polygon types
-                        elif isinstance(poly, db.Polygon):
-                            region.insert(poly)
-                            continue
-                        elif isinstance(poly, db.DPolygon):
-                            region.insert(db.Polygon.from_dpoly(poly))
-                            continue
-                        
-                        # Handle polygon objects with points attribute
-                        else:
-                            if hasattr(poly, 'points'):
-                                pts = poly.points
-                                if isinstance(pts, np.ndarray) and pts.ndim == 2 and pts.shape[1] == 2:
-                                    points_list = [db.DPoint(float(p[0]), float(p[1])) for p in pts]
-                            elif hasattr(poly, 'xy'):
-                                pts = poly.xy
-                                if isinstance(pts, np.ndarray) and pts.ndim == 2 and pts.shape[1] == 2:
-                                    points_list = [db.DPoint(float(p[0]), float(p[1])) for p in pts]
-                        
-                        # Add to region if we have valid points
-                        if points_list and len(points_list) >= 3:
-                            try:
-                                dpoly = db.DPolygon(points_list)
-                                region.insert(db.Polygon.from_dpoly(dpoly))
-                            except:
-                                # If region insert fails, add directly
-                                try:
-                                    c_merged.add_polygon(poly, layer=layer_spec)
-                                    poly_count += 1
-                                except:
-                                    pass
-                        else:
-                            # If we can't convert, try adding directly
-                            try:
-                                c_merged.add_polygon(poly, layer=layer_spec)
-                                poly_count += 1
-                            except:
-                                pass
-                                
-                    except Exception as e:
-                        # Last resort: add polygon directly
-                        try:
-                            c_merged.add_polygon(poly, layer=layer_spec)
-                            poly_count += 1
-                        except:
-                            pass
-                
-                # Step 5: Merge region and add merged polygons
-                if region.size() > 0:
-                    try:
-                        merged_region = region.merged()
-                        for merged_poly in merged_region.each():
-                            try:
-                                # Convert polygon points back to list format for gdsfactory
-                                points = []
-                                for i in range(merged_poly.num_points_hull()):
-                                    pt = merged_poly.point_hull(i)
-                                    points.append([pt.x, pt.y])
-                                
-                                if len(points) >= 3:
-                                    c_merged.add_polygon(points, layer=layer_spec)
-                                    poly_count += 1
-                            except Exception as e2:
-                                # Fallback: try to_dtype conversion
-                                try:
-                                    dbu = getattr(getattr(c_flat, 'kcl', None), 'dbu', 0.001)
-                                    poly_db = merged_poly.to_dtype(dbu)
-                                    c_merged.add_polygon(poly_db, layer=layer_spec)
-                                    poly_count += 1
-                                except:
-                                    pass
-                    except Exception as e:
-                        print(f"  Layer {layer_spec}: Region merge error: {e}")
-                        # If merge fails, add polygons directly
-                        for poly in polygons_for_layer:
-                            try:
-                                c_merged.add_polygon(poly, layer=layer_spec)
-                                poly_count += 1
-                            except:
-                                pass
-                
-                print(f"  Layer {layer_spec}: Added {poly_count} polygons")
-                    
-            except Exception as e:
-                print(f"  Layer {layer_spec}: Error - {e}")
-                # Last resort: try to add polygons directly
-                try:
-                    polys = c_flat.get_polygons(layer=layer_spec)
-                    for p in polys:
-                        try:
-                            c_merged.add_polygon(p, layer=layer_spec)
-                        except:
-                            pass
-                except:
-                    pass
-        
-        print(f"Writing merged GDS file...")
-        c_merged.write_gds("mark_writefield_array_merged.gds")
-        print(f"Merged GDS file written successfully!")
