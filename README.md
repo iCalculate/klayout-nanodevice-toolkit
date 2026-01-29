@@ -56,26 +56,46 @@ pip install -r requirements.txt
 ## 📁 项目结构
 
 ```
-KLayout_Nanodevice_Toolkit/
-├── components/          # 器件组件模块
-│   ├── fet.py          # FET 器件生成器
-│   ├── hallbar.py      # Hall bar 器件生成器
-│   ├── tlm.py          # TLM 结构生成器
-│   ├── greyscale/      # 灰度图像生成器
-│   └── MyLayoutTemplate/  # 自定义版图模板
-├── utils/              # 工具函数库
-│   ├── geometry.py     # 几何操作
-│   ├── fanout_utils.py # 扇出布线
-│   ├── mark_utils.py   # 对准标记
-│   ├── text_utils.py   # 文本标签
+klayout-nanodevice-toolkit/
+├── components/              # 器件组件模块
+│   ├── fet.py              # FET 器件生成器
+│   ├── hallbar.py          # Hall bar 器件生成器
+│   ├── tlm.py              # TLM 结构生成器
+│   ├── electrode.py        # 电极与焊盘生成器
+│   ├── resolution.py       # 分辨率测试图案
+│   ├── meander.py          # 蜿蜒结构
+│   ├── greyscale/          # 灰度图像生成器
+│   ├── MyLayoutTemplate/   # 自定义版图模板
+│   └── RaithEBL/           # Raith EBL 相关
+├── utils/                  # 工具函数库
+│   ├── geometry.py         # 几何操作
+│   ├── fanout_utils.py     # 扇出布线
+│   ├── mark_utils.py       # 对准标记
+│   ├── text_utils.py       # 文本标签
+│   ├── digital_utils.py    # 数字图案
+│   ├── QRcode_utils.py     # 二维码
+│   ├── alignment_utils.py  # 对准工具
 │   └── ...
-├── lymtoolkit/         # KLayout 宏文件
-├── output/             # 输出文件目录
-│   ├── *.gds          # GDS 文件
-│   └── grayscaleImg/   # 灰度图像（BMP/PNG/TIFF）
-├── config.py          # 全局配置
-├── main.py            # 主程序入口
-└── environment.yml    # Conda 环境配置
+├── lymtoolkit/             # KLayout 宏与插件
+│   ├── nanodevice-pcell/   # PCell 宏
+│   ├── TRStoolkit/         # TRS 工具宏
+│   └── install_*.bat       # 安装脚本
+├── docs/                   # 文档
+│   ├── ENV_SETUP.md        # 环境设置
+│   ├── QUICK_START.md      # 快速配置
+│   └── README_EN.md        # 英文说明
+├── output/                 # 输出目录（自动创建，生成文件存放处）
+│   ├── *.gds               # GDS 文件
+│   └── grayscaleImg/       # 灰度图像（BMP/PNG/TIFF）
+│
+├── config.py               # 全局配置
+├── main.py                 # 主程序入口
+├── layout_generator.py     # 版图生成与参数扫描
+├── gui_interface.py        # GUI 界面
+├── environment.yml         # Conda 环境配置
+├── requirements.txt        # Pip 依赖
+├── README.md               # 本说明
+└── LICENSE                 # 许可证
 ```
 
 ---

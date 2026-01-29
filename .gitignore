@@ -180,5 +180,9 @@ components/greyscale/greyscale_microlens_1024.png
 components/greyscale/greyscale_fresnel_lens_1024.png
 components/greyscale/greyscale_fresnel_lens_1024.bmp
 
-# Output directory
-output/
+# Output directory（保留空目录结构）
+output/*
+!output/.gitkeep
+!output/grayscaleImg/
+output/grayscaleImg/*
+!output/grayscaleImg/.gitkeep
