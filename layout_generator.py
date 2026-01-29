@@ -109,7 +109,7 @@ class LayoutGenerator:
         elif scan_type == 'custom':
             # 自定义参数（线性变化）
             total_devices = self.array_config['rows'] * self.array_config['cols']
-            progress = (row * self.array_config['cols'] + col) / (total_devices - 1)
+            progress = (row * self.array_config['cols'] + col) / max(total_devices - 1, 1)
             
             width_min, width_max = min(self.scan_config['channel_width_range']), max(self.scan_config['channel_width_range'])
             length_min, length_max = min(self.scan_config['channel_length_range']), max(self.scan_config['channel_length_range'])

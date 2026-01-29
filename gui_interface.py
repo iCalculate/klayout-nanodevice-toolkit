@@ -5,8 +5,33 @@ GUI interface module providing a user-friendly parameter configuration UI.
 """
 
 import os
-import pya
-from layout_generator import LayoutGenerator
+import sys
+
+# 优先使用 KLayout 的 pya（需包含 Qt 的完整 pya）；无 GUI 时用 PyQt5 便于在外部 Python 中调试
+try:
+    import pya
+    # pip 安装的 klayout 可能只有 db API，没有 QDialog；仅当 pya 有 Qt 控件时才用 pya
+    qt = pya if getattr(pya, "QDialog", None) is not None else None
+except ImportError:
+    pya = None
+    qt = None
+
+if qt is None:
+    try:
+        from PyQt5 import QtWidgets
+        qt = QtWidgets
+        pya = None  # 使用 PyQt5 时视为无 KLayout，以便主程序创建 QApplication
+    except ImportError:
+        pass
+
+if qt is None:
+    raise ImportError("需要 KLayout 完整环境 (pya 含 Qt) 或 PyQt5 才能运行 GUI。请安装: pip install PyQt5")
+
+try:
+    from layout_generator import LayoutGenerator
+except Exception:
+    LayoutGenerator = None  # 无 KLayout 时无法生成版图，仅可调试界面
+
 
 class MOSFETLayoutGUI:
     """MOSFET版图生成器GUI界面
@@ -15,7 +40,7 @@ class MOSFETLayoutGUI:
     """
     
     def __init__(self):
-        self.generator = LayoutGenerator()
+        self.generator = LayoutGenerator() if LayoutGenerator else None
         self.create_gui()
     
     def create_gui(self):
@@ -24,15 +49,15 @@ class MOSFETLayoutGUI:
         Create the GUI interface.
         """
         # 创建主窗口
-        self.dialog = pya.QDialog()
+        self.dialog = qt.QDialog()
         self.dialog.setWindowTitle("MOSFET Layout Generator")
         self.dialog.resize(600, 800)
         
         # 创建主布局
-        layout = pya.QVBoxLayout()
+        layout = qt.QVBoxLayout()
         
         # 创建选项卡
-        tabs = pya.QTabWidget()
+        tabs = qt.QTabWidget()
         
         # 阵列配置选项卡
         array_tab = self.create_array_tab()
@@ -53,15 +78,15 @@ class MOSFETLayoutGUI:
         layout.addWidget(tabs)
         
         # 创建按钮
-        button_layout = pya.QHBoxLayout()
+        button_layout = qt.QHBoxLayout()
         
-        generate_btn = pya.QPushButton("Generate Layout")
+        generate_btn = qt.QPushButton("Generate Layout")
         generate_btn.clicked.connect(self.generate_layout)
         
-        preview_btn = pya.QPushButton("Preview")
+        preview_btn = qt.QPushButton("Preview")
         preview_btn.clicked.connect(self.preview_layout)
         
-        cancel_btn = pya.QPushButton("Cancel")
+        cancel_btn = qt.QPushButton("Cancel")
         cancel_btn.clicked.connect(self.dialog.reject)
         
         button_layout.addWidget(generate_btn)
@@ -74,21 +99,21 @@ class MOSFETLayoutGUI:
     
     def create_array_tab(self):
         """创建阵列配置选项卡"""
-        widget = pya.QWidget()
-        layout = pya.QVBoxLayout()
+        widget = qt.QWidget()
+        layout = qt.QVBoxLayout()
         
         # 阵列大小
-        size_group = pya.QGroupBox("Array Size")
-        size_layout = pya.QHBoxLayout()
+        size_group = qt.QGroupBox("Array Size")
+        size_layout = qt.QHBoxLayout()
         
-        size_layout.addWidget(pya.QLabel("Rows:"))
-        self.rows_spin = pya.QSpinBox()
+        size_layout.addWidget(qt.QLabel("Rows:"))
+        self.rows_spin = qt.QSpinBox()
         self.rows_spin.setRange(1, 20)
         self.rows_spin.setValue(3)
         size_layout.addWidget(self.rows_spin)
         
-        size_layout.addWidget(pya.QLabel("Columns:"))
-        self.cols_spin = pya.QSpinBox()
+        size_layout.addWidget(qt.QLabel("Columns:"))
+        self.cols_spin = qt.QSpinBox()
         self.cols_spin.setRange(1, 20)
         self.cols_spin.setValue(3)
         size_layout.addWidget(self.cols_spin)
@@ -97,16 +122,16 @@ class MOSFETLayoutGUI:
         layout.addWidget(size_group)
         
         # 间距配置
-        spacing_group = pya.QGroupBox("Spacing")
-        spacing_layout = pya.QFormLayout()
+        spacing_group = qt.QGroupBox("Spacing")
+        spacing_layout = qt.QFormLayout()
         
-        self.spacing_x_spin = pya.QDoubleSpinBox()
+        self.spacing_x_spin = qt.QDoubleSpinBox()
         self.spacing_x_spin.setRange(10, 1000)
         self.spacing_x_spin.setValue(100)
         self.spacing_x_spin.setSuffix(" μm")
         spacing_layout.addRow("X Spacing:", self.spacing_x_spin)
         
-        self.spacing_y_spin = pya.QDoubleSpinBox()
+        self.spacing_y_spin = qt.QDoubleSpinBox()
         self.spacing_y_spin.setRange(10, 1000)
         self.spacing_y_spin.setValue(100)
         self.spacing_y_spin.setSuffix(" μm")
@@ -116,16 +141,16 @@ class MOSFETLayoutGUI:
         layout.addWidget(spacing_group)
         
         # 起始位置
-        start_group = pya.QGroupBox("Start Position")
-        start_layout = pya.QFormLayout()
+        start_group = qt.QGroupBox("Start Position")
+        start_layout = qt.QFormLayout()
         
-        self.start_x_spin = pya.QDoubleSpinBox()
+        self.start_x_spin = qt.QDoubleSpinBox()
         self.start_x_spin.setRange(-1000, 1000)
         self.start_x_spin.setValue(0)
         self.start_x_spin.setSuffix(" μm")
         start_layout.addRow("X Position:", self.start_x_spin)
         
-        self.start_y_spin = pya.QDoubleSpinBox()
+        self.start_y_spin = qt.QDoubleSpinBox()
         self.start_y_spin.setRange(-1000, 1000)
         self.start_y_spin.setValue(0)
         self.start_y_spin.setSuffix(" μm")
@@ -140,14 +165,14 @@ class MOSFETLayoutGUI:
     
     def create_scan_tab(self):
         """创建参数扫描选项卡"""
-        widget = pya.QWidget()
-        layout = pya.QVBoxLayout()
+        widget = qt.QWidget()
+        layout = qt.QVBoxLayout()
         
         # 扫描类型
-        scan_type_group = pya.QGroupBox("Scan Type")
-        scan_type_layout = pya.QVBoxLayout()
+        scan_type_group = qt.QGroupBox("Scan Type")
+        scan_type_layout = qt.QVBoxLayout()
         
-        self.scan_type_combo = pya.QComboBox()
+        self.scan_type_combo = qt.QComboBox()
         self.scan_type_combo.addItems(["Grid", "Random", "Custom"])
         scan_type_layout.addWidget(self.scan_type_combo)
         
@@ -155,25 +180,25 @@ class MOSFETLayoutGUI:
         layout.addWidget(scan_type_group)
         
         # 沟道宽度范围
-        width_group = pya.QGroupBox("Channel Width Range")
-        width_layout = pya.QHBoxLayout()
+        width_group = qt.QGroupBox("Channel Width Range")
+        width_layout = qt.QHBoxLayout()
         
-        width_layout.addWidget(pya.QLabel("Min:"))
-        self.width_min_spin = pya.QDoubleSpinBox()
+        width_layout.addWidget(qt.QLabel("Min:"))
+        self.width_min_spin = qt.QDoubleSpinBox()
         self.width_min_spin.setRange(0.1, 100)
         self.width_min_spin.setValue(3.0)
         self.width_min_spin.setSuffix(" μm")
         width_layout.addWidget(self.width_min_spin)
         
-        width_layout.addWidget(pya.QLabel("Max:"))
-        self.width_max_spin = pya.QDoubleSpinBox()
+        width_layout.addWidget(qt.QLabel("Max:"))
+        self.width_max_spin = qt.QDoubleSpinBox()
         self.width_max_spin.setRange(0.1, 100)
         self.width_max_spin.setValue(7.0)
         self.width_max_spin.setSuffix(" μm")
         width_layout.addWidget(self.width_max_spin)
         
-        width_layout.addWidget(pya.QLabel("Steps:"))
-        self.width_steps_spin = pya.QSpinBox()
+        width_layout.addWidget(qt.QLabel("Steps:"))
+        self.width_steps_spin = qt.QSpinBox()
         self.width_steps_spin.setRange(1, 10)
         self.width_steps_spin.setValue(3)
         width_layout.addWidget(self.width_steps_spin)
@@ -182,25 +207,25 @@ class MOSFETLayoutGUI:
         layout.addWidget(width_group)
         
         # 沟道长度范围
-        length_group = pya.QGroupBox("Channel Length Range")
-        length_layout = pya.QHBoxLayout()
+        length_group = qt.QGroupBox("Channel Length Range")
+        length_layout = qt.QHBoxLayout()
         
-        length_layout.addWidget(pya.QLabel("Min:"))
-        self.length_min_spin = pya.QDoubleSpinBox()
+        length_layout.addWidget(qt.QLabel("Min:"))
+        self.length_min_spin = qt.QDoubleSpinBox()
         self.length_min_spin.setRange(0.1, 100)
         self.length_min_spin.setValue(10.0)
         self.length_min_spin.setSuffix(" μm")
         length_layout.addWidget(self.length_min_spin)
         
-        length_layout.addWidget(pya.QLabel("Max:"))
-        self.length_max_spin = pya.QDoubleSpinBox()
+        length_layout.addWidget(qt.QLabel("Max:"))
+        self.length_max_spin = qt.QDoubleSpinBox()
         self.length_max_spin.setRange(0.1, 100)
         self.length_max_spin.setValue(30.0)
         self.length_max_spin.setSuffix(" μm")
         length_layout.addWidget(self.length_max_spin)
         
-        length_layout.addWidget(pya.QLabel("Steps:"))
-        self.length_steps_spin = pya.QSpinBox()
+        length_layout.addWidget(qt.QLabel("Steps:"))
+        self.length_steps_spin = qt.QSpinBox()
         self.length_steps_spin.setRange(1, 10)
         self.length_steps_spin.setValue(3)
         length_layout.addWidget(self.length_steps_spin)
@@ -209,25 +234,25 @@ class MOSFETLayoutGUI:
         layout.addWidget(length_group)
         
         # 栅极重叠范围
-        overlap_group = pya.QGroupBox("Gate Overlap Range")
-        overlap_layout = pya.QHBoxLayout()
+        overlap_group = qt.QGroupBox("Gate Overlap Range")
+        overlap_layout = qt.QHBoxLayout()
         
-        overlap_layout.addWidget(pya.QLabel("Min:"))
-        self.overlap_min_spin = pya.QDoubleSpinBox()
+        overlap_layout.addWidget(qt.QLabel("Min:"))
+        self.overlap_min_spin = qt.QDoubleSpinBox()
         self.overlap_min_spin.setRange(0.1, 10)
         self.overlap_min_spin.setValue(1.0)
         self.overlap_min_spin.setSuffix(" μm")
         overlap_layout.addWidget(self.overlap_min_spin)
         
-        overlap_layout.addWidget(pya.QLabel("Max:"))
-        self.overlap_max_spin = pya.QDoubleSpinBox()
+        overlap_layout.addWidget(qt.QLabel("Max:"))
+        self.overlap_max_spin = qt.QDoubleSpinBox()
         self.overlap_max_spin.setRange(0.1, 10)
         self.overlap_max_spin.setValue(3.0)
         self.overlap_max_spin.setSuffix(" μm")
         overlap_layout.addWidget(self.overlap_max_spin)
         
-        overlap_layout.addWidget(pya.QLabel("Steps:"))
-        self.overlap_steps_spin = pya.QSpinBox()
+        overlap_layout.addWidget(qt.QLabel("Steps:"))
+        self.overlap_steps_spin = qt.QSpinBox()
         self.overlap_steps_spin.setRange(1, 10)
         self.overlap_steps_spin.setValue(3)
         overlap_layout.addWidget(self.overlap_steps_spin)
@@ -241,22 +266,22 @@ class MOSFETLayoutGUI:
     
     def create_device_tab(self):
         """创建设备配置选项卡"""
-        widget = pya.QWidget()
-        layout = pya.QVBoxLayout()
+        widget = qt.QWidget()
+        layout = qt.QVBoxLayout()
         
         # 电极配置
-        electrode_group = pya.QGroupBox("Electrode Configuration")
-        electrode_layout = pya.QVBoxLayout()
+        electrode_group = qt.QGroupBox("Electrode Configuration")
+        electrode_layout = qt.QVBoxLayout()
         
-        self.bottom_gate_check = pya.QCheckBox("Enable Bottom Gate")
+        self.bottom_gate_check = qt.QCheckBox("Enable Bottom Gate")
         self.bottom_gate_check.setChecked(True)
         electrode_layout.addWidget(self.bottom_gate_check)
         
-        self.top_gate_check = pya.QCheckBox("Enable Top Gate")
+        self.top_gate_check = qt.QCheckBox("Enable Top Gate")
         self.top_gate_check.setChecked(True)
         electrode_layout.addWidget(self.top_gate_check)
         
-        self.source_drain_check = pya.QCheckBox("Enable Source/Drain")
+        self.source_drain_check = qt.QCheckBox("Enable Source/Drain")
         self.source_drain_check.setChecked(True)
         electrode_layout.addWidget(self.source_drain_check)
         
@@ -264,15 +289,15 @@ class MOSFETLayoutGUI:
         layout.addWidget(electrode_group)
         
         # 扇出配置
-        fanout_group = pya.QGroupBox("Fanout Configuration")
-        fanout_layout = pya.QVBoxLayout()
+        fanout_group = qt.QGroupBox("Fanout Configuration")
+        fanout_layout = qt.QVBoxLayout()
         
-        self.fanout_check = pya.QCheckBox("Enable Fanout")
+        self.fanout_check = qt.QCheckBox("Enable Fanout")
         self.fanout_check.setChecked(True)
         fanout_layout.addWidget(self.fanout_check)
         
-        fanout_layout.addWidget(pya.QLabel("Fanout Direction:"))
-        self.fanout_direction_combo = pya.QComboBox()
+        fanout_layout.addWidget(qt.QLabel("Fanout Direction:"))
+        self.fanout_direction_combo = qt.QComboBox()
         self.fanout_direction_combo.addItems(["Horizontal", "Vertical"])
         fanout_layout.addWidget(self.fanout_direction_combo)
         
@@ -280,14 +305,14 @@ class MOSFETLayoutGUI:
         layout.addWidget(fanout_group)
         
         # 标签配置
-        label_group = pya.QGroupBox("Label Configuration")
-        label_layout = pya.QVBoxLayout()
+        label_group = qt.QGroupBox("Label Configuration")
+        label_layout = qt.QVBoxLayout()
         
-        self.device_labels_check = pya.QCheckBox("Show Device Labels")
+        self.device_labels_check = qt.QCheckBox("Show Device Labels")
         self.device_labels_check.setChecked(True)
         label_layout.addWidget(self.device_labels_check)
         
-        self.parameter_labels_check = pya.QCheckBox("Show Parameter Labels")
+        self.parameter_labels_check = qt.QCheckBox("Show Parameter Labels")
         self.parameter_labels_check.setChecked(True)
         label_layout.addWidget(self.parameter_labels_check)
         
@@ -300,28 +325,28 @@ class MOSFETLayoutGUI:
     
     def create_output_tab(self):
         """创建输出配置选项卡"""
-        widget = pya.QWidget()
-        layout = pya.QVBoxLayout()
+        widget = qt.QWidget()
+        layout = qt.QVBoxLayout()
         
         # 文件配置
-        file_group = pya.QGroupBox("File Configuration")
-        file_layout = pya.QFormLayout()
+        file_group = qt.QGroupBox("File Configuration")
+        file_layout = qt.QFormLayout()
         
-        self.filename_edit = pya.QLineEdit("mosfet_array.gds")
+        self.filename_edit = qt.QLineEdit("mosfet_array.gds")
         file_layout.addRow("Output Filename:", self.filename_edit)
         
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
         
         # 显示配置
-        display_group = pya.QGroupBox("Display Configuration")
-        display_layout = pya.QVBoxLayout()
+        display_group = qt.QGroupBox("Display Configuration")
+        display_layout = qt.QVBoxLayout()
         
-        self.auto_load_check = pya.QCheckBox("Auto-load to GUI")
+        self.auto_load_check = qt.QCheckBox("Auto-load to GUI")
         self.auto_load_check.setChecked(True)
         display_layout.addWidget(self.auto_load_check)
         
-        self.show_stats_check = pya.QCheckBox("Show Statistics")
+        self.show_stats_check = qt.QCheckBox("Show Statistics")
         self.show_stats_check.setChecked(True)
         display_layout.addWidget(self.show_stats_check)
         
@@ -382,6 +407,13 @@ class MOSFETLayoutGUI:
     def generate_layout(self):
         """生成版图"""
         try:
+            if self.generator is None:
+                qt.QMessageBox.information(
+                    self.dialog,
+                    "提示",
+                    "版图生成需要在 KLayout 中运行。\n请使用 KLayout 的 Macro 或 Python 控制台加载本脚本。"
+                )
+                return
             # 获取配置
             array_config = self.get_array_config()
             scan_config = self.get_scan_config()
@@ -410,14 +442,21 @@ class MOSFETLayoutGUI:
                 stats = self.generator.get_statistics()
                 self.show_statistics(stats)
             
-            pya.QMessageBox.information(self.dialog, "Success", "Layout generated successfully!")
+            qt.QMessageBox.information(self.dialog, "Success", "Layout generated successfully!")
             
         except Exception as e:
-            pya.QMessageBox.critical(self.dialog, "Error", f"Failed to generate layout: {str(e)}")
+            qt.QMessageBox.critical(self.dialog, "Error", f"Failed to generate layout: {str(e)}")
     
     def preview_layout(self):
         """预览版图"""
         try:
+            if self.generator is None:
+                qt.QMessageBox.information(
+                    self.dialog,
+                    "提示",
+                    "预览需要在 KLayout 中运行。\n请使用 KLayout 的 Macro 或 Python 控制台加载本脚本。"
+                )
+                return
             # 获取配置
             array_config = self.get_array_config()
             scan_config = self.get_scan_config()
@@ -439,10 +478,10 @@ Layout Preview:
   * Length: {min(scan_config['channel_length_range']):.1f}-{max(scan_config['channel_length_range']):.1f} μm
             """
             
-            pya.QMessageBox.information(self.dialog, "Preview", preview_text)
+            qt.QMessageBox.information(self.dialog, "Preview", preview_text)
             
         except Exception as e:
-            pya.QMessageBox.critical(self.dialog, "Error", f"Failed to preview layout: {str(e)}")
+            qt.QMessageBox.critical(self.dialog, "Error", f"Failed to preview layout: {str(e)}")
     
     def show_statistics(self, stats):
         """显示统计信息"""
@@ -458,7 +497,7 @@ Layout Statistics:
   * Gate Overlap: {stats['parameter_ranges']['gate_overlap']}
         """
         
-        pya.QMessageBox.information(self.dialog, "Statistics", stats_text)
+        qt.QMessageBox.information(self.dialog, "Statistics", stats_text)
     
     def show(self):
         """显示GUI界面
@@ -477,4 +516,12 @@ def show_mosfet_layout_gui():
 
 # 主函数
 if __name__ == "__main__":
-    show_mosfet_layout_gui() 
+    # 在非 KLayout 环境（如 PyQt5）下需要创建 QApplication
+    if pya is None:
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication(sys.argv)
+    else:
+        app = None
+    show_mosfet_layout_gui()
+    if app is not None:
+        sys.exit(app.exec_()) 
