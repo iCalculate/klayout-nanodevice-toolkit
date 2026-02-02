@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-通用纳米器件 PDK（Process Design Kit）层定义与注册。
+Generic nanodevice PDK (Process Design Kit) layer definitions and registration.
 
-层号约定：
-- 1–9:  功能层（机械、活性区、标记、卡尺等）
-- 10–19: 前道（gate / dielectric / channel）
-- 20–29: 后道（contact、metal、spacer）
-- 61–63: 对准（LineScan / ImgScan / Manual）
+Layer numbering:
+- 1–9:   Utility (mechanical, active, marks, calipers, etc.)
+- 10–19: Front-end (gate / dielectric / channel)
+- 20–29: Back-end (contact, metal, spacer)
+- 61–63: Alignment (LineScan / ImgScan / Manual)
 
-兼容 Python 3.11+ 与新版 gdsfactory（Pdk 要求 layers 为 LayerMap 子类）。
-使用方式：
+Compatible with Python 3.11+ and current gdsfactory (Pdk requires layers to be a LayerMap subclass).
+Usage:
     from components.MyLayoutTemplate.pdk import LAYER, PDK
     PDK.activate()
-    layer_tuple = gf.get_layer("MARK")  # 或 tuple(LAYER.MARK)
-    layer_tuple = tuple(LAYER.MARK)     # (3, 0) 用于索引 layer[0], layer[1]
+    layer_tuple = gf.get_layer("MARK")  # or tuple(LAYER.MARK)
+    layer_tuple = tuple(LAYER.MARK)     # (3, 0) for indexing layer[0], layer[1]
 """
 
 from __future__ import annotations
@@ -25,25 +25,25 @@ from gdsfactory.typings import Layer
 
 class GenericNanoDeviceLayerMap(LayerMap):
     """
-    通用纳米器件 PDK 层映射（LayerMap 子类，满足新版 gdsfactory Pdk 校验）。
-    - 1–9: 功能层
-    - 10–19: 前道（bottom/mid/top gate & dielectric, N/P channel）
-    - 20–29: 后道（N/P contact, Routing Metal 1–4, Spacer 1–4）
-    - 61–63: 对准
+    Generic nanodevice PDK layer map (LayerMap subclass for gdsfactory Pdk).
+    - 1–9:  Utility layers
+    - 10–19: Front-end (bottom/mid/top gate & dielectric, N/P channel)
+    - 20–29: Back-end (N/P contact, Routing Metal 1–4, Spacer 1–4)
+    - 61–63: Alignment
     """
 
-    # ----- 1–9 功能层 -----
-    MECHANICAL: Layer = (1, 0)   # 样品机械轮廓 / Sample outline
-    ACTIVE: Layer = (2, 0)       # 有效/活性区 / Active area
-    MARK: Layer = (3, 0)         # 标记 / All marks
-    MARK_FRAME: Layer = (4, 0)   # 标记十字框 / Crosshair frames
-    CALIPER: Layer = (5, 0)      # 卡尺 / Calipers
+    # ----- 1–9 Utility -----
+    MECHANICAL: Layer = (1, 0)   # Sample outline
+    ACTIVE: Layer = (2, 0)       # Active area
+    MARK: Layer = (3, 0)        # All marks
+    MARK_FRAME: Layer = (4, 0)   # Crosshair frames
+    CALIPER: Layer = (5, 0)      # Calipers
     L6: Layer = (6, 0)
     L7: Layer = (7, 0)
     L8: Layer = (8, 0)
     L9: Layer = (9, 0)
 
-    # ----- 10–19 前道 -----
+    # ----- 10–19 Front-end -----
     FE_BOTTOM_GATE: Layer = (10, 0)
     FE_BOTTOM_DIELEC: Layer = (11, 0)
     FE_N1_CHANNEL: Layer = (12, 0)
@@ -55,7 +55,7 @@ class GenericNanoDeviceLayerMap(LayerMap):
     FE_TOP_DIELEC: Layer = (18, 0)
     FE_TOP_GATE: Layer = (19, 0)
 
-    # ----- 20–29 后道 -----
+    # ----- 20–29 Back-end -----
     BE_N_CONTACT: Layer = (20, 0)
     BE_P_CONTACT: Layer = (21, 0)
     BE_M1: Layer = (22, 0)
@@ -67,16 +67,15 @@ class GenericNanoDeviceLayerMap(LayerMap):
     BE_M4: Layer = (28, 0)
     BE_SPACER4: Layer = (29, 0)
 
-    # ----- 对准 61–63 -----
+    # ----- Alignment 61–63 -----
     ALIGN_LINESCAN: Layer = (61, 0)   # Auto LineScan Align
     ALIGN_IMGSCAN: Layer = (62, 0)    # Auto ImgScan Align
     ALIGN_MANUAL: Layer = (63, 0)     # Manual Align
 
 
-# 供本 PDK 及 mark_writefield_gdsfactory 等使用
 LAYER = GenericNanoDeviceLayerMap
 
-# 层名 -> (gdslayer, gdspurpose)，用于从 LayerMap 枚举成员解析出正确的 GDS 层号（新版 gdsfactory 枚举 .value 可能为 int）
+# Layer name -> (gdslayer, gdspurpose) for resolving GDS layer from LayerMap enum (enum .value may be int)
 LAYER_TUPLES = {
     "MECHANICAL": (1, 0), "ACTIVE": (2, 0), "MARK": (3, 0), "MARK_FRAME": (4, 0), "CALIPER": (5, 0),
     "L6": (6, 0), "L7": (7, 0), "L8": (8, 0), "L9": (9, 0),
@@ -90,7 +89,7 @@ LAYER_TUPLES = {
 }
 
 
-# 注册并创建 PDK 实例（新版 gdsfactory 要求 layers 为 LayerMap 子类，不能为 dict）
+# Register PDK (gdsfactory requires layers to be a LayerMap subclass)
 PDK = gf.Pdk(
     name="nanodevice",
     layers=GenericNanoDeviceLayerMap,
@@ -98,9 +97,9 @@ PDK = gf.Pdk(
 
 
 def activate() -> None:
-    """激活纳米器件 PDK，使 gf.get_layer(name) 等使用本 PDK 的层定义。"""
+    """Activate nanodevice PDK so gf.get_layer(name) etc. use this PDK's layers."""
     PDK.activate()
 
 
-# 模块加载时自动激活，便于 mark_writefield_gdsfactory 等直接使用 LAYER 默认值
+# Auto-activate on import so mark_writefield_gdsfactory etc. can use LAYER defaults
 activate()

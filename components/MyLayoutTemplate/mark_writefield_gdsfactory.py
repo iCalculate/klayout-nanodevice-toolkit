@@ -7,14 +7,14 @@ from datetime import datetime
 try:
     from .pdk import LAYER, LAYER_TUPLES
 except ImportError:
-    from pdk import LAYER, LAYER_TUPLES  # 直接运行本脚本时无父包，使用同目录 pdk
+    from pdk import LAYER, LAYER_TUPLES  # when run as script (no parent package), use local pdk
 
 
 def _layer_tuple(layer):
-    """将 layer 规范为 (gdslayer, gdspurpose)。优先用 LAYER_TUPLES 保证层号与 PDK 定义一致。"""
+    """Normalize layer to (gdslayer, gdspurpose). Prefer LAYER_TUPLES so GDS layer numbers match PDK."""
     if isinstance(layer, tuple):
         return layer
-    # 枚举成员用名称查 PDK 定义，保证 GDS 层号正确（枚举 .value 可能为 int 序号而非真实层号）
+    # Resolve enum by name from PDK (enum .value may be int ordinal, not actual layer number)
     if hasattr(layer, "name") and layer.name in LAYER_TUPLES:
         return LAYER_TUPLES[layer.name]
     v = getattr(layer, "value", layer)
@@ -139,7 +139,7 @@ def get_path_component(
     if name in _component_cache:
         return _component_cache[name]
     
-    # 用纯 KLayout 创建临时 GDS（不创建 gdsfactory Component），再 import_gds，避免库里出现两个同名 cell
+    # Use KLayout only for temp GDS (no gdsfactory Component) then import_gds to avoid duplicate cell names
     import klayout.db as db
     import tempfile
     import os
@@ -159,7 +159,7 @@ def get_path_component(
         temp_gds = tempfile.NamedTemporaryFile(suffix='.gds', delete=False)
         temp_gds.close()
         
-        # 仅用 KLayout 创建 layout + 以最终名创建 cell + 插入 path，不经过 gdsfactory
+        # Create layout + cell (final name) + path with KLayout only, no gdsfactory
         layout = db.Layout()
         top_cell = layout.create_cell(name)
         layer_index = layout.layer(layer[0], layer[1])
@@ -174,7 +174,7 @@ def get_path_component(
         return _component_cache[name]
         
     except Exception as e:
-        # Fallback: 用 gdsfactory 画多边形
+        # Fallback: draw polygon with gdsfactory
         print(f"Warning: Could not create true path element, using polygon instead: {e}")
         c = gf.Component(name)
         if orientation == "horizontal":
@@ -1248,39 +1248,42 @@ if __name__ == "__main__":
     import sys
     import os
     
-    # 确保输出立即显示（无缓冲模式）
+    # Unbuffered output
     sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
     sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
-    
-    # 立即输出，确保能看到
+
     print("Script started", file=sys.stdout, flush=True)
     print("=" * 60, file=sys.stdout, flush=True)
-    
+
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
         print("Importing config...", file=sys.stdout, flush=True)
         from config import get_gds_path
         print("Config imported", file=sys.stdout, flush=True)
-        
-        print("开始生成版图...", file=sys.stdout, flush=True)
+
+        print("Generating layout...", file=sys.stdout, flush=True)
         c = generate_writefield_array()
-        print("版图生成完成", file=sys.stdout, flush=True)
-        
-        output_path = get_gds_path("mark_writefield_array.gds")
-        print(f"正在保存GDS文件到: {output_path}", file=sys.stdout, flush=True)
+        print("Layout generated.", file=sys.stdout, flush=True)
+
+        # GDS filename with date suffix like 26Feb02 (YYMonDD, English month)
+        _now = datetime.now()
+        _mon = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[_now.month - 1]
+        date_suffix = f"{_now.year % 100:02d}{_mon}{_now.day:02d}"
+        gds_basename = f"mark_writefield_array_{date_suffix}.gds"
+        output_path = get_gds_path(gds_basename)
+        print(f"Saving GDS to: {output_path}", file=sys.stdout, flush=True)
         c.write_gds(output_path)
-        print(f"[OK] GDS文件已保存到: {output_path}", file=sys.stdout, flush=True)
+        print(f"[OK] GDS saved to: {output_path}", file=sys.stdout, flush=True)
         print("=" * 60, file=sys.stdout, flush=True)
-        
-        # 尝试显示（如果环境支持图形界面，但不阻塞）
+
         try:
-            print("尝试在KLayout中显示版图...", file=sys.stdout, flush=True)
+            print("Opening layout in KLayout...", file=sys.stdout, flush=True)
             c.show()
         except Exception as e:
-            print(f"注意: 无法显示图形界面 ({e})", file=sys.stdout, flush=True)
-            print("您可以在KLayout中打开生成的GDS文件查看", file=sys.stdout, flush=True)
+            print(f"Note: Could not show GUI ({e})", file=sys.stdout, flush=True)
+            print("Open the generated GDS file in KLayout to view.", file=sys.stdout, flush=True)
     except Exception as e:
-        print(f"错误: {e}", file=sys.stderr, flush=True)
+        print(f"Error: {e}", file=sys.stderr, flush=True)
         import traceback
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
