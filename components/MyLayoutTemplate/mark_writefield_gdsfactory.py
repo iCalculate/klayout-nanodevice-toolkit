@@ -4,15 +4,31 @@ import numpy as np
 import string
 from datetime import datetime
 
-# Ensure PDK is activated (gdsfactory should auto-activate generic PDK, but we ensure it)
-# The PDK will be activated automatically when first used, but we can force it here
 try:
-    from gdsfactory.pdk import get_active_pdk
-    if get_active_pdk() is None:
-        # Force activation by accessing a component or layer
-        _ = gf.components.rectangle()  # This will trigger PDK activation
-except:
-    pass  # PDK will be activated automatically
+    from .pdk import LAYER, LAYER_TUPLES
+except ImportError:
+    from pdk import LAYER, LAYER_TUPLES  # when run as script (no parent package), use local pdk
+
+
+def _layer_tuple(layer):
+    """Normalize layer to (gdslayer, gdspurpose). Prefer LAYER_TUPLES so GDS layer numbers match PDK."""
+    if isinstance(layer, tuple):
+        return layer
+    # Resolve enum by name from PDK (enum .value may be int ordinal, not actual layer number)
+    if hasattr(layer, "name") and layer.name in LAYER_TUPLES:
+        return LAYER_TUPLES[layer.name]
+    v = getattr(layer, "value", layer)
+    if v is None:
+        return layer
+    if isinstance(v, tuple):
+        return v
+    if isinstance(v, int):
+        return (v, 0)
+    try:
+        return tuple(v)
+    except TypeError:
+        return (v, 0)
+
 
 # Cache to store created components and avoid name collisions
 _component_cache = {}
@@ -40,6 +56,7 @@ def get_rect_component(
     """
     Get or create a simple rectangle component with a concise name.
     """
+    layer = _layer_tuple(layer)
     w_str = f"{width:.3g}".replace('.', 'p')
     h_str = f"{height:.3g}".replace('.', 'p')
     name = f"Rect_W{w_str}_H{h_str}_L{layer[0]}_{layer[1]}"
@@ -70,6 +87,7 @@ def get_rect_outline_component(
     """
     Get or create a rectangular outline component (using lines instead of fill).
     """
+    layer = _layer_tuple(layer)
     w_str = f"{width:.3g}".replace('.', 'p')
     h_str = f"{height:.3g}".replace('.', 'p')
     lw_str = f"{line_width:.3g}".replace('.', 'p')
@@ -113,6 +131,7 @@ def get_path_component(
         layer: Layer tuple
         orientation: "horizontal" or "vertical"
     """
+    layer = _layer_tuple(layer)
     l_str = f"{length:.3g}".replace('.', 'p')
     w_str = f"{width:.3g}".replace('.', 'p')
     name = f"Path_L{l_str}_W{w_str}_{orientation}_L{layer[0]}_{layer[1]}"
@@ -120,87 +139,63 @@ def get_path_component(
     if name in _component_cache:
         return _component_cache[name]
     
-    # Create component using gdsfactory
-    c = gf.Component(name)
-    
-    # Use KLayout API directly to create true path element
+    # Use KLayout only for temp GDS (no gdsfactory Component) then import_gds to avoid duplicate cell names
     import klayout.db as db
     import tempfile
     import os
     
     # Path is centered at origin: extends from -length/2 to +length/2
     if orientation == "horizontal":
-        # Horizontal path: from (-length/2, 0) to (length/2, 0)
         start_point = db.DPoint(-length/2, 0)
         end_point = db.DPoint(length/2, 0)
     else:
-        # Vertical path: from (0, -length/2) to (0, length/2)
         start_point = db.DPoint(0, -length/2)
         end_point = db.DPoint(0, length/2)
     
-    # Create KLayout Path object (true path element, not box)
     path_points = [start_point, end_point]
-    klayout_path = db.DPath(path_points, width, 0, 0, 0)  # width, bgn_ext=0, end_ext=0, round=False
+    klayout_path = db.DPath(path_points, width, 0, 0, 0)
     
-    # Method: Write component to temporary GDS, read with KLayout, insert path, write back, read with gdsfactory
-    # This ensures we get a true path element in the final GDS
     try:
-        # Create temporary GDS file
         temp_gds = tempfile.NamedTemporaryFile(suffix='.gds', delete=False)
         temp_gds.close()
         
-        # Write empty component to get the structure
-        c.write_gds(temp_gds.name)
-        
-        # Read with KLayout and insert path
+        # Create layout + cell (final name) + path with KLayout only, no gdsfactory
         layout = db.Layout()
-        layout.read(temp_gds.name)
-        
-        # Get the cell (should be the only one)
-        cell = layout.top_cell()
-        
-        # Get layer index
+        top_cell = layout.create_cell(name)
         layer_index = layout.layer(layer[0], layer[1])
-        
-        # Insert the path element
-        cell.shapes(layer_index).insert(klayout_path)
-        
-        # Write back
+        top_cell.shapes(layer_index).insert(klayout_path)
         layout.write(temp_gds.name)
         
-        # Read back with gdsfactory
-        c = gf.import_gds(temp_gds.name)
-        c.name = name  # Restore original name
-        
-        # Clean up temp file
+        c_imported = gf.import_gds(temp_gds.name)
         os.unlink(temp_gds.name)
         
+        if name not in _component_cache:
+            _component_cache[name] = c_imported
+        return _component_cache[name]
+        
     except Exception as e:
-        # Fallback: use polygon if path insertion fails
+        # Fallback: draw polygon with gdsfactory
         print(f"Warning: Could not create true path element, using polygon instead: {e}")
+        c = gf.Component(name)
         if orientation == "horizontal":
             c.add_polygon(
                 [
-                    (-length/2.0, -width/2.0), 
-                    (length/2.0, -width/2.0), 
-                    (length/2.0, width/2.0), 
-                    (-length/2.0, width/2.0)
-                ], 
+                    (-length/2.0, -width/2.0), (length/2.0, -width/2.0),
+                    (length/2.0, width/2.0), (-length/2.0, width/2.0)
+                ],
                 layer=layer
             )
         else:
             c.add_polygon(
                 [
-                    (-width/2.0, -length/2.0), 
-                    (width/2.0, -length/2.0), 
-                    (width/2.0, length/2.0), 
-                    (-width/2.0, length/2.0)
-                ], 
+                    (-width/2.0, -length/2.0), (width/2.0, -length/2.0),
+                    (width/2.0, length/2.0), (-width/2.0, length/2.0)
+                ],
                 layer=layer
             )
-    
-    _component_cache[name] = c
-    return c
+        if name not in _component_cache:
+            _component_cache[name] = c
+        return _component_cache[name]
 
 def create_simple_cross(
     size: float,
@@ -210,6 +205,7 @@ def create_simple_cross(
     """
     Create a simple cross mark.
     """
+    layer = _layer_tuple(layer)
     name = f"SimpleCross_S{size}_W{width}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
@@ -228,11 +224,12 @@ def create_simple_cross(
 def create_bonecross(
     size: float = 50.0,
     width: float = 10.0,
-    layer: tuple = (1, 0)
+    layer: tuple = LAYER.MECHANICAL
 ) -> gf.Component:
     """
     Create a bonecross mark (cross with thickened ends).
     """
+    layer = _layer_tuple(layer)
     name = f"BoneCross_S{size}_W{width}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
@@ -269,7 +266,7 @@ def create_bonecross(
 def create_split_bonecross(
     size: float = 50.0,
     width: float = 10.0,
-    layer: tuple = (1, 0),
+    layer: tuple = LAYER.MECHANICAL,
     mode: str = "main" # "main" or "complement"
 ) -> gf.Component:
     """
@@ -277,6 +274,7 @@ def create_split_bonecross(
     mode='main': External pads + Q2/Q4 internal L-shapes.
     mode='complement': Q1/Q3 internal L-shapes.
     """
+    layer = _layer_tuple(layer)
     suffix = "Main" if mode == "main" else "Comp"
     name = f"SplitBoneCross_{suffix}_S{size}_W{width}_L{layer[0]}_{layer[1]}"
     
@@ -347,15 +345,15 @@ def create_composite_mark(
     small_size: float = 15.0,
     small_width: float = 3.0,
     small_offset_dist: float = 35.0,
-    layer: tuple = (1, 0),
+    layer: tuple = LAYER.MECHANICAL,
     is_main_mark: bool = False,
     enable_frame: bool = False,
     frame_width: float = None,
-    layer_frame: tuple = (4, 0),
+    layer_frame: tuple = LAYER.MARK_FRAME,
     quadrant_indicator: int = None,
     center_coords: tuple = None,
-    layer_auto_align: tuple = (61, 0),
-    layer_manual_align: tuple = (63, 0),
+    layer_auto_align: tuple = LAYER.ALIGN_LINESCAN,
+    layer_manual_align: tuple = LAYER.ALIGN_MANUAL,
     enable_alignment_layers: bool = True
 ) -> gf.Component:
     """
@@ -375,6 +373,10 @@ def create_composite_mark(
         layer_manual_align: Layer for L63 manual alignment marks.
         enable_alignment_layers: If True, adds L61 and L63 features.
     """
+    layer = _layer_tuple(layer)
+    layer_frame = _layer_tuple(layer_frame)
+    layer_auto_align = _layer_tuple(layer_auto_align)
+    layer_manual_align = _layer_tuple(layer_manual_align)
     suffix = "Main" if is_main_mark else "Standard"
     f_suffix = "WFrame" if enable_frame else ""
     q_suffix = f"_Q{quadrant_indicator}" if quadrant_indicator else ""
@@ -514,7 +516,7 @@ def create_caliper(
     width: float,
     tick_length: float,
     center_tick_length: float = None,
-    layer: tuple = (1, 0),
+    layer: tuple = LAYER.MECHANICAL,
     orientation: str = "horizontal", # horizontal or vertical
     tick_direction: int = 1, # 1 for positive, -1 for negative direction relative to the axis
     limit_length: float = None # Maximum total span allowed (to clip ticks that exceed this)
@@ -522,6 +524,7 @@ def create_caliper(
     """
     Create a caliper component with ticks.
     """
+    layer = _layer_tuple(layer)
     name = f"Caliper_{orientation}_P{pitch}_N{num_ticks_side}_Dir{tick_direction}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
@@ -557,7 +560,7 @@ def create_crosshair_frame(
     mark_size: float,
     mark_width: float,
     frame_width: float = None,
-    layer: tuple = (4, 0)
+    layer: tuple = LAYER.MARK_FRAME
 ) -> gf.Component:
     """
     Create a crosshair frame made of four L-shapes that frame the inner thin cross of a bonecross mark.
@@ -569,6 +572,7 @@ def create_crosshair_frame(
         frame_width: Line width of the L-shape arms. Defaults to (mark_width - internal_width).
         layer: Layer for the frame
     """
+    layer = _layer_tuple(layer)
     # Use the exact same logic as create_bonecross to find internal dimensions
     internal_width = mark_width / 5.0
     internal_length = min(1.5 * mark_width, 20.0)
@@ -628,6 +632,7 @@ def create_corner_marker(
     Base orientation: Bottom-Left (extending +x and +y from origin (0,0)).
     Aligned to the outer edge (x=0, y=0).
     """
+    layer = _layer_tuple(layer)
     name = f"CornerL_Len{length}_W{width}_L{layer[0]}_{layer[1]}"
     if name in _component_cache:
         return _component_cache[name]
@@ -837,14 +842,14 @@ def generate_writefield_array(
     caliper_bottom_left_tick_length: float = 10.0,
     caliper_bottom_left_center_length: float = 20.0,
     
-    # Layers
-    layer_mechanical: tuple = (1, 0),
-    layer_active: tuple = (2, 0),
-    layer_mark: tuple = (3, 0),  # L3: All marks
-    layer_mark_frame: tuple = (4, 0),  # L4: Crosshair frames for main marks
-    layer_caliper: tuple = (5, 0),  # L5: Calipers
-    layer_auto_align: tuple = (61, 0), # L61: Auto alignment slits
-    layer_manual_align: tuple = (63, 0), # L63: Manual alignment boxes
+    # Layers (see pdk.LAYER for full layer map)
+    layer_mechanical: tuple = LAYER.MECHANICAL,
+    layer_active: tuple = LAYER.ACTIVE,
+    layer_mark: tuple = LAYER.MARK,
+    layer_mark_frame: tuple = LAYER.MARK_FRAME,
+    layer_caliper: tuple = LAYER.CALIPER,
+    layer_auto_align: tuple = LAYER.ALIGN_LINESCAN,
+    layer_manual_align: tuple = LAYER.ALIGN_MANUAL,
     
     # L4 frame parameters
     frame_width: float = None,  # Line width of the L-shape arms. Defaults to mark_width difference if None.
@@ -1243,39 +1248,42 @@ if __name__ == "__main__":
     import sys
     import os
     
-    # 确保输出立即显示（无缓冲模式）
+    # Unbuffered output
     sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
     sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
-    
-    # 立即输出，确保能看到
+
     print("Script started", file=sys.stdout, flush=True)
     print("=" * 60, file=sys.stdout, flush=True)
-    
+
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
         print("Importing config...", file=sys.stdout, flush=True)
         from config import get_gds_path
         print("Config imported", file=sys.stdout, flush=True)
-        
-        print("开始生成版图...", file=sys.stdout, flush=True)
+
+        print("Generating layout...", file=sys.stdout, flush=True)
         c = generate_writefield_array()
-        print("版图生成完成", file=sys.stdout, flush=True)
-        
-        output_path = get_gds_path("mark_writefield_array.gds")
-        print(f"正在保存GDS文件到: {output_path}", file=sys.stdout, flush=True)
+        print("Layout generated.", file=sys.stdout, flush=True)
+
+        # GDS filename with date suffix like 26Feb02 (YYMonDD, English month)
+        _now = datetime.now()
+        _mon = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[_now.month - 1]
+        date_suffix = f"{_now.year % 100:02d}{_mon}{_now.day:02d}"
+        gds_basename = f"mark_writefield_array_{date_suffix}.gds"
+        output_path = get_gds_path(gds_basename)
+        print(f"Saving GDS to: {output_path}", file=sys.stdout, flush=True)
         c.write_gds(output_path)
-        print(f"[OK] GDS文件已保存到: {output_path}", file=sys.stdout, flush=True)
+        print(f"[OK] GDS saved to: {output_path}", file=sys.stdout, flush=True)
         print("=" * 60, file=sys.stdout, flush=True)
-        
-        # 尝试显示（如果环境支持图形界面，但不阻塞）
+
         try:
-            print("尝试在KLayout中显示版图...", file=sys.stdout, flush=True)
+            print("Opening layout in KLayout...", file=sys.stdout, flush=True)
             c.show()
         except Exception as e:
-            print(f"注意: 无法显示图形界面 ({e})", file=sys.stdout, flush=True)
-            print("您可以在KLayout中打开生成的GDS文件查看", file=sys.stdout, flush=True)
+            print(f"Note: Could not show GUI ({e})", file=sys.stdout, flush=True)
+            print("Open the generated GDS file in KLayout to view.", file=sys.stdout, flush=True)
     except Exception as e:
-        print(f"错误: {e}", file=sys.stderr, flush=True)
+        print(f"Error: {e}", file=sys.stderr, flush=True)
         import traceback
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
