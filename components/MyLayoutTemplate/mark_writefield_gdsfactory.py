@@ -140,7 +140,7 @@ def get_path_component(
         return _component_cache[name]
     
     # Use KLayout only for temp GDS (no gdsfactory Component) then import_gds to avoid duplicate cell names
-    import klayout.db as db
+    import klayout.db as db  
     import tempfile
     import os
     
