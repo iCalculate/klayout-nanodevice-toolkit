@@ -12,9 +12,7 @@
 conda env create -f environment.yml
 ```
 
-**注意**: 如果 Python 11 在 conda 中不可用，脚本会提示您。您可能需要：
-- 等待 conda-forge 更新支持 Python 11
-- 或者修改 `environment.yml` 中的 `python=11` 为 `python=3.11` 或其他可用版本
+**注意**: 若创建失败，可先运行 `conda init powershell`（或 `conda init cmd.exe`），**关闭并重新打开终端**后再执行上述命令。
 
 ### 2. 激活环境
 
@@ -45,7 +43,7 @@ conda list        # 查看已安装的包
 ## 环境信息
 
 - **环境名称**: `klayout-nanodevice-toolkit`
-- **Python 版本**: 11
+- **Python 版本**: 3.11
 - **主要依赖**:
   - gdsfactory
   - numpy
@@ -87,11 +85,9 @@ A:
 3. 尝试更新 conda: `conda update conda`
 4. 检查网络连接（conda 需要下载包）
 
-### Q: Python 11 不可用怎么办？
+### Q: conda activate 报错怎么办？
 
-A: 如果 conda 中还没有 Python 11，可以：
-1. 等待 conda-forge 更新
-2. 或者修改 `environment.yml` 中的 Python 版本为可用的版本（如 `python=3.11`）
+A: 先执行 `conda init powershell`（PowerShell）或 `conda init cmd.exe`（命令提示符），然后**关闭并重新打开终端**，再执行 `conda activate klayout-nanodevice-toolkit`。
 
 ## 文件说明
 

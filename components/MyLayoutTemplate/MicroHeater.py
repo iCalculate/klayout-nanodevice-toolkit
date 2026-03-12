@@ -8,10 +8,25 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-import klayout.db as db
-import pya
+# KLayout 兼容：支持在 KLayout GUI 内运行（pya）或独立 Python（klayout.db）
+_db = None
+try:
+    import klayout.db as _db
+except ImportError as e:
+    if "tlcore" in str(e) or "klayout" in str(e).lower():
+        print("Error: klayout may not support this Python version (e.g. Python 3.14).")
+        print("Use either: (1) Run in KLayout: File -> Run Macro, or (2) conda env with Python 3.11 + pip install klayout")
+    raise
+try:
+    import pya
+except ImportError:
+    pya = _db
+    sys.modules["pya"] = _db
+db = _db
+layout_module = _db
+
 from utils.geometry import GeometryUtils
-from config import LAYER_DEFINITIONS
+from config import LAYER_DEFINITIONS, PROCESS_CONFIG, DEFAULT_UNIT_SCALE
 
 # Import gdsfactory for text generation
 import gdsfactory as gf
@@ -27,11 +42,11 @@ class MicroHeater:
             layout: KLayout layout object, create new if None
             **kwargs: Other parameters
         """
-        self.layout = layout or db.Layout()
-        # Set database unit: 1 dbu = 1 μm
-        self.layout.dbu = 1.0
-        # Set geometry tool unit scale: 1 μm = 1 database unit
-        GeometryUtils.UNIT_SCALE = 1.0
+        self.layout = layout or layout_module.Layout()
+        # 数据库单位：1 dbu = 0.001 μm = 1 nm，坐标按 dbu 存储
+        self.layout.dbu = PROCESS_CONFIG.get('dbu', 0.001)
+        # 几何输出：1 μm = UNIT_SCALE dbu（与 dbu 一致，保证亚微米精度）
+        GeometryUtils.UNIT_SCALE = DEFAULT_UNIT_SCALE  # 1000 when dbu=0.001
         self.setup_layers()
         
         # ===== MicroHeater parameters =====
@@ -42,6 +57,13 @@ class MicroHeater:
         self.hilbert_order = kwargs.get('hilbert_order', 4)      # Hilbert curve order
         self.hilbert_step = kwargs.get('hilbert_step', 10.0)     # Hilbert curve step size (μm)
         self.hilbert_margin = kwargs.get('hilbert_margin', 2.0)  # Hilbert curve margin (μm)
+        # ===== 蛇形阵列参数 (4x4 大单元 × 4x4 小单元) =====
+        self.meander_cell_size = kwargs.get('meander_cell_size', 450.0)   # 小单元方形边长 (μm)
+        self.meander_line_width = kwargs.get('meander_line_width', 4.0)  # 蛇形线宽 (μm)
+        self.meander_line_spacing = kwargs.get('meander_line_spacing', 4.0)  # 蛇形线间距 (μm)
+        self.meander_cell_gap = kwargs.get('meander_cell_gap', 10.0)     # 小单元间距 (μm)
+        self.meander_pad_size = kwargs.get('meander_pad_size', 10.0)      # 纳米线两端 pad 边长 (μm)
+        self.meander_block_gap = kwargs.get('meander_block_gap', 10.0)   # 大单元间距 (μm)
         
     def setup_layers(self):
         """Setup layers"""
@@ -109,9 +131,10 @@ class MicroHeater:
         offset_x = x - hilbert_size / 2
         offset_y = y - hilbert_size / 2
         
-        # Apply transformation
+        # Apply transformation（坐标 μm -> dbu）
+        scale = GeometryUtils.UNIT_SCALE
         transformed_region = hilbert_region.dup()
-        transformed_region.transform(pya.Trans(pya.Point(int(offset_x), int(offset_y))))
+        transformed_region.transform(pya.Trans(pya.Point(int(round(offset_x * scale)), int(round(offset_y * scale)))))
         
         cell.shapes(layer_id).insert(transformed_region)
         
@@ -199,6 +222,83 @@ class MicroHeater:
             )
             cell.shapes(label_layer_id).insert(fallback_rect)
     
+    def create_single_meander_cell(self, cell, cx, cy, angle_deg, layer_id=None):
+        """
+        创建单个蛇形小单元：在限定单元区域内按给定取向绘制蜿蜒线（不旋转单元），
+        再在左上/右下角放置两枚 pad。
+        
+        蜿蜒线取向由角度设定：在单元区域内先画该角度的平行线，再首尾相接形成连续线，
+        由 create_angled_meander_in_rect 实现。
+        
+        Args:
+            cell: 目标 cell
+            cx, cy: 小单元中心 (μm)
+            angle_deg: 蜿蜒线取向角度 (0°, 30°, 60°, 90° 等)
+            layer_id: 沟道图层；None 则用 config 的 channel
+        """
+        if layer_id is None:
+            layer_id = LAYER_DEFINITIONS['channel']['id']
+        pad_layer_id = LAYER_DEFINITIONS.get('pads', LAYER_DEFINITIONS['channel'])['id']
+        sz = self.meander_cell_size
+        lw = self.meander_line_width
+        sp = self.meander_line_spacing
+        pad_sz = self.meander_pad_size
+        half = sz / 2.0
+        # 在单元区域限制内按角度绘制蜿蜒线（平行线 + 首尾连接，再与矩形求交）
+        serpentine = GeometryUtils.create_angled_meander_in_rect(
+            cx, cy, sz, sz, lw, sp, angle_deg
+        )
+        cell.shapes(layer_id).insert(serpentine)
+        # 左上角 pad（纳米线一端）
+        pad_tl_x = cx - half + pad_sz / 2.0
+        pad_tl_y = cy + half - pad_sz / 2.0
+        pad_tl = GeometryUtils.create_rectangle(pad_tl_x, pad_tl_y, pad_sz, pad_sz, center=True)
+        cell.shapes(pad_layer_id).insert(pad_tl)
+        # 右下角 pad（纳米线另一端）
+        pad_br_x = cx + half - pad_sz / 2.0
+        pad_br_y = cy - half + pad_sz / 2.0
+        pad_br = GeometryUtils.create_rectangle(pad_br_x, pad_br_y, pad_sz, pad_sz, center=True)
+        cell.shapes(pad_layer_id).insert(pad_br)
+    
+    def create_meander_4x4_block(self, cell, base_x, base_y, layer_id=None):
+        """
+        在一个大单元内创建 4×4 个小单元；每行蛇形角度：第1行0°、第2行30°、第3行60°、第4行90°。
+        base_x, base_y 为大单元左上角坐标（小单元 (0,0) 的左上角）。
+        """
+        if layer_id is None:
+            layer_id = LAYER_DEFINITIONS['channel']['id']
+        sz = self.meander_cell_size
+        gap = self.meander_cell_gap
+        step = sz + gap
+        row_angles = [0, 30, 60, 90]
+        for row in range(4):
+            for col in range(4):
+                cx = base_x + col * step + sz / 2.0
+                cy = base_y - row * step - sz / 2.0
+                self.create_single_meander_cell(cell, cx, cy, row_angles[row], layer_id)
+    
+    def create_meander_array_4x4(self, cell, center_x=0.0, center_y=0.0, layer_id=None):
+        """
+        生成 4×4 大单元阵列，每个大单元为 4×4 蛇形小单元。
+        小单元：方形 450μm，线宽/间距 4μm，小单元间距 10μm，左上/右下 10μm pad。
+        """
+        if layer_id is None:
+            layer_id = LAYER_DEFINITIONS['channel']['id']
+        sz = self.meander_cell_size
+        gap = self.meander_cell_gap
+        block_gap = self.meander_block_gap
+        small_step = sz + gap
+        block_size = 4 * sz + 3 * gap
+        block_step = block_size + block_gap
+        total_size = 4 * block_size + 3 * block_gap
+        start_x = center_x - total_size / 2.0
+        start_y = center_y + total_size / 2.0
+        for bi in range(4):
+            for bj in range(4):
+                base_x = start_x + bj * block_step
+                base_y = start_y - bi * block_step
+                self.create_meander_4x4_block(cell, base_x, base_y, layer_id)
+    
     def create_heater_array(self, cell, center_x=0.0, center_y=0.0):
         """
         Create a 6x6 array of Hilbert curve microheaters
@@ -233,10 +333,11 @@ class MicroHeater:
                 # Generate the Hilbert curve for this heater
                 self.create_single_hilbert_heater(heater_cell, 0.0, 0.0, row, col)
                 
-                # Insert the heater cell into the main cell
+                # Insert the heater cell into the main cell（坐标 μm -> dbu）
+                scale = GeometryUtils.UNIT_SCALE
                 cell.insert(pya.CellInstArray(
                     heater_cell.cell_index(),
-                    pya.Trans(pya.Point(int(heater_x), int(heater_y)))
+                    pya.Trans(pya.Point(int(round(heater_x * scale)), int(round(heater_y * scale))))
                 ))
         
 
@@ -300,5 +401,44 @@ def main():
     print("    - Centered at origin (0, 0)")
 
 
+def main_meander_array_4x4():
+    """生成 4×4 大单元 × 4×4 小单元 蛇形微加热器阵列（小单元 450μm 方形，线宽/间距 4μm，pad 10μm）"""
+    print("=== Generating 4×4 Meander MicroHeater Array (4×4 blocks, 4×4 cells each) ===")
+    microheater = MicroHeater()
+    microheater.set_parameters(
+        line_width=4.0,
+        line_spacing=4.0,
+    )
+    microheater.meander_cell_size = 450.0
+    microheater.meander_line_width = 4.0
+    microheater.meander_line_spacing = 4.0
+    microheater.meander_cell_gap = 10.0
+    microheater.meander_pad_size = 10.0
+    microheater.meander_block_gap = 10.0
+    top_cell = microheater.layout.create_cell("MicroHeater_Meander_4x4")
+    print("Generating 4×4 meander array (row angles 0°, 30°, 60°, 90°)...")
+    try:
+        microheater.create_meander_array_4x4(top_cell, 0.0, 0.0)
+        print("✓ 4×4 meander microheater array generated successfully")
+    except Exception as e:
+        print(f"✗ Array generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return
+    from config import get_gds_path
+    output_file = get_gds_path("MicroHeater_Meander_4x4.gds")
+    print(f"Saving to: {output_file}")
+    try:
+        microheater.layout.write(output_file)
+        print("✓ Save successful")
+    except Exception as e:
+        print(f"✗ Save failed: {e}")
+        return
+    print("=== Complete ===")
+    print("  - 4×4 large blocks, each 4×4 small cells")
+    print("  - Small cell: 450 μm square, line 4 μm, spacing 4 μm, gap 10 μm, pads 10 μm")
+    print("  - Row angles: 0°, 30°, 60°, 90°")
+
+
 if __name__ == "__main__":
-    main()
+    main_meander_array_4x4()

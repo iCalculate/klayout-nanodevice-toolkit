@@ -115,6 +115,22 @@
       background: var(--accent);
       color: var(--text);
     }
+    .bw-row .bw-input {
+      width: 4.2em;
+      min-width: 52px;
+    }
+    .range-limits-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+    .range-limits-row label {
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .range-limits-row .bw-input { width: 4.2em; min-width: 52px; }
     .slider-row input[type="number"] {
       width: 52px;
       padding: 2px 4px;
@@ -342,6 +358,34 @@
     .output-histogram-card .preview-label {
       font-size: 0.7rem;
     }
+    .output-histogram-with-bars {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+    }
+    .output-histogram-with-bars .histogram-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+    .extreme-bar-vertical {
+      width: 10px;
+      min-width: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      background: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .extreme-bar-fill {
+      width: 100%;
+      height: 0%;
+      min-height: 0;
+      transition: height 0.15s ease;
+    }
+    .extreme-bar-vertical.extreme-underexposed .extreme-bar-fill { background: #4a6a9a; }
+    .extreme-bar-vertical.extreme-overexposed .extreme-bar-fill { background: #c96a4a; }
     .crop-ratio-row {
       display: flex;
       align-items: center;
@@ -417,13 +461,19 @@
         <h2>Histogram</h2>
         <div class="slider-row bw-row">
           <label>Black</label>
-          <input type="range" id="blackPoint" min="0" max="255" value="0">
-          <input type="number" id="valBlack" class="bw-input" min="0" max="255" value="0" step="1" title="Black point (0–255)">
+          <input type="range" id="blackPoint" min="-128" max="255" value="0">
+          <input type="number" id="valBlack" class="bw-input" min="-128" max="255" value="0" step="1" title="Black point (−128–255, expand left)">
         </div>
         <div class="slider-row bw-row">
           <label>White</label>
-          <input type="range" id="whitePoint" min="0" max="255" value="255">
-          <input type="number" id="valWhite" class="bw-input" min="0" max="255" value="255" step="1" title="White point (0–255)">
+          <input type="range" id="whitePoint" min="0" max="384" value="255">
+          <input type="number" id="valWhite" class="bw-input" min="0" max="384" value="255" step="1" title="White point (0–384, expand right)">
+        </div>
+        <div class="range-limits-row">
+          <label title="Black point 可拓展下限">Black ≥</label>
+          <input type="number" id="rangeBlackMin" class="bw-input" value="-128" step="1" title="Black 可拓展下限">
+          <label title="White point 可拓展上限">White ≤</label>
+          <input type="number" id="rangeWhiteMax" class="bw-input" value="384" step="1" title="White 可拓展上限">
         </div>
         <div class="histogram-section">
           <div class="histogram-mode">
@@ -529,8 +579,16 @@
             <div class="preview-header">
               <span class="preview-label">Output (0–255, lithography)</span>
             </div>
-            <div class="histogram-wrap">
-              <canvas id="outputHistogramCanvas" width="256" height="72"></canvas>
+            <div class="output-histogram-with-bars">
+              <div class="extreme-bar-vertical extreme-underexposed">
+                <div class="extreme-bar-fill" id="extremeBarUnderexposed"></div>
+              </div>
+              <div class="histogram-wrap">
+                <canvas id="outputHistogramCanvas" width="256" height="72"></canvas>
+              </div>
+              <div class="extreme-bar-vertical extreme-overexposed">
+                <div class="extreme-bar-fill" id="extremeBarOverexposed"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -610,6 +668,39 @@
     });
   });
 
+  const rangeBlackMin = document.getElementById('rangeBlackMin');
+  const rangeWhiteMax = document.getElementById('rangeWhiteMax');
+  const BLACK_MAX = 255, WHITE_MIN = 0;
+  const RANGE_BLACK_MIN_LIMIT = -4096, RANGE_WHITE_MAX_LIMIT = 4096;
+  function getBlackMin() {
+    const v = parseInt(rangeBlackMin.value, 10);
+    return isNaN(v) ? -128 : Math.max(RANGE_BLACK_MIN_LIMIT, Math.min(254, v));
+  }
+  function getWhiteMax() {
+    const v = parseInt(rangeWhiteMax.value, 10);
+    return isNaN(v) ? 384 : Math.max(1, Math.min(RANGE_WHITE_MAX_LIMIT, v));
+  }
+  function clampBlack(v) { return Math.max(getBlackMin(), Math.min(BLACK_MAX, v)); }
+  function clampWhite(v) { return Math.max(WHITE_MIN, Math.min(getWhiteMax(), v)); }
+  function applyRangeLimits() {
+    let bMin = getBlackMin();
+    let wMax = getWhiteMax();
+    if (bMin >= wMax) { wMax = Math.min(RANGE_WHITE_MAX_LIMIT, bMin + 1); rangeWhiteMax.value = wMax; }
+    rangeBlackMin.value = bMin;
+    rangeWhiteMax.value = wMax;
+    blackPoint.min = bMin;
+    valBlack.min = bMin;
+    whitePoint.max = wMax;
+    valWhite.max = wMax;
+    let bp = blackPoint.valueAsNumber | 0;
+    let wp = whitePoint.valueAsNumber | 0;
+    if (bp < bMin) { bp = bMin; blackPoint.value = bp; valBlack.value = bp; }
+    if (wp > wMax) { wp = wMax; whitePoint.value = wp; valWhite.value = wp; }
+    if (bp >= wp) { wp = Math.min(wMax, bp + 1); whitePoint.value = wp; valWhite.value = wp; }
+    syncRangeDisplay();
+    refreshHistogram();
+    updatePreview();
+  }
   function syncRangeDisplay() {
     valBlack.value = blackPoint.value;
     valWhite.value = whitePoint.value;
@@ -617,12 +708,13 @@
   function applyBlackFromInput() {
     let v = parseInt(valBlack.value, 10);
     if (isNaN(v)) { syncRangeDisplay(); return; }
-    v = Math.max(0, Math.min(255, v));
+    v = clampBlack(v);
     valBlack.value = v;
     blackPoint.value = v;
-    if (blackPoint.valueAsNumber > whitePoint.valueAsNumber) {
-      whitePoint.value = v;
-      valWhite.value = v;
+    if (blackPoint.valueAsNumber >= whitePoint.valueAsNumber) {
+      const w = Math.min(getWhiteMax(), v + 1);
+      whitePoint.value = w;
+      valWhite.value = w;
     }
     refreshHistogram();
     updatePreview();
@@ -630,28 +722,34 @@
   function applyWhiteFromInput() {
     let v = parseInt(valWhite.value, 10);
     if (isNaN(v)) { syncRangeDisplay(); return; }
-    v = Math.max(0, Math.min(255, v));
+    v = clampWhite(v);
     valWhite.value = v;
     whitePoint.value = v;
-    if (whitePoint.valueAsNumber < blackPoint.valueAsNumber) {
-      blackPoint.value = v;
-      valBlack.value = v;
+    if (whitePoint.valueAsNumber <= blackPoint.valueAsNumber) {
+      const b = Math.max(getBlackMin(), v - 1);
+      blackPoint.value = b;
+      valBlack.value = b;
     }
     refreshHistogram();
     updatePreview();
   }
   blackPoint.addEventListener('input', function () {
-    if (blackPoint.valueAsNumber > whitePoint.valueAsNumber) whitePoint.value = blackPoint.value;
+    if (blackPoint.valueAsNumber >= whitePoint.valueAsNumber) whitePoint.value = Math.min(getWhiteMax(), blackPoint.valueAsNumber + 1);
     syncRangeDisplay();
     refreshHistogram();
     updatePreview();
   });
   whitePoint.addEventListener('input', function () {
-    if (whitePoint.valueAsNumber < blackPoint.valueAsNumber) blackPoint.value = whitePoint.value;
+    if (whitePoint.valueAsNumber <= blackPoint.valueAsNumber) blackPoint.value = Math.max(getBlackMin(), whitePoint.valueAsNumber - 1);
     syncRangeDisplay();
     refreshHistogram();
     updatePreview();
   });
+  rangeBlackMin.addEventListener('change', applyRangeLimits);
+  rangeBlackMin.addEventListener('blur', function () { if (rangeBlackMin.value !== '') applyRangeLimits(); });
+  rangeWhiteMax.addEventListener('change', applyRangeLimits);
+  rangeWhiteMax.addEventListener('blur', function () { if (rangeWhiteMax.value !== '') applyRangeLimits(); });
+  applyRangeLimits();
   valBlack.addEventListener('change', applyBlackFromInput);
   valBlack.addEventListener('blur', function () { if (valBlack.value === '' || isNaN(parseInt(valBlack.value, 10))) syncRangeDisplay(); });
   valWhite.addEventListener('change', applyWhiteFromInput);
@@ -1182,11 +1280,20 @@
       drawHistogramToCanvas(histogramCanvas, hist, null, bp, wp, false);
     }
   }
+  const extremeBarUnderexposed = document.getElementById('extremeBarUnderexposed');
+  const extremeBarOverexposed = document.getElementById('extremeBarOverexposed');
   function refreshOutputHistogram() {
     const bp = blackPoint.valueAsNumber | 0;
     const wp = whitePoint.valueAsNumber | 0;
     const hist = getOutputHist();
     drawHistogramToCanvas(outputHistogramCanvas, hist, null, bp, wp, true);
+    const c0 = hist[0] | 0;
+    const c255 = hist[255] | 0;
+    const scaleMax = Math.max(c0, c255, 1);
+    const pct0 = (c0 / scaleMax) * 100;
+    const pct255 = (c255 / scaleMax) * 100;
+    extremeBarUnderexposed.style.height = pct0 + '%';
+    extremeBarOverexposed.style.height = pct255 + '%';
   }
   function drawHistogramToCanvas(canvasEl, histLum, histRGB, bp, wp, outputOnly) {
     outputOnly = !!outputOnly;
@@ -1200,9 +1307,22 @@
     const pad = 2;
     const barH = ch - pad * 2;
     if (histLum) {
-      const max = Math.max(1, ...histLum);
+      let maxVal = Math.max(1, ...histLum);
+      let minVal = 0;
+      let rangeVal = maxVal;
+      if (outputOnly) {
+        const ignore = 1;
+        const slice = histLum.slice(ignore, 256 - ignore);
+        const midMax = slice.length ? Math.max(...slice) : 1;
+        const midMin = slice.length ? Math.min(...slice) : 0;
+        minVal = midMin;
+        maxVal = Math.max(1, midMax);
+        rangeVal = Math.max(1, maxVal - minVal);
+      }
       for (let i = 0; i < 256; i++) {
-        const h = (histLum[i] / max) * barH;
+        const v = histLum[i];
+        const norm = outputOnly ? (v - minVal) / rangeVal : v / rangeVal;
+        const h = Math.max(0, norm * barH);
         if (outputOnly) {
           ctx.fillStyle = '#3a9a6e';
         } else {
@@ -1229,22 +1349,25 @@
       strokeCurve(histRGB.b, '#66e');
     }
     if (!outputOnly) {
+      const bpClamp = Math.max(0, Math.min(255, bp));
+      const wpClamp = Math.max(0, Math.min(255, wp));
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(0, 0, bp, ch);
-      ctx.fillRect(wp + 1, 0, cw - wp - 1, ch);
+      ctx.fillRect(0, 0, bpClamp, ch);
+      const rightStart = Math.min(255, wpClamp) + 1;
+      ctx.fillRect(rightStart, 0, Math.max(0, cw - rightStart), ch);
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(bp, 0);
-      ctx.lineTo(bp, ch);
+      ctx.moveTo(bpClamp, 0);
+      ctx.lineTo(bpClamp, ch);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(wp, 0);
-      ctx.lineTo(wp, ch);
+      ctx.moveTo(wpClamp, 0);
+      ctx.lineTo(wpClamp, ch);
       ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillRect(bp - 1, 0, 3, 4);
-      ctx.fillRect(wp - 1, 0, 3, 4);
+      ctx.fillRect(bpClamp - 1, 0, 3, 4);
+      ctx.fillRect(wpClamp - 1, 0, 3, 4);
     }
   }
   function clientXFromEvent(e) {
@@ -1262,17 +1385,20 @@
   function hitHandle(xVal) {
     const bp = blackPoint.valueAsNumber | 0;
     const wp = whitePoint.valueAsNumber | 0;
-    if (Math.abs(xVal - bp) <= HANDLE_WIDTH) return 'black';
-    if (Math.abs(xVal - wp) <= HANDLE_WIDTH) return 'white';
+    const bpClamp = Math.max(0, Math.min(255, bp));
+    const wpClamp = Math.max(0, Math.min(255, wp));
+    if (Math.abs(xVal - bpClamp) <= HANDLE_WIDTH) return 'black';
+    if (Math.abs(xVal - wpClamp) <= HANDLE_WIDTH) return 'white';
     return null;
   }
   function applyHistogramValue(val) {
+    const v = Math.max(0, Math.min(255, val));
     if (dragHandle === 'black') {
-      blackPoint.value = Math.min(whitePoint.valueAsNumber | 0, val);
-      if (blackPoint.valueAsNumber > whitePoint.valueAsNumber) whitePoint.value = blackPoint.value;
+      blackPoint.value = Math.min((whitePoint.valueAsNumber | 0) - 1, clampBlack(v));
+      if (blackPoint.valueAsNumber >= whitePoint.valueAsNumber) whitePoint.value = Math.min(getWhiteMax(), blackPoint.valueAsNumber + 1);
     } else {
-      whitePoint.value = Math.max(blackPoint.valueAsNumber | 0, val);
-      if (whitePoint.valueAsNumber < blackPoint.valueAsNumber) blackPoint.value = whitePoint.value;
+      whitePoint.value = Math.max((blackPoint.valueAsNumber | 0) + 1, clampWhite(v));
+      if (whitePoint.valueAsNumber <= blackPoint.valueAsNumber) blackPoint.value = Math.max(getBlackMin(), whitePoint.valueAsNumber - 1);
     }
     syncRangeDisplay();
     refreshHistogram();
@@ -1290,12 +1416,13 @@
       document.addEventListener('mouseup', onHistogramPointerUp, true);
     } else {
       const mid = ((blackPoint.valueAsNumber | 0) + (whitePoint.valueAsNumber | 0)) / 2;
+      const v = Math.max(0, Math.min(255, val));
       if (val < mid) {
-        blackPoint.value = val;
-        if (blackPoint.valueAsNumber > whitePoint.valueAsNumber) whitePoint.value = val;
+        blackPoint.value = Math.min((whitePoint.valueAsNumber | 0) - 1, clampBlack(v));
+        if (blackPoint.valueAsNumber >= whitePoint.valueAsNumber) whitePoint.value = Math.min(getWhiteMax(), blackPoint.valueAsNumber + 1);
       } else {
-        whitePoint.value = val;
-        if (whitePoint.valueAsNumber < blackPoint.valueAsNumber) blackPoint.value = val;
+        whitePoint.value = Math.max((blackPoint.valueAsNumber | 0) + 1, clampWhite(v));
+        if (whitePoint.valueAsNumber <= blackPoint.valueAsNumber) blackPoint.value = Math.max(getBlackMin(), whitePoint.valueAsNumber - 1);
       }
       syncRangeDisplay();
       refreshHistogram();
@@ -1337,12 +1464,13 @@
       document.addEventListener('touchend', onHistogramTouchEnd, { passive: false });
     } else {
       const mid = ((blackPoint.valueAsNumber | 0) + (whitePoint.valueAsNumber | 0)) / 2;
+      const v = Math.max(0, Math.min(255, val));
       if (val < mid) {
-        blackPoint.value = val;
-        if (blackPoint.valueAsNumber > whitePoint.valueAsNumber) whitePoint.value = val;
+        blackPoint.value = Math.min((whitePoint.valueAsNumber | 0) - 1, clampBlack(v));
+        if (blackPoint.valueAsNumber >= whitePoint.valueAsNumber) whitePoint.value = Math.min(getWhiteMax(), blackPoint.valueAsNumber + 1);
       } else {
-        whitePoint.value = val;
-        if (whitePoint.valueAsNumber < blackPoint.valueAsNumber) blackPoint.value = val;
+        whitePoint.value = Math.max((blackPoint.valueAsNumber | 0) + 1, clampWhite(v));
+        if (whitePoint.valueAsNumber <= blackPoint.valueAsNumber) blackPoint.value = Math.max(getBlackMin(), whitePoint.valueAsNumber - 1);
       }
       syncRangeDisplay();
       refreshHistogram();

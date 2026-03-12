@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+  <description>Register LabPDK technology (load layer map and dbu)</description>
+  <version>1.0</version>
+  <category>pymacros</category>
+  <prolog/>
+  <epilog/>
+  <doc>Run once to register LabPDK. Then select "LabPDK" when creating or opening a layout to use 1 dbu = 1 nm and the PDK layer colors.</doc>
+  <autorun>false</autorun>
+  <autorun-early>false</autorun-early>
+  <priority>0</priority>
+  <shortcut/>
+  <show-in-menu>true</show-in-menu>
+  <group-name>LabPDK</group-name>
+  <menu-path>LabPDK/Register LabPDK Technology</menu-path>
+  <interpreter>python</interpreter>
+  <dsl-interpreter-name/>
+  <text>import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+import init
+init.register_labpdk()
+</text>
+</klayout-macro>

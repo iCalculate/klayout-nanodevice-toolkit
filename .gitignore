@@ -135,6 +135,9 @@ dmypy.json
 *.oasis
 *.lyp
 *.lyt
+# PDK layer and technology files are versioned
+!lymtoolkit/PDK/technology.lyt
+!lymtoolkit/PDK/layers/layer_map.lyp
 *.lmap
 *.lcf
 *.lcc
