@@ -28,7 +28,7 @@ ARRAY_COLS = 19  # Number of columns
 BACKGROUND_GRAY = 0
 
 # Gradient pattern parameters
-GRADIENT_PATTERN = "random"  # Options: "snake_spiral", "snake_fold", "random", "uniform"
+GRADIENT_PATTERN = "snake_fold"  # Options: "snake_spiral", "snake_fold", "random", "uniform"
 UNIFORM_GRAY = 255  # Color for uniform pattern
 RANDOM_SEED = 42  # Seed for random pattern
 

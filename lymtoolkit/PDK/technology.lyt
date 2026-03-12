@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<technology>
+  <name>LabPDK</name>
+  <description>Lightweight research PDK for device layout design. 1 dbu = 1 nm.</description>
+  <dbu>0.001</dbu>
+  <layer-properties-file>layers/layer_map.lyp</layer-properties-file>
+</technology>

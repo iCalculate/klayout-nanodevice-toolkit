@@ -795,6 +795,349 @@ class GeometryUtils:
         # 使用pya.Path创建连续路径
         return GeometryUtils._create_path_polygon(points, line_width)
     
+    @staticmethod
+    def _segment_to_parallelogram(ax, ay, bx, by, width):
+        """
+        由线段 (ax,ay)->(bx,by) 和线宽 width 生成平行四边形（0°/90° 时为矩形）。
+        宽度方向为垂直于线段方向的单位法向，保证线宽一致。
+        返回四个顶点 [(x,y), ...]，逆时针顺序。
+        """
+        dx = bx - ax
+        dy = by - ay
+        length = math.sqrt(dx * dx + dy * dy)
+        if length < 1e-12:
+            return [(ax, ay), (ax, ay), (ax, ay), (ax, ay)]
+        ux = dx / length
+        uy = dy / length
+        # 单位法向（逆时针旋转 90°）：(-uy, ux)
+        nx = -uy
+        ny = ux
+        half = width / 2.0
+        # 四个顶点：A+perp, B+perp, B-perp, A-perp（逆时针）
+        return [
+            (ax + half * nx, ay + half * ny),
+            (bx + half * nx, by + half * ny),
+            (bx - half * nx, by - half * ny),
+            (ax - half * nx, ay - half * ny),
+        ]
+    
+    @staticmethod
+    def _segment_to_parallelogram_width_dir(ax, ay, bx, by, width, width_dir_x, width_dir_y):
+        """
+        由线段 (ax,ay)->(bx,by) 和线宽 width、指定宽度方向 (width_dir_x, width_dir_y) 生成平行四边形。
+        宽度沿给定方向，保证连接短线与车道线宽一致（连接段用车道方向 u 作为宽度方向）。
+        返回四个顶点 [(x,y), ...]，逆时针顺序。
+        """
+        d_len = math.sqrt(width_dir_x * width_dir_x + width_dir_y * width_dir_y)
+        if d_len < 1e-12:
+            return [(ax, ay), (bx, by), (bx, by), (ax, ay)]
+        wx = width_dir_x / d_len
+        wy = width_dir_y / d_len
+        half = width / 2.0
+        return [
+            (ax + half * wx, ay + half * wy),
+            (bx + half * wx, by + half * wy),
+            (bx - half * wx, by - half * wy),
+            (ax - half * wx, ay - half * wy),
+        ]
+    
+    @staticmethod
+    def _segment_rect_clip(x0, y0, x1, y1, half_w, half_h):
+        """
+        将线段 (x0,y0)->(x1,y1) 裁剪到矩形 [-half_w,half_w] x [-half_h,half_h] 内。
+        返回裁剪后的线段端点 [(xa,ya), (xb,yb)]，若无交则返回 []。
+        """
+        dx = x1 - x0
+        dy = y1 - y0
+        eps = 1e-12
+        if abs(dx) < eps and abs(dy) < eps:
+            if -half_w - eps <= x0 <= half_w + eps and -half_h - eps <= y0 <= half_h + eps:
+                return [(x0, y0), (x0, y0)]
+            return []
+        t_min, t_max = 0.0, 1.0
+        for (p, d, lo, hi) in [
+            (x0, dx, -half_w, half_w),
+            (y0, dy, -half_h, half_h),
+        ]:
+            if abs(d) < eps:
+                if p < lo - eps or p > hi + eps:
+                    return []
+                continue
+            t_lo = (lo - p) / d
+            t_hi = (hi - p) / d
+            if d < 0:
+                t_lo, t_hi = t_hi, t_lo
+            t_min = max(t_min, t_lo)
+            t_max = min(t_max, t_hi)
+            if t_min > t_max + eps:
+                return []
+        xa = x0 + t_min * dx
+        ya = y0 + t_min * dy
+        xb = x0 + t_max * dx
+        yb = y0 + t_max * dy
+        return [(xa, ya), (xb, yb)]
+
+    @staticmethod
+    def _line_rect_intersection(n_x, n_y, c, half_w, half_h):
+        """
+        求直线 n_x*x + n_y*y = c 与矩形 [-half_w,half_w] x [-half_h,half_h] 的交点。
+        返回最多两个交点列表 [(x,y), ...]。
+        """
+        points = []
+        eps = 1e-9
+        # 右边 x = half_w
+        if abs(n_y) > eps:
+            y = (c - n_x * half_w) / n_y
+            if -half_h - eps <= y <= half_h + eps:
+                points.append((half_w, y))
+        # 左边 x = -half_w
+        if abs(n_y) > eps:
+            y = (c + n_x * half_w) / n_y
+            if -half_h - eps <= y <= half_h + eps:
+                p = (-half_w, y)
+                if not any(abs(p[0] - q[0]) < eps and abs(p[1] - q[1]) < eps for q in points):
+                    points.append(p)
+        # 上边 y = half_h
+        if abs(n_x) > eps:
+            x = (c - n_y * half_h) / n_x
+            if -half_w - eps <= x <= half_w + eps:
+                p = (x, half_h)
+                if not any(abs(p[0] - q[0]) < eps and abs(p[1] - q[1]) < eps for q in points):
+                    points.append(p)
+        # 下边 y = -half_h
+        if abs(n_x) > eps:
+            x = (c + n_y * half_h) / n_x
+            if -half_w - eps <= x <= half_w + eps:
+                p = (x, -half_h)
+                if not any(abs(p[0] - q[0]) < eps and abs(p[1] - q[1]) < eps for q in points):
+                    points.append(p)
+        return points[:2]
+    
+    @staticmethod
+    def create_angled_meander_in_rect(cx, cy, width, height, line_width, line_spacing, angle_deg):
+        """
+        在矩形区域限制内按给定取向绘制蜿蜒线。
+        
+        严格按用户方法：
+        1) 先生成水平的、完整宽度的平行条带（每条带宽 line_width，长于 2 倍限制区域）
+        2) 将条带旋转到要求角度
+        3) 与限制区域求交，得到所需取向的等宽条纹（每条线宽严格一致）
+        4) 再做转角连接（平行四边形，宽度同样为 line_width）
+        
+        Args:
+            cx, cy: 矩形中心 (μm)
+            width, height: 矩形宽、高 (μm)，一般为正方形
+            line_width: 线宽 (μm)
+            line_spacing: 线间距 (μm)
+            angle_deg: 蜿蜒线取向角度 (度)，0=水平，90=垂直，30/60 等为斜向
+            
+        Returns:
+            Region: 限定在矩形内的蜿蜒线多边形区域
+        """
+        try:
+            import pya
+            Region = pya.Region
+            Polygon = pya.Polygon
+            Point = pya.Point
+            Trans = pya.Trans
+            Box = pya.Box
+        except (ImportError, AttributeError):
+            import klayout.db as db
+            Region = db.Region
+            Polygon = db.Polygon
+            Point = db.Point
+            Trans = db.Trans
+            Box = db.Box
+        s = GeometryUtils.UNIT_SCALE  # μm -> dbu (1 μm = s dbu，如 dbu=0.001μm 则 s=1000)
+        pitch = line_width + line_spacing
+        half_w = width / 2.0
+        half_h = height / 2.0
+        angle_rad = math.radians(angle_deg)
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        u_x, u_y = cos_a, sin_a
+        n_x, n_y = -sin_a, cos_a
+
+        def u_coord(x, y):
+            return x * u_x + y * u_y
+
+        def n_coord(x, y):
+            return x * n_x + y * n_y
+
+        def rotate(x, y):
+            return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
+
+        # 1) 水平条带：每条为完整宽度 line_width，长度 > 2*限制区域
+        L = 2.0 * max(half_w, half_h) + width + height
+        span_n = (2.0 * half_w) * abs(sin_a) + (2.0 * half_h) * abs(cos_a)
+        num_lanes = max(2, int(span_n / pitch))
+        c0 = -span_n / 2.0 + pitch / 2.0
+        lane_centers = [c0 + i * pitch for i in range(num_lanes)]
+
+        # 矩形限制（本地坐标 μm，输出时乘 s 转为 dbu）
+        rect_poly = Polygon([
+            Point(int(round(-half_w * s)), int(round(-half_h * s))),
+            Point(int(round(half_w * s)), int(round(-half_h * s))),
+            Point(int(round(half_w * s)), int(round(half_h * s))),
+            Point(int(round(-half_w * s)), int(round(half_h * s))),
+        ])
+        rect_region = Region([rect_poly])
+
+        # 2) 对每条车道：生成水平条带（矩形，宽 line_width），旋转后与矩形求交 → 等宽条纹
+        stripe_polygons = []
+        for c in lane_centers:
+            y_lo = c - line_width / 2.0
+            y_hi = c + line_width / 2.0
+            band_corners = [(-L, y_lo), (L, y_lo), (L, y_hi), (-L, y_hi)]
+            rot_corners = [rotate(x, y) for x, y in band_corners]
+            band_poly = Polygon([Point(int(round(p[0] * s)), int(round(p[1] * s))) for p in rot_corners])
+            stripe_region = (Region([band_poly]) & rect_region).merged()
+            for poly in stripe_region.each():
+                stripe_polygons.append((poly, c))
+                break
+
+        if len(stripe_polygons) < 1:
+            return Region()
+
+        def polygon_vertices(poly):
+            p = getattr(poly, 'polygon', poly)
+            try:
+                return [(float(pt.x), float(pt.y)) for pt in p.each_point()]
+            except AttributeError:
+                try:
+                    return [(float(pt.x), float(pt.y)) for pt in p.each_point_hull()]
+                except AttributeError:
+                    n = getattr(p, 'num_points_hull', lambda: 0)()
+                    if n == 0:
+                        return []
+                    return [(float(p.point_hull(i).x), float(p.point_hull(i).y)) for i in range(n)]
+
+        def get_caps(vertices, u_coord_fn, n_coord_fn):
+            if not vertices:
+                return None, None
+            u_vals = [u_coord_fn(x, y) for x, y in vertices]
+            u_min, u_max = min(u_vals), max(u_vals)
+            eps = 1e-9
+            left = [(x, y) for (x, y), u in zip(vertices, u_vals) if u <= u_min + eps]
+            right = [(x, y) for (x, y), u in zip(vertices, u_vals) if u >= u_max - eps]
+            left.sort(key=lambda p: n_coord_fn(p[0], p[1]))
+            right.sort(key=lambda p: n_coord_fn(p[0], p[1]))
+            # 取 cap 在 n 方向上的两端点（允许多于 2 个顶点时取首尾）
+            left_cap = [left[0], left[-1]] if len(left) >= 2 else None
+            right_cap = [right[0], right[-1]] if len(right) >= 2 else None
+            return (left_cap, right_cap)
+
+        def poly_center_n(poly):
+            verts = polygon_vertices(poly)
+            if not verts:
+                return 0.0
+            return sum(n_coord(x, y) for x, y in verts) / len(verts)
+
+        stripe_polygons.sort(key=lambda t: -poly_center_n(t[0]))
+
+        stripe_caps = []
+        for poly, _ in stripe_polygons:
+            verts = polygon_vertices(poly)
+            left_cap, right_cap = get_caps(verts, u_coord, n_coord)
+            stripe_caps.append((left_cap, right_cap))
+
+        # 矩形边界（dbu），用于内移连接端点使连接线宽完整落在矩形内
+        left_dbu = -half_w * s
+        right_dbu = half_w * s
+        bottom_dbu = -half_h * s
+        top_dbu = half_h * s
+        tol_dbu = max(1.0, line_width * s * 0.01)
+
+        def inward_normal_dbu(px, py):
+            """点 (px,py) 在矩形边上时的单位内向法向 (dbu)"""
+            nx, ny = 0.0, 0.0
+            if px <= left_dbu + tol_dbu:
+                nx = 1.0
+            if px >= right_dbu - tol_dbu:
+                nx = -1.0
+            if py <= bottom_dbu + tol_dbu:
+                ny = 1.0
+            if py >= top_dbu - tol_dbu:
+                ny = -1.0
+            if nx == 0 and ny == 0:
+                return (0.0, 0.0)
+            d = math.sqrt(nx * nx + ny * ny)
+            return (nx / d, ny / d)
+
+        # 备用：由车道中心线裁剪到矩形得到每条纹的左右端（μm→dbu），按已排序的 stripe 顺序
+        def lane_ends_dbu(c):
+            x0, y0 = rotate(-half_w - 1.0, c)
+            x1, y1 = rotate(half_w + 1.0, c)
+            clip = GeometryUtils._segment_rect_clip(x0, y0, x1, y1, half_w, half_h)
+            if len(clip) < 2:
+                return (None, None)
+            u_pts = [(p[0] * u_x + p[1] * u_y, p) for p in clip]
+            u_pts.sort(key=lambda t: t[0])
+            left_um, right_um = u_pts[0][1], u_pts[-1][1]
+            return ((left_um[0] * s, left_um[1] * s), (right_um[0] * s, right_um[1] * s))
+
+        lane_ends_ordered = [lane_ends_dbu(c) for (_, c) in stripe_polygons]
+
+        # 3) 平行线间连接：平行四边形，线宽=设定值；端点内移使 0°/90° 时不被裁掉一半
+        path_region = Region()
+        for i, (poly, _) in enumerate(stripe_polygons):
+            path_region.insert(poly)
+
+        line_width_dbu = line_width * s
+        for i in range(len(stripe_caps) - 1):
+            left0, right0 = stripe_caps[i]
+            left1, right1 = stripe_caps[i + 1]
+            if i % 2 == 0:
+                cap_exit, cap_entry = right0, right1
+            else:
+                cap_exit, cap_entry = left0, left1
+
+            if cap_exit is not None and len(cap_exit) >= 2:
+                exit_cx = (cap_exit[0][0] + cap_exit[1][0]) / 2.0
+                exit_cy = (cap_exit[0][1] + cap_exit[1][1]) / 2.0
+            elif i < len(lane_ends_ordered):
+                le = lane_ends_ordered[i]
+                end = le[1] if i % 2 == 0 else le[0]
+                if end is None:
+                    continue
+                exit_cx, exit_cy = end[0], end[1]
+            else:
+                continue
+
+            if cap_entry is not None and len(cap_entry) >= 2:
+                entry_cx = (cap_entry[0][0] + cap_entry[1][0]) / 2.0
+                entry_cy = (cap_entry[0][1] + cap_entry[1][1]) / 2.0
+            elif i + 1 < len(lane_ends_ordered):
+                le1 = lane_ends_ordered[i + 1]
+                end = le1[1] if i % 2 == 0 else le1[0]
+                if end is None:
+                    continue
+                entry_cx, entry_cy = end[0], end[1]
+            else:
+                continue
+
+            seg_len_sq = (entry_cx - exit_cx) ** 2 + (entry_cy - exit_cy) ** 2
+            if seg_len_sq < (line_width_dbu * 0.1) ** 2:
+                continue
+
+            in_ex = inward_normal_dbu(exit_cx, exit_cy)
+            in_en = inward_normal_dbu(entry_cx, entry_cy)
+            half_dbu = line_width_dbu / 2.0
+            exit_cx = exit_cx + half_dbu * in_ex[0]
+            exit_cy = exit_cy + half_dbu * in_ex[1]
+            entry_cx = entry_cx + half_dbu * in_en[0]
+            entry_cy = entry_cy + half_dbu * in_en[1]
+
+            verts = GeometryUtils._segment_to_parallelogram_width_dir(
+                exit_cx, exit_cy, entry_cx, entry_cy, line_width_dbu, u_x, u_y
+            )
+            conn_poly = Polygon([Point(int(round(p[0])), int(round(p[1]))) for p in verts])
+            path_region.insert(conn_poly)
+
+        path_region = path_region.merged()
+        result_local = path_region & rect_region
+        result_local.transform(Trans(0, False, int(round(cx * s)), int(round(cy * s))))
+        return result_local
     
     @staticmethod
     def _create_hilbert_curve(x, y, length, width, spacing, turns):
@@ -920,7 +1263,7 @@ class GeometryUtils:
             y = margin + yi * step
             points.append(pya.Point(x, y))
         
-        # 验证点序列
+        # 验证点序列（点数应为 N*N）
         GeometryUtils._validate_hilbert_points(points, order, step)
         
         # 创建单一连续路径
@@ -933,6 +1276,15 @@ class GeometryUtils:
         
         return merged_region
     
+    @staticmethod
+    def _validate_hilbert_points(points, order, step):
+        """验证 Hilbert 曲线点序列：点数应为 N*N，且相邻点间距为 step。"""
+        N = 1 << order
+        expected_count = N * N
+        if len(points) != expected_count:
+            raise ValueError(
+                f"Hilbert points count mismatch: got {len(points)}, expected {expected_count} (order={order})"
+            )
     
     @staticmethod
     def _d2xy(N, d):
