@@ -19,8 +19,17 @@ Usage:
 from __future__ import annotations
 
 import gdsfactory as gf
-from gdsfactory.technology import LayerMap
-from gdsfactory.typings import Layer
+
+try:
+    from gdsfactory.technology import LayerMap
+except ImportError:
+    # gdsfactory < 7 无 LayerMap，用普通类作为基类
+    LayerMap = object
+
+try:
+    from gdsfactory.typings import Layer
+except ImportError:
+    Layer = tuple  # type: ignore
 
 
 class GenericNanoDeviceLayerMap(LayerMap):
@@ -89,16 +98,18 @@ LAYER_TUPLES = {
 }
 
 
-# Register PDK (gdsfactory requires layers to be a LayerMap subclass)
-PDK = gf.Pdk(
-    name="nanodevice",
-    layers=GenericNanoDeviceLayerMap,
-)
+# Register PDK: gdsfactory 6.x 需要 layers 为 dict
+try:
+    _layers_dict = dict(LAYER_TUPLES)
+    PDK = gf.Pdk(name="nanodevice", layers=_layers_dict)
+except Exception:
+    PDK = None
 
 
 def activate() -> None:
     """Activate nanodevice PDK so gf.get_layer(name) etc. use this PDK's layers."""
-    PDK.activate()
+    if PDK is not None:
+        PDK.activate()
 
 
 # Auto-activate on import so mark_writefield_gdsfactory etc. can use LAYER defaults

@@ -1,0 +1,63 @@
+# 5mm x 5mm 片子，默认 1000um 写场
+# 用法: python mark_writefield_gdsfactory.py --config mark_writefield_gdsfactory_5mm_1000um.yaml [-o output.gds]
+
+# 样品外框 (5mm = 5000 um)
+sample_width: 5000.0
+sample_height: 5000.0
+
+# 有效曝光区 (3mm)，1000um 写场 → 3x3 共 9 个写场
+active_width: 3000.0
+active_height: 3000.0
+
+# 写场边长 (um)，与脚本默认一致
+writefield_size: 1000.0
+
+# 单写场内 mark 参数（与脚本默认 1000um 写场一致）
+mark_main_size: 80.0
+mark_main_width: 10.0
+mark_small_size: 15.0
+mark_small_width: 2.0
+mark_small_dist: 50.0
+
+# L 形角标
+l_marker_length: 100.0
+l_marker_width: 5.0
+
+# 外框线宽
+boundary_line_width: 10.0
+
+# 写场角标相对角落偏移 (um)
+mark_offset_from_corner: [100.0, 100.0]
+
+# 四角全局 mark（与脚本默认一致）
+global_mark_offset: 200.0
+global_mark_main_size: 400.0
+global_mark_main_width: 10.0
+global_mark_small_size: 50.0
+global_mark_small_width: 4.0
+global_mark_small_dist: 175.0
+
+# 写场标签
+label_size: 15.0
+label_offset: [-70.0, -75.0]
+
+# Caliper（与脚本默认一致）
+enable_caliper: true
+caliper_width: 2.0
+caliper_top_right_pitch: 5.0
+caliper_top_right_num_side: 10
+caliper_top_right_tick_length: 10.0
+caliper_top_right_center_length: 20.0
+caliper_bottom_left_pitch: 5.1
+caliper_bottom_left_num_side: 10
+caliper_bottom_left_tick_length: 10.0
+caliper_bottom_left_center_length: 20.0
+
+# 信息文字（左上角）
+user_name: "Xinchuan"
+info_text_size: 50.0
+info_text_offset: [-100.0, -95.0]
+info_text_line_width: 0.0
+
+# 对准层
+enable_alignment_layers: true

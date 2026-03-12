@@ -1006,11 +1006,12 @@ def generate_writefield_array(
     tl_mark_pos = (-h_active_w - global_mark_offset, h_active_h + global_mark_offset)
     add_global_mark(tl_mark_pos, is_main=True)
     
-    # Add info text to the right of the Top-Left global mark
+    # Add info text to the right of the Top-Left global mark (DE = dummy edge, 样品边到有效区边的距离)
+    _offset_um = mark_offset_from_corner[0] if isinstance(mark_offset_from_corner, (tuple, list)) else mark_offset_from_corner
+    _de_um = (sample_width - active_width) / 2.0
     info_lines = [
-        f"WF: {writefield_size} um, Mark Offset: -{mark_offset_from_corner} um",
-        f"AA: {active_width} * {active_height} um, Mark Offset: +{global_mark_offset} um",
-        f"User: {user_name}, Date: {datetime.now().strftime('%Y-%m-%d')}"
+        f"WF:{int(writefield_size)}um, Offset:{int(round(_offset_um))}um",
+        f"AA:{int(active_width)}um, DE:{int(round(_de_um))}um",
     ]
     
     info_x = tl_mark_pos[0] + global_mark_main_size + info_text_offset[0]  # Start text after the mark + offset
@@ -1244,13 +1245,76 @@ def generate_writefield_array(
 
     return c
 
+
+def load_config_for_array(config_path: str) -> dict:
+    """
+    从 YAML 或 JSON 配置文件加载 generate_writefield_array 参数字典。
+    列表会转为 tuple（如 mark_offset_from_corner）。
+    """
+    import os
+    path = os.path.abspath(config_path)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    # Try YAML first, then JSON
+    try:
+        import yaml
+        data = yaml.safe_load(raw)
+    except ImportError:
+        import json
+        data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("Config file must contain a single dict (YAML mapping or JSON object).")
+    # Convert list to tuple for params that expect tuple
+    tuple_keys = {
+        "mark_offset_from_corner", "label_offset", "info_text_offset",
+    }
+    out = {}
+    for k, v in data.items():
+        if k in tuple_keys and isinstance(v, (list, tuple)):
+            out[k] = tuple(v)
+        else:
+            out[k] = v
+    return out
+
+
 if __name__ == "__main__":
     import sys
     import os
-    
+    import argparse
+
     # Unbuffered output
     sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
     sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
+
+    parser = argparse.ArgumentParser(
+        description="生成 EBL 写场阵列 mark 版图 (GDS)。支持配置文件或命令行参数。"
+    )
+    parser.add_argument(
+        "--config", "-c",
+        type=str,
+        default=None,
+        help="配置文件路径 (YAML 或 JSON)，用于 5mm/10mm 等预设。"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        default=None,
+        help="输出 GDS 文件路径。未指定时使用 output/mark_writefield_array_<日期>.gds"
+    )
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="生成后不在 KLayout 中打开"
+    )
+    # 常用覆盖参数（与 generate_writefield_array 一致）
+    parser.add_argument("--sample-width", type=float, default=None, help="样品外框宽度 (um)")
+    parser.add_argument("--sample-height", type=float, default=None, help="样品外框高度 (um)")
+    parser.add_argument("--active-width", type=float, default=None, help="有效区宽度 (um)")
+    parser.add_argument("--active-height", type=float, default=None, help="有效区高度 (um)")
+    parser.add_argument("--writefield-size", type=float, default=None, help="写场边长 (um)")
+    args = parser.parse_args()
 
     print("Script started", file=sys.stdout, flush=True)
     print("=" * 60, file=sys.stdout, flush=True)
@@ -1261,27 +1325,55 @@ if __name__ == "__main__":
         from config import get_gds_path
         print("Config imported", file=sys.stdout, flush=True)
 
+        # 构建 generate_writefield_array 的参数字典
+        kwargs = {}
+        if args.config:
+            config_dir = os.path.dirname(os.path.abspath(args.config))
+            if config_dir and config_dir not in sys.path:
+                sys.path.insert(0, config_dir)
+            kwargs = load_config_for_array(args.config)
+            print(f"Loaded config from: {args.config}", file=sys.stdout, flush=True)
+
+        # 命令行覆盖
+        if args.sample_width is not None:
+            kwargs["sample_width"] = args.sample_width
+        if args.sample_height is not None:
+            kwargs["sample_height"] = args.sample_height
+        if args.active_width is not None:
+            kwargs["active_width"] = args.active_width
+        if args.active_height is not None:
+            kwargs["active_height"] = args.active_height
+        if args.writefield_size is not None:
+            kwargs["writefield_size"] = args.writefield_size
+
         print("Generating layout...", file=sys.stdout, flush=True)
-        c = generate_writefield_array()
+        c = generate_writefield_array(**kwargs)
         print("Layout generated.", file=sys.stdout, flush=True)
 
-        # GDS filename with date suffix like 26Feb02 (YYMonDD, English month)
-        _now = datetime.now()
-        _mon = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[_now.month - 1]
-        date_suffix = f"{_now.year % 100:02d}{_mon}{_now.day:02d}"
-        gds_basename = f"mark_writefield_array_{date_suffix}.gds"
-        output_path = get_gds_path(gds_basename)
+        if args.output:
+            output_path = os.path.abspath(args.output)
+        else:
+            _now = datetime.now()
+            _mon = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")[_now.month - 1]
+            date_suffix = f"{_now.year % 100:02d}{_mon}{_now.day:02d}"
+            gds_basename = f"mark_writefield_array_{date_suffix}.gds"
+            output_path = get_gds_path(gds_basename)
+
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
         print(f"Saving GDS to: {output_path}", file=sys.stdout, flush=True)
         c.write_gds(output_path)
         print(f"[OK] GDS saved to: {output_path}", file=sys.stdout, flush=True)
         print("=" * 60, file=sys.stdout, flush=True)
 
-        try:
-            print("Opening layout in KLayout...", file=sys.stdout, flush=True)
-            c.show()
-        except Exception as e:
-            print(f"Note: Could not show GUI ({e})", file=sys.stdout, flush=True)
-            print("Open the generated GDS file in KLayout to view.", file=sys.stdout, flush=True)
+        if not args.no_show:
+            try:
+                print("Opening layout in KLayout...", file=sys.stdout, flush=True)
+                c.show()
+            except Exception as e:
+                print(f"Note: Could not show GUI ({e})", file=sys.stdout, flush=True)
+                print("Open the generated GDS file in KLayout to view.", file=sys.stdout, flush=True)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr, flush=True)
         import traceback
