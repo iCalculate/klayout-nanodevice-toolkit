@@ -1,0 +1,148 @@
+# labpdk_2_5d_view.drc
+#
+# KLayout 2.5d View generator script (DRC script language).
+# It extrudes LabPDK layers into a stacked 2.5d scene.
+#
+# How to use (inside KLayout):
+# - Tools -> 2.5d View -> New 2.5d Script
+# - Paste this content (or load the script text)
+# - Run it from the 2.5d view window / macro IDE
+#
+# Notes:
+# - z(input(L, D), ...) extrudes the given layer source (layer datatype).
+# - If you omit display options, KLayout uses the layer's display style/colors from the layout view.
+# - This script uses a simple "stacking order" and default thicknesses; adjust heights if needed.
+#
+# Layer convention (datatype always 0):
+# - 1/0  : Chip boundary / mechanical
+# - 2/0  : Active region
+# - 3/0  : Mark (primary)
+# - 4/0  : Mark frame / complementary
+# - 5/0  : Caliper
+# - 11/0..19/0 : Device stack 1
+# - 21/0..29/0 : Device stack 2
+# - 31/0..40/0 : Interconnect (M1/V1..M5/V5)
+# - 41/0..42/0 : Pad / probe
+# - 61/0, 63/0  : EBL alignment (auto / manual)
+
+# ----------------------------
+# User toggles
+# ----------------------------
+
+ENABLE_STACK1  = true
+ENABLE_STACK2  = false  # set true if your layout actually uses stack 2 layers (21..29)
+ENABLE_INTERCONNECT = true
+ENABLE_MARKS   = true   # include 3/0, 4/0, 5/0, 61/0, 63/0
+ENABLE_CHIP_OUTLINE = true
+
+# ----------------------------
+# Default thicknesses (visual only)
+# Units: KLayout understands .nm / .um suffixes.
+# ----------------------------
+
+CHIP_THICKNESS    = 5.nm
+ACTIVE_THICKNESS = 50.nm
+
+BOT_GATE_THICKNESS   = 20.nm   # 11/0
+BOT_DIEL_THICKNESS   = 50.nm   # 12/0
+CHAN_THICKNESS       = 80.nm   # 13/0 / 14/0
+CONTACT_THICKNESS    = 20.nm   # 15/0 / 16/0
+TOP_DIEL_THICKNESS   = 50.nm   # 17/0
+TOP_GATE_THICKNESS   = 20.nm   # 18/0
+RESERVED_THICKNESS  = 10.nm    # 19/0 (if present)
+
+M_THICKNESS = 100.nm  # 31/0,33/0,35/0,37/0,39/0
+V_THICKNESS = 50.nm   # 32/0,34/0,36/0,38/0,40/0
+PAD_THICKNESS   = 200.nm  # 41/0
+PROBE_THICKNESS = 150.nm  # 42/0
+
+MARK_THICKNESS   = 5.nm   # marks / calipers / EBL alignment
+
+# ----------------------------
+# Extrusion helper
+# Ensure the first z() call always has zstart (so script is robust
+# even if some toggles disable the initial layers).
+# ----------------------------
+
+$z0 = 0.nm
+$z_first = true
+
+def extrude(layer_number, thickness, mat_name)
+  if $z_first
+    z(input(layer_number, 0), zstart: $z0, height: thickness, name: mat_name)
+    $z_first = false
+  else
+    z(input(layer_number, 0), height: thickness, name: mat_name)
+  end
+end
+
+# ----------------------------
+# Extrusion stacking order: bottom -> top
+# ----------------------------
+
+if ENABLE_CHIP_OUTLINE
+  extrude(1, CHIP_THICKNESS, "CHIP")
+end
+
+if ENABLE_STACK1
+  # Active region
+  extrude(2, ACTIVE_THICKNESS, "ACTIVE")
+
+  # Device stack 1
+  extrude(11, BOT_GATE_THICKNESS, "BOTTOM_GATE_11")
+  extrude(12, BOT_DIEL_THICKNESS, "BOTTOM_DIEL_12")
+  extrude(13, CHAN_THICKNESS, "CHANNEL_N_13")
+  extrude(14, CHAN_THICKNESS, "CHANNEL_P_14")
+  extrude(15, CONTACT_THICKNESS, "CONTACT_N_15")
+  extrude(16, CONTACT_THICKNESS, "CONTACT_P_16")
+  extrude(17, TOP_DIEL_THICKNESS, "TOP_DIEL_17")
+  extrude(18, TOP_GATE_THICKNESS, "TOP_GATE_18")
+  extrude(19, RESERVED_THICKNESS, "RESERVED_19")
+end
+
+if ENABLE_STACK2
+  # Device stack 2 (21..29)
+  extrude(21, BOT_GATE_THICKNESS, "BOTTOM_GATE_21")
+  extrude(22, BOT_DIEL_THICKNESS, "BOTTOM_DIEL_22")
+  extrude(23, CHAN_THICKNESS, "CHANNEL_N_23")
+  extrude(24, CHAN_THICKNESS, "CHANNEL_P_24")
+  extrude(25, CONTACT_THICKNESS, "CONTACT_N_25")
+  extrude(26, CONTACT_THICKNESS, "CONTACT_P_26")
+  extrude(27, TOP_DIEL_THICKNESS, "TOP_DIEL_27")
+  extrude(28, TOP_GATE_THICKNESS, "TOP_GATE_28")
+  extrude(29, RESERVED_THICKNESS, "RESERVED_29")
+end
+
+if ENABLE_INTERCONNECT
+  # Interconnect stack (M1/V1 .. M5/V5)
+  extrude(31, M_THICKNESS, "M1_31")
+  extrude(32, V_THICKNESS, "V1_32")
+
+  extrude(33, M_THICKNESS, "M2_33")
+  extrude(34, V_THICKNESS, "V2_34")
+
+  extrude(35, M_THICKNESS, "M3_35")
+  extrude(36, V_THICKNESS, "V3_36")
+
+  extrude(37, M_THICKNESS, "M4_37")
+  extrude(38, V_THICKNESS, "V4_38")
+
+  extrude(39, M_THICKNESS, "M5_39")
+  extrude(40, V_THICKNESS, "V5_40")
+
+  # Topmost pads/probes
+  extrude(41, PAD_THICKNESS, "PAD_41")
+  extrude(42, PROBE_THICKNESS, "PROBE_42")
+end
+
+if ENABLE_MARKS
+  # Marks/calipers/EBL alignment near the top for visualization
+  extrude(5, MARK_THICKNESS, "CALIPER_5")
+  extrude(3, MARK_THICKNESS, "MARK_3")
+  extrude(4, MARK_THICKNESS, "MARK_4")
+
+  # EBL alignment marks (61/0 auto, 63/0 manual)
+  extrude(61, MARK_THICKNESS, "EBL_61_AUTO")
+  extrude(63, MARK_THICKNESS, "EBL_63_MANUAL")
+end
+
