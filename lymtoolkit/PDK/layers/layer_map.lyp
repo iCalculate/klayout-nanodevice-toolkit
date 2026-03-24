@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- LabPDK: 1-10 same pattern I2, 11-20 pattern I3. 色相交叉分布：相邻层冷/暖交替，对比度高。1=11, 2=12 同色相。 -->
 <layer-properties>
-  <!-- EBL 61,63: pattern I0 -->
+  <!-- EBL 61,63: 无填充 (I1 clear), 仅轮廓 stripper -->
   <properties>
     <frame-color>#a8a8a8</frame-color>
     <fill-color>#a8a8a8</fill-color>
     <frame-brightness>0</frame-brightness>
     <fill-brightness>0</fill-brightness>
-    <dither-pattern>I0</dither-pattern>
+    <dither-pattern>I1</dither-pattern>
     <line-style></line-style>
     <valid>true</valid>
     <visible>true</visible>
@@ -21,7 +21,7 @@
     <fill-color>#d0d0d0</fill-color>
     <frame-brightness>0</frame-brightness>
     <fill-brightness>0</fill-brightness>
-    <dither-pattern>I0</dither-pattern>
+    <dither-pattern>I1</dither-pattern>
     <line-style></line-style>
     <valid>true</valid>
     <visible>true</visible>
