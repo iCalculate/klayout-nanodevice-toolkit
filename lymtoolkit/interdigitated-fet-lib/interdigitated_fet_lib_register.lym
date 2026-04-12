@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Interdigitated FET Library</description>
+ <version>v0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>true</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import os
+import sys
+import pya
+
+sys.path.insert(0, os.path.dirname(__file__))
+from interdigitated_fet_pcell import InterdigitatedFETPCell
+
+
+class InterdigitatedFETLib(pya.Library):
+    def __init__(self):
+        self.description = "Interdigitated FET PCell Library"
+        self.layout().register_pcell("InterdigitatedFETPCell", InterdigitatedFETPCell())
+        self.register("InterdigitatedFETLib")
+
+
+InterdigitatedFETLib()
+</text>
+</klayout-macro>
