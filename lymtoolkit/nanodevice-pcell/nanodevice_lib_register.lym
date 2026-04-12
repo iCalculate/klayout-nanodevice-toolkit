@@ -59,6 +59,7 @@ from qrcode_pcell import QRCodePCell
 from fanout_pcell import FanoutPCell
 from digital_pcell import DigitalPCell
 from mark_pcell import MarkPCell
+from interdigitated_fet_pcell import InterdigitatedFETPCell
 
 class NanoDeviceLib(pya.Library):
     def __init__(self):
@@ -68,6 +69,7 @@ class NanoDeviceLib(pya.Library):
         self.layout().register_pcell("FanoutPCell", FanoutPCell())
         self.layout().register_pcell("DigitalPCell", DigitalPCell())
         self.layout().register_pcell("MarkPCell", MarkPCell())
+        self.layout().register_pcell("InterdigitatedFETPCell", InterdigitatedFETPCell())
         self.register("NanoDeviceLib")
 
 NanoDeviceLib() 
