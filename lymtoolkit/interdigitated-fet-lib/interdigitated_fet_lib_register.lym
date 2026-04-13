@@ -21,12 +21,14 @@ import pya
 
 sys.path.insert(0, os.path.dirname(__file__))
 from interdigitated_fet_pcell import InterdigitatedFETPCell
+from gdsfactory_text_pcell import GdsfactoryTextPCell
 
 
 class InterdigitatedFETLib(pya.Library):
     def __init__(self):
-        self.description = "Interdigitated FET PCell Library"
+        self.description = "Interdigitated FET and gdsfactory Text PCell Library"
         self.layout().register_pcell("InterdigitatedFETPCell", InterdigitatedFETPCell())
+        self.layout().register_pcell("GdsfactoryTextPCell", GdsfactoryTextPCell())
         self.register("InterdigitatedFETLib")
 
 

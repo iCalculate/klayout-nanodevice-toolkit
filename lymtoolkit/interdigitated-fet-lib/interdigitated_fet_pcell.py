@@ -15,32 +15,32 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
             default=0,
             choices=[["vertical", 0], ["horizontal", 1]],
         )
-        self.param("channel_width", self.TypeDouble, "Channel width (um)", default=30.0)
-        self.param("channel_height", self.TypeDouble, "Channel height (um)", default=18.0)
+        self.param("channel_width", self.TypeDouble, "Channel width (um)", default=50.0)
+        self.param("channel_height", self.TypeDouble, "Channel height (um)", default=50.0)
         self.param("finger_width", self.TypeDouble, "Finger width W (um)", default=2.0)
         self.param("finger_spacing", self.TypeDouble, "Finger spacing S (um)", default=2.0)
         self.param("finger_extension", self.TypeDouble, "Finger extension on bus side (um)", default=8.0)
-        self.param("finger_far_extension", self.TypeDouble, "Finger extension on far side (um)", default=0.0)
-        self.param("bus_width", self.TypeDouble, "Bus width (um)", default=6.0)
+        self.param("finger_far_extension", self.TypeDouble, "Finger extension on far side (um)", default=4.0)
+        self.param("bus_width", self.TypeDouble, "Bus width (um)", default=8.0)
 
         self.param("sd_lead_length", self.TypeDouble, "Source/Drain lead length (um)", default=10.0)
-        self.param("sd_pad_width", self.TypeDouble, "Source/Drain pad width (um)", default=18.0)
-        self.param("sd_pad_height", self.TypeDouble, "Source/Drain pad height (um)", default=14.0)
-        self.param("sd_pad_gap", self.TypeDouble, "Source/Drain pad-to-pad gap (um)", default=12.0)
+        self.param("sd_pad_width", self.TypeDouble, "Source/Drain pad width (um)", default=50.0)
+        self.param("sd_pad_height", self.TypeDouble, "Source/Drain pad height (um)", default=50.0)
+        self.param("sd_pad_gap", self.TypeDouble, "Source/Drain pad-to-pad gap (um)", default=15.0)
 
         self.param(
             "gate_mode",
             self.TypeInt,
             "Gate cover mode",
-            default=0,
+            default=1,
             choices=[["global", 0], ["channel_only", 1]],
         )
-        self.param("gate_margin_x", self.TypeDouble, "Gate X grow/shrink (um)", default=0.0)
-        self.param("gate_margin_y", self.TypeDouble, "Gate Y grow/shrink (um)", default=0.0)
-        self.param("gate_lead_width", self.TypeDouble, "Gate lead width (um)", default=8.0)
-        self.param("gate_pad_width", self.TypeDouble, "Gate pad width (um)", default=18.0)
-        self.param("gate_pad_height", self.TypeDouble, "Gate pad height (um)", default=14.0)
-        self.param("gate_pad_gap", self.TypeDouble, "Gate pad gap (um)", default=10.0)
+        self.param("gate_margin_x", self.TypeDouble, "Gate X grow/shrink (um)", default=0.5)
+        self.param("gate_margin_y", self.TypeDouble, "Gate Y grow/shrink (um)", default=0.5)
+        self.param("gate_lead_width", self.TypeDouble, "Gate lead width (um)", default=20.0)
+        self.param("gate_pad_width", self.TypeDouble, "Gate pad width (um)", default=50.0)
+        self.param("gate_pad_height", self.TypeDouble, "Gate pad height (um)", default=50.0)
+        self.param("gate_pad_gap", self.TypeDouble, "Gate pad gap (um)", default=15.0)
 
         self.param("channel_layer", self.TypeLayer, "Channel layer", default=pya.LayerInfo(14, 0))
         self.param("sd_layer", self.TypeLayer, "Source/Drain layer", default=pya.LayerInfo(16, 0))
@@ -54,21 +54,25 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
         )
 
     def coerce_parameters_impl(self):
-        self.channel_width = max(self.channel_width, 0.5)
-        self.channel_height = max(self.channel_height, 0.5)
-        self.finger_width = max(self.finger_width, 0.1)
-        self.finger_spacing = max(self.finger_spacing, 0.0)
-        self.finger_extension = max(self.finger_extension, 0.0)
-        self.finger_far_extension = max(self.finger_far_extension, 0.0)
-        self.bus_width = max(self.bus_width, 0.2)
-        self.sd_lead_length = max(self.sd_lead_length, 0.0)
-        self.sd_pad_width = max(self.sd_pad_width, 1.0)
-        self.sd_pad_height = max(self.sd_pad_height, 1.0)
-        self.sd_pad_gap = max(self.sd_pad_gap, 0.0)
-        self.gate_lead_width = max(self.gate_lead_width, 0.2)
-        self.gate_pad_width = max(self.gate_pad_width, 1.0)
-        self.gate_pad_height = max(self.gate_pad_height, 1.0)
-        self.gate_pad_gap = max(self.gate_pad_gap, 0.2)
+        self.device_cx = min(max(self.device_cx, -1000.0), 1000.0)
+        self.device_cy = min(max(self.device_cy, -1000.0), 1000.0)
+        self.channel_width = min(max(self.channel_width, 0.1), 1000.0)
+        self.channel_height = min(max(self.channel_height, 0.1), 1000.0)
+        self.finger_width = min(max(self.finger_width, 0.1), 1000.0)
+        self.finger_spacing = min(max(self.finger_spacing, 0.1), 1000.0)
+        self.finger_extension = min(max(self.finger_extension, 0.0), 1000.0)
+        self.finger_far_extension = min(max(self.finger_far_extension, 0.0), 1000.0)
+        self.bus_width = min(max(self.bus_width, 0.1), 1000.0)
+        self.sd_lead_length = min(max(self.sd_lead_length, 0.1), 1000.0)
+        self.sd_pad_width = min(max(self.sd_pad_width, 0.1), 1000.0)
+        self.sd_pad_height = min(max(self.sd_pad_height, 0.1), 1000.0)
+        self.sd_pad_gap = min(max(self.sd_pad_gap, 0.1), 1000.0)
+        self.gate_margin_x = min(max(self.gate_margin_x, -1000.0), 1000.0)
+        self.gate_margin_y = min(max(self.gate_margin_y, -1000.0), 1000.0)
+        self.gate_lead_width = min(max(self.gate_lead_width, 0.1), 1000.0)
+        self.gate_pad_width = min(max(self.gate_pad_width, 0.1), 1000.0)
+        self.gate_pad_height = min(max(self.gate_pad_height, 0.1), 1000.0)
+        self.gate_pad_gap = min(max(self.gate_pad_gap, 0.1), 1000.0)
 
         slots = self._auto_slot_count()
         comb_span = slots * self.finger_width + max(slots - 1, 0) * self.finger_spacing
@@ -98,20 +102,16 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
         else:
             geometry = self._build_horizontal_geometry(cx, cy)
 
-        for box in geometry["sd_boxes"]:
-            sd_shapes.insert(self._to_box(box, to_iu))
+        sd_region = pya.Region()
+        for box in geometry["sd_boxes"] + geometry["lead_boxes"]:
+            sd_region.insert(self._to_box(box, to_iu))
+        sd_shapes.insert(sd_region.merged())
 
-        for lead_box in geometry["lead_boxes"]:
-            sd_shapes.insert(self._to_box(lead_box, to_iu))
-
-        gate_region, gate_anchor_rect = self._gate_geometry(geometry, to_iu)
-        gate_shapes.insert(gate_region)
-        gate_shapes.insert(self._to_box(geometry["gate_pad_box"], to_iu))
-
-        gate_center = self._rect_center(gate_anchor_rect)
-        gate_anchor = self._anchor_on_rect(gate_anchor_rect, geometry["gate_pad_center"])
-        gate_pad_anchor = self._anchor_on_rect(geometry["gate_pad_box"], gate_center)
-        gate_shapes.insert(self._to_box(self._edge_aligned_lead_box(gate_pad_anchor, gate_anchor, self.gate_lead_width), to_iu))
+        gate_region, gate_route_start = self._gate_geometry(geometry, to_iu)
+        gate_region.insert(self._to_box(geometry["gate_pad_box"], to_iu))
+        for lead_box in self._build_gate_route_boxes(geometry, gate_route_start):
+            gate_region.insert(self._to_box(lead_box, to_iu))
+        gate_shapes.insert(gate_region.merged())
 
     def _build_vertical_geometry(self, cx, cy):
         left = cx - self.channel_width / 2.0
@@ -176,8 +176,8 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
         boxes.extend([source_pad_box, drain_pad_box])
 
         lead_boxes = []
-        lead_boxes.extend(self._left_pad_to_hbus_leads(source_pad_box, active_left, bottom_bus_bottom, self.bus_width))
-        lead_boxes.extend(self._left_pad_to_hbus_leads(drain_pad_box, active_left, top_bus_top - self.bus_width, self.bus_width))
+        lead_boxes.extend(self._left_pad_to_hbus_leads(source_pad_box, active_left, bottom_bus_bottom + self.bus_width / 2.0, self.bus_width, pitch))
+        lead_boxes.extend(self._left_pad_to_hbus_leads(drain_pad_box, active_left, top_bus_top - self.bus_width / 2.0, self.bus_width, pitch))
 
         active_bottom = min(bottom_finger_bottom, bottom_bus_center_y - self.bus_width / 2.0)
         active_top = max(top_finger_top, top_bus_center_y + self.bus_width / 2.0)
@@ -259,8 +259,8 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
         boxes.extend([source_pad_box, drain_pad_box])
 
         lead_boxes = []
-        lead_boxes.extend(self._bottom_pad_to_vbus_leads(source_pad_box, left_bus_left, active_bottom, self.bus_width))
-        lead_boxes.extend(self._bottom_pad_to_vbus_leads(drain_pad_box, right_bus_right - self.bus_width, active_bottom, self.bus_width))
+        lead_boxes.extend(self._bottom_pad_to_vbus_leads(source_pad_box, left_bus_left + self.bus_width / 2.0, active_bottom, self.bus_width, pitch))
+        lead_boxes.extend(self._bottom_pad_to_vbus_leads(drain_pad_box, right_bus_right - self.bus_width / 2.0, active_bottom, self.bus_width, pitch))
 
         active_left = min(left_finger_left, left_bus_center_x - self.bus_width / 2.0)
         active_right = max(right_finger_right, right_bus_center_x + self.bus_width / 2.0)
@@ -284,23 +284,16 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
             target_box = geometry["channel_box"]
             grown = self._grow_box(target_box, self.gate_margin_x, self.gate_margin_y)
             region = pya.Region(self._to_box(grown, to_iu))
-            return region, grown
+            return region, self._rect_center(grown)
 
-        region, anchor_rect = self._build_channel_only_gate_region(geometry, to_iu)
+        region, route_start = self._build_channel_only_gate_region(geometry, to_iu)
 
         dx = to_iu(self.gate_margin_x)
         dy = to_iu(self.gate_margin_y)
         if dx != 0 or dy != 0:
             region = region.sized(dx, dy, 2)
         region = region.merged()
-        bbox = region.bbox()
-        grown_anchor = (
-            bbox.left * self.layout.dbu,
-            bbox.bottom * self.layout.dbu,
-            bbox.right * self.layout.dbu,
-            bbox.top * self.layout.dbu,
-        )
-        return region, grown_anchor
+        return region, route_start
 
     def _build_channel_only_gate_region(self, geometry, to_iu):
         channel_box = geometry["channel_box"]
@@ -321,7 +314,12 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
                 else:
                     bridge = self._xy_box(left_gap[2], channel_box[1], right_gap[0], channel_box[1] + bridge_h)
                 region.insert(self._to_box(bridge, to_iu))
-            return region.merged(), channel_box
+            if gaps:
+                attach_gap = max(gaps, key=lambda box: box[2])
+                route_start = self._rect_center(attach_gap)
+            else:
+                route_start = self._rect_center(channel_box)
+            return region.merged(), route_start
 
         gaps = self._horizontal_gap_boxes(channel_box, fingers)
         region = pya.Region()
@@ -336,18 +334,45 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
             else:
                 bridge = self._xy_box(channel_box[0], lower_gap[3], channel_box[0] + bridge_w, upper_gap[1])
             region.insert(self._to_box(bridge, to_iu))
-        return region.merged(), channel_box
+        if gaps:
+            attach_gap = max(gaps, key=lambda box: box[3])
+            route_start = self._rect_center(attach_gap)
+        else:
+            route_start = self._rect_center(channel_box)
+        return region.merged(), route_start
+
+    def _build_gate_route_boxes(self, geometry, route_start):
+        pad_box = geometry["gate_pad_box"]
+        pad_center = geometry["gate_pad_center"]
+        active_box = geometry["active_box"]
+        width = self.gate_lead_width
+        clearance = max(self.bus_width, self.gate_lead_width, self.finger_far_extension, 0.5)
+
+        if geometry["orientation"] == "vertical":
+            route_x = min(pad_center[0], active_box[2] + clearance)
+            return self._route_polyline_boxes([route_start, (route_x, route_start[1]), (route_x, pad_center[1]), pad_center], width)
+
+        route_y = min(pad_center[1], active_box[3] + clearance)
+        return self._route_polyline_boxes([route_start, (route_start[0], route_y), (pad_center[0], route_y), pad_center], width)
 
     def _edge_aligned_lead_box(self, start_um, end_um, width_um):
         start_x, start_y = start_um
         end_x, end_y = end_um
         if abs(start_x - end_x) >= abs(start_y - end_y):
-            y1 = min(start_y, end_y)
-            y2 = y1 + width_um
-            return self._xy_box(start_x, y1, end_x, y2)
-        x1 = min(start_x, end_x)
-        x2 = x1 + width_um
-        return self._xy_box(x1, start_y, x2, end_y)
+            y_mid = (start_y + end_y) / 2.0
+            return self._xy_box(start_x, y_mid - width_um / 2.0, end_x, y_mid + width_um / 2.0)
+        x_mid = (start_x + end_x) / 2.0
+        return self._xy_box(x_mid - width_um / 2.0, start_y, x_mid + width_um / 2.0, end_y)
+
+    def _route_polyline_boxes(self, points, width):
+        boxes = []
+        for idx in range(len(points) - 1):
+            if points[idx] == points[idx + 1]:
+                continue
+            boxes.append(self._edge_aligned_lead_box(points[idx], points[idx + 1], width))
+        for point in points[1:-1]:
+            boxes.append(self._center_box(point[0], point[1], width, width))
+        return boxes
 
     def _anchor_on_rect(self, rect_box, target):
         cx = (rect_box[0] + rect_box[2]) / 2.0
@@ -422,33 +447,16 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
         count = int((usable + self.finger_spacing) // pitch)
         return max(count, 2)
 
-    def _left_pad_to_hbus_leads(self, pad_box, bus_left_x, bus_y_bottom, width):
-        pad_right = pad_box[2]
+    def _left_pad_to_hbus_leads(self, pad_box, bus_left_x, bus_center_y, width, pitch):
+        pad_center = self._rect_center(pad_box)
         pad_mid_y = (pad_box[1] + pad_box[3]) / 2.0
-        y1 = pad_mid_y - width / 2.0
-        y2 = pad_mid_y + width / 2.0
-        leads = [self._xy_box(pad_right, y1, bus_left_x, y2)]
-        if abs(pad_mid_y - (bus_y_bottom + width / 2.0)) > 1e-9:
-            vx1 = bus_left_x - width
-            vx2 = bus_left_x
-            vy1 = min(y1, bus_y_bottom)
-            vy2 = max(y2, bus_y_bottom + width)
-            leads.append(self._xy_box(vx1, vy1, vx2, vy2))
-        return leads
+        route_x = min(pad_center[0], bus_left_x - pitch - width / 2.0)
+        return self._route_polyline_boxes([(bus_left_x, bus_center_y), (route_x, bus_center_y), (route_x, pad_mid_y), pad_center], width)
 
-    def _bottom_pad_to_vbus_leads(self, pad_box, bus_x_left, bus_bottom_y, width):
-        pad_top = pad_box[3]
-        pad_mid_x = (pad_box[0] + pad_box[2]) / 2.0
-        x1 = pad_mid_x - width / 2.0
-        x2 = pad_mid_x + width / 2.0
-        leads = [self._xy_box(x1, pad_top, x2, bus_bottom_y)]
-        if abs(pad_mid_x - (bus_x_left + width / 2.0)) > 1e-9:
-            hy1 = bus_bottom_y
-            hy2 = bus_bottom_y + width
-            hx1 = min(x1, bus_x_left)
-            hx2 = max(x2, bus_x_left + width)
-            leads.append(self._xy_box(hx1, hy1, hx2, hy2))
-        return leads
+    def _bottom_pad_to_vbus_leads(self, pad_box, bus_center_x, bus_bottom_y, width, pitch):
+        pad_center = self._rect_center(pad_box)
+        route_y = min(pad_center[1], bus_bottom_y - pitch - width / 2.0)
+        return self._route_polyline_boxes([(bus_center_x, bus_bottom_y), (bus_center_x, route_y), (pad_center[0], route_y), pad_center], width)
 
     def _to_box(self, box, to_iu):
         return pya.Box(to_iu(box[0]), to_iu(box[1]), to_iu(box[2]), to_iu(box[3]))
