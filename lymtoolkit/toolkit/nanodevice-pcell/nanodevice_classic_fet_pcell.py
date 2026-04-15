@@ -2,9 +2,9 @@ import math
 import pya
 
 
-class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
+class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
     def __init__(self):
-        super(InterdigitatedFETPCell, self).__init__()
+        super(NanoDeviceClassicFETPCell, self).__init__()
 
         self.param("device_cx", self.TypeDouble, "Device center X (um)", default=0.0)
         self.param("device_cy", self.TypeDouble, "Device center Y (um)", default=0.0)
@@ -51,7 +51,7 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
         self.param("gate_layer", self.TypeLayer, "Gate layer", default=pya.LayerInfo(18, 0))
 
     def display_text_impl(self):
-        return "InterdigitatedFETPCell"
+        return "InterdigitatedFETOriginalNanoDevice"
 
     def coerce_parameters_impl(self):
         self.active_width = max(self.active_width, 2.0)

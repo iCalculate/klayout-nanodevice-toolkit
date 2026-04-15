@@ -1,9 +1,9 @@
-# Interdigitated FET Library
+# NanoDevice Toolkit Library
 
-This is a standalone KLayout PCell library for generating interdigitated FET structures.
+This is a standalone KLayout library for NanoDevice GUI tools and NanoDevice FET structures.
 
 Included PCell:
-- `InterdigitatedFETPCell`
+- `NanoDeviceFETPCell`
 
 Default layers:
 - Channel: `14/0`
@@ -11,11 +11,11 @@ Default layers:
 - Gate: `18/0`
 
 Install:
-1. Run `lymtoolkit\install_interdigitated_fet_lib.bat`
+1. Run `lymtoolkit\install_lymtoolkit.bat`
 2. Restart KLayout
 3. Open the `Libraries` panel
-4. Use `InterdigitatedFETLib -> InterdigitatedFETPCell`
-5. Or open the GUI tool from `Tools -> InterdigitatedFET -> Interdigitated FET GUI`
+4. Use `NanoDeviceToolkitLib -> NanoDeviceFETPCell`
+5. Or open the GUI tool from `Tools -> NanoDevice -> NanoDevice GUI`
 
 GUI highlights:
 - Extensible toolkit-style architecture

@@ -1,7 +1,7 @@
 import pya
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../utils')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../utils')))
 from QRcode_utils import QRCodeUtils
 from utils.geometry import GeometryUtils
 

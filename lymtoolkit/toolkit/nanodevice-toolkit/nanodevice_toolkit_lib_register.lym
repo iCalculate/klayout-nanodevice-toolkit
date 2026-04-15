@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <klayout-macro>
- <description>Interdigitated FET Library</description>
+ <description>NanoDevice Toolkit Library</description>
  <version>v0.1</version>
  <category>pymacros</category>
  <prolog/>
@@ -20,18 +20,18 @@ import sys
 import pya
 
 sys.path.insert(0, os.path.dirname(__file__))
-from interdigitated_fet_pcell import InterdigitatedFETPCell
+from nanodevice_fet_pcell import NanoDeviceFETPCell
 from gdsfactory_text_pcell import GdsfactoryTextPCell
 
 
-class InterdigitatedFETLib(pya.Library):
+class NanoDeviceToolkitLib(pya.Library):
     def __init__(self):
-        self.description = "Interdigitated FET and gdsfactory Text PCell Library"
-        self.layout().register_pcell("InterdigitatedFETPCell", InterdigitatedFETPCell())
-        self.layout().register_pcell("GdsfactoryTextPCell", GdsfactoryTextPCell())
-        self.register("InterdigitatedFETLib")
+        self.description = "NanoDevice Toolkit Library"
+        self.layout().register_pcell("NanoDeviceFETPCell", NanoDeviceFETPCell())
+        self.layout().register_pcell("NanoDeviceTextPCell", GdsfactoryTextPCell())
+        self.register("NanoDeviceToolkitLib")
 
 
-InterdigitatedFETLib()
+NanoDeviceToolkitLib()
 </text>
 </klayout-macro>

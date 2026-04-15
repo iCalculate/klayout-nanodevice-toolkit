@@ -1,9 +1,9 @@
 import pya
 
 
-class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
+class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
     def __init__(self):
-        super(InterdigitatedFETPCell, self).__init__()
+        super(NanoDeviceFETPCell, self).__init__()
 
         self.param("device_cx", self.TypeDouble, "Center X (um)", default=0.0)
         self.param("device_cy", self.TypeDouble, "Center Y (um)", default=0.0)
@@ -49,7 +49,7 @@ class InterdigitatedFETPCell(pya.PCellDeclarationHelper):
     def display_text_impl(self):
         orient = "V" if self.finger_orientation == 0 else "H"
         return (
-            "InterdigitatedFETPCell"
+            "InterdigitatedFET"
             f"({orient}, W={self.finger_width}, S={self.finger_spacing})"
         )
 

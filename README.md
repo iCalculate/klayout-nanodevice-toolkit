@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <p align="center">
-  <img src="lymtoolkit/logo.png" alt="KLayout Nanodevice Toolkit Logo" width="300"/>
+  <img src="lymtoolkit/assets/logo.ico" alt="KLayout Nanodevice Toolkit Logo" width="300"/>
 </p>
 
 <h1 align="center">KLayout Nanodevice Toolkit</h1>
@@ -77,9 +77,10 @@ klayout-nanodevice-toolkit/
 │   ├── alignment_utils.py  # 对准工具
 │   └── ...
 ├── lymtoolkit/             # KLayout 宏与插件
-│   ├── nanodevice-pcell/   # PCell 宏
-│   ├── TRStoolkit/         # TRS 工具宏
-│   └── install_*.bat       # 安装脚本
+│   ├── toolkit/            # NanoDeviceLib 与统一 GUI 工具
+│   ├── pdk/                # LabPDK 技术目录
+│   ├── assets/             # 图标与示意图
+│   └── install_lymtoolkit.bat
 ├── docs/                   # 文档
 │   ├── ENV_SETUP.md        # 环境设置
 │   ├── QUICK_START.md      # 快速配置
@@ -164,7 +165,7 @@ show_mosfet_layout_gui()
 
 ### 4. KLayout 宏使用
 
-1. 安装宏：运行 `lymtoolkit/install_NanoDeviceToolkit.bat`
+1. 安装宏：运行 `lymtoolkit/install_lymtoolkit.bat`
 2. 在 KLayout 中：**Tools → Macros → Run Macro...**
 3. 选择相应的宏（如 `fet_pcell`）并输入参数
 

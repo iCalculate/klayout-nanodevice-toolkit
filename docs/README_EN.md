@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <p align="center">
-  <img src="../lymtoolkit/logo.png" alt="KLayout Nanodevice Toolkit Logo" width="300"/>
+  <img src="../lymtoolkit/assets/logo.ico" alt="KLayout Nanodevice Toolkit Logo" width="300"/>
 </p>
 
 <h1 align="center">KLayout Nanodevice Toolkit</h1>
@@ -139,7 +139,7 @@ show_mosfet_layout_gui()
 
 ### 4. KLayout Macro Usage
 
-1. Install macros: Run `lymtoolkit/install_NanoDeviceToolkit.bat`
+1. Install macros: Run `lymtoolkit/install_lymtoolkit.bat`
 2. In KLayout: **Tools → Macros → Run Macro...**
 3. Select the appropriate macro (e.g., `fet_pcell`) and enter parameters
 

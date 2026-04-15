@@ -29,7 +29,7 @@ See `layers/layer_table.yaml` for the full list with names and categories.
 
    **Example (Linux / macOS):**
    ```bash
-   cp -r /path/to/lymtoolkit/PDK ~/.klayout/tech/LabPDK
+   cp -r /path/to/lymtoolkit/pdk ~/.klayout/tech/LabPDK
    ```
    So the layout is:
    ```

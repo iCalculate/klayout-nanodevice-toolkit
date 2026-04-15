@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <klayout-macro>
- <description>Interdigitated FET GUI</description>
- <version>v0.2</version>
+ <description>NanoDevice GUI</description>
+ <version>v0.3</version>
  <category>pymacros</category>
  <prolog/>
  <epilog/>
@@ -11,7 +11,7 @@
  <priority>1</priority>
  <shortcut/>
  <show-in-menu>true</show-in-menu>
- <group-name>InterdigitatedFET</group-name>
+ <group-name>NanoDevice</group-name>
  <menu-path>tools_menu.end</menu-path>
  <interpreter>python</interpreter>
  <dsl-interpreter-name/>
@@ -19,7 +19,7 @@
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from interdigitated_fet_toolkit import launch_toolkit_dialog
+from nanodevice_toolkit import launch_toolkit_dialog
 
 launch_toolkit_dialog()
 </text>

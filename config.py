@@ -16,18 +16,18 @@ PROCESS_CONFIG = {
 # 图层定义
 # Layer definitions
 LAYER_DEFINITIONS = {
-    'bottom_gate': {'id': 1, 'name': 'Bottom Gate', 'color': 0xFF0000, 'description': '底栅电极'},
-    'bottom_dielectric': {'id': 2, 'name': 'Bottom Dielectric', 'color': 0x00FF00, 'description': '底介电层'},
-    'channel': {'id': 3, 'name': 'Channel', 'color': 0x0000FF, 'description': '沟道材料'},
-    'source_drain': {'id': 4, 'name': 'Source/Drain', 'color': 0xFFFF00, 'description': '源漏电极'},
-    'top_dielectric': {'id': 5, 'name': 'Top Dielectric', 'color': 0xFF00FF, 'description': '顶介电层'},
-    'top_gate': {'id': 6, 'name': 'Top Gate', 'color': 0xFF8000, 'description': '顶栅电极'},
-    'alignment_marks': {'id': 7, 'name': 'Alignment Marks', 'color': 0x00FFFF, 'description': '对准标记'},
-    'alignment_layer1': {'id': 11, 'name': 'Alignment Layer 1', 'color': 0x00FF80, 'description': '套刻对准层1'},
-    'alignment_layer2': {'id': 12, 'name': 'Alignment Layer 2', 'color': 0x80FF00, 'description': '套刻对准层2'},
-    'labels': {'id': 8, 'name': 'Labels', 'color': 0xFFFFFF, 'description': '标签'},
-    'pads': {'id': 9, 'name': 'Pads', 'color': 0x8000FF, 'description': '测试焊盘'},
-    'routing': {'id': 10, 'name': 'Routing', 'color': 0xFF0080, 'description': '布线层'},
+    'bottom_gate': {'id': 11, 'name': 'Bottom Gate', 'color': 0x00C8FF, 'description': '底栅电极'},
+    'bottom_dielectric': {'id': 12, 'name': 'Bottom Dielectric', 'color': 0xFF5050, 'description': '底介电层'},
+    'channel': {'id': 14, 'name': 'Channel', 'color': 0xFF8840, 'description': '沟道材料'},
+    'source_drain': {'id': 16, 'name': 'Source/Drain', 'color': 0xFFC840, 'description': '源漏电极'},
+    'top_dielectric': {'id': 17, 'name': 'Top Dielectric', 'color': 0xD040E0, 'description': '顶介电层'},
+    'top_gate': {'id': 18, 'name': 'Top Gate', 'color': 0x90E040, 'description': '顶栅电极'},
+    'alignment_marks': {'id': 3, 'name': 'Alignment Marks', 'color': 0x5080FF, 'description': '对准标记'},
+    'alignment_layer1': {'id': 3, 'name': 'Alignment Layer 1', 'color': 0x5080FF, 'description': '套刻对准层1'},
+    'alignment_layer2': {'id': 4, 'name': 'Alignment Layer 2', 'color': 0xFF8840, 'description': '套刻对准层2'},
+    'labels': {'id': 10, 'name': 'Labels', 'color': 0x40E080, 'description': '标签'},
+    'pads': {'id': 41, 'name': 'Pads', 'color': 0x00C8FF, 'description': '测试焊盘'},
+    'routing': {'id': 31, 'name': 'Routing', 'color': 0x00C8FF, 'description': '布线层'},
 }
 
 # 字体设置
