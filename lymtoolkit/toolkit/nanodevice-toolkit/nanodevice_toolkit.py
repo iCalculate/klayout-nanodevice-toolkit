@@ -1,3 +1,4 @@
+import json
 import math
 import os
 import sys
@@ -12,6 +13,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGraphicsScene,
     QGraphicsView,
@@ -84,7 +86,7 @@ PREVIEW_LAYER_IDS = {
     "alignment_marks": [LAYER_DEFINITIONS["alignment_marks"]["id"], LAYER_DEFINITIONS["alignment_layer1"]["id"], LAYER_DEFINITIONS["alignment_layer2"]["id"]],
     "labels": [LAYER_DEFINITIONS["labels"]["id"]],
 }
-DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet"}
+DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component"}
 
 
 @dataclass
@@ -292,6 +294,10 @@ class ToolkitDialog(QDialog):
         self.preview_btn.clicked.connect(self._refit_preview)
         self.insert_btn = QPushButton("Insert")
         self.insert_btn.clicked.connect(self._insert_tool)
+        self.import_btn = QPushButton("Import Config")
+        self.import_btn.clicked.connect(self._import_config)
+        self.export_btn = QPushButton("Export Config")
+        self.export_btn.clicked.connect(self._export_config)
         self.symbol_btn = QPushButton("Symbols")
         self.symbol_btn.clicked.connect(self._show_symbols)
         self.close_btn = QPushButton("Close")
@@ -324,6 +330,8 @@ class ToolkitDialog(QDialog):
 
         btns = QHBoxLayout()
         btns.addWidget(self.symbol_btn)
+        btns.addWidget(self.import_btn)
+        btns.addWidget(self.export_btn)
         btns.addStretch(1)
         btns.addWidget(self.preview_btn)
         btns.addWidget(self.insert_btn)
@@ -413,8 +421,10 @@ class ToolkitDialog(QDialog):
             spin.setRange(int(param.minimum), int(param.maximum))
             spin.setSingleStep(1)
             spin.setValue(int(param.default))
+            spin.setKeyboardTracking(False)
             if param.tooltip:
                 spin.setToolTip(param.tooltip)
+            spin.editingFinished.connect(self._refresh_preview)
             spin.valueChanged.connect(self._refresh_preview)
             return spin
 
@@ -423,10 +433,12 @@ class ToolkitDialog(QDialog):
         spin.setRange(param.minimum, param.maximum)
         spin.setSingleStep(0.5)
         spin.setValue(float(param.default))
+        spin.setKeyboardTracking(False)
         if param.suffix:
             spin.setSuffix(param.suffix)
         if param.tooltip:
             spin.setToolTip(param.tooltip)
+        spin.editingFinished.connect(self._refresh_preview)
         spin.valueChanged.connect(self._refresh_preview)
         return spin
 
@@ -443,6 +455,122 @@ class ToolkitDialog(QDialog):
             else:
                 values[param.key] = control.value()
         return values
+
+    def _set_control_value(self, param, value):
+        control = self.controls.get(param.key)
+        if control is None or value is None:
+            return
+
+        if param.kind == "string":
+            control.setText(str(value))
+            return
+
+        if param.kind in ("choice", "layer_choice"):
+            for idx in range(control.count()):
+                if control.itemData(idx) == value:
+                    control.setCurrentIndex(idx)
+                    return
+            return
+
+        if param.kind == "int":
+            try:
+                control.setValue(int(value))
+            except Exception:
+                return
+            return
+
+        try:
+            control.setValue(float(value))
+        except Exception:
+            return
+
+    def _config_payload(self):
+        tool = self._current_tool()
+        return {
+            "format": "nanodevice-toolkit-config",
+            "version": 1,
+            "tool_key": tool.key,
+            "tool_title": tool.title,
+            "values": self._serialize_values(self._values()),
+        }
+
+    def _serialize_values(self, values):
+        serialized = {}
+        for key, value in values.items():
+            if isinstance(value, tuple):
+                serialized[key] = list(value)
+            else:
+                serialized[key] = value
+        return serialized
+
+    def _deserialize_values(self, tool, values):
+        deserialized = {}
+        params_by_key = {param.key: param for param in tool.params}
+        for key, value in values.items():
+            param = params_by_key.get(key)
+            if param is None:
+                continue
+            if param.kind == "layer_choice" and isinstance(value, (list, tuple)) and len(value) == 2:
+                deserialized[key] = (int(value[0]), int(value[1]))
+            else:
+                deserialized[key] = value
+        return deserialized
+
+    def _export_config(self):
+        tool = self._current_tool()
+        default_name = f"{tool.key}_config.json"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Config",
+            default_name,
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as handle:
+                json.dump(self._config_payload(), handle, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
+            return
+
+        QMessageBox.information(self, "Export Complete", f"Config saved to:\n{file_path}")
+
+    def _import_config(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Config",
+            "",
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Failed", str(exc))
+            return
+
+        tool_key = payload.get("tool_key")
+        if tool_key not in self.tool_specs:
+            QMessageBox.critical(self, "Import Failed", f"Unsupported tool_key: {tool_key}")
+            return
+
+        tool_index = self.tool_select.findData(tool_key)
+        if tool_index < 0:
+            QMessageBox.critical(self, "Import Failed", f"Tool not found in GUI: {tool_key}")
+            return
+
+        self.tool_select.setCurrentIndex(tool_index)
+        tool = self._current_tool()
+        values = self._deserialize_values(tool, payload.get("values", {}))
+        for param in tool.params:
+            if param.key in values:
+                self._set_control_value(param, values[param.key])
+        self._refresh_preview()
 
     def _refresh_preview(self):
         tool = self._current_tool()
@@ -601,6 +729,20 @@ def _preview_style_for_key(layer_key):
     return QPen(color, 0), QBrush(fill)
 
 
+def _preview_style_for_layer_id(layer_id, fallback_key=None):
+    style = LAYER_STYLES.get(int(layer_id))
+    if style:
+        fill = QColor(style["fill"])
+        fill.setAlpha(92)
+        return QPen(style["frame"], 0), QBrush(fill)
+    if fallback_key is not None:
+        return _preview_style_for_key(fallback_key)
+    color = QColor("#d9d9d9")
+    fill = QColor(color)
+    fill.setAlpha(92)
+    return QPen(color, 0), QBrush(fill)
+
+
 def _iter_cells_recursive(layout, cell, seen=None):
     seen = seen or set()
     if cell is None or cell.cell_index() in seen:
@@ -618,8 +760,15 @@ def _iter_cells_recursive(layout, cell, seen=None):
 
 
 def _shape_to_paths(shape, dbu):
+    if shape.is_box():
+        box = shape.box
+        return [_boxes_to_path([_xy_box(box.left * dbu, -box.top * dbu, box.right * dbu, -box.bottom * dbu)])]
+    if shape.is_path():
+        return _polygon_to_paths(shape.path.polygon(), dbu)
+    if shape.is_polygon():
+        return _polygon_to_paths(shape.polygon, dbu)
     if shape.is_text():
-        return []
+        return _text_shape_to_paths(shape, dbu)
     box = shape.bbox()
     if box is None:
         return []
@@ -641,10 +790,57 @@ def _polygon_to_paths(polygon, dbu):
 
 def _append_points_to_path(path, points, dbu):
     first = points[0]
-    path.moveTo(first.x * dbu, first.y * dbu)
+    path.moveTo(first.x * dbu, -first.y * dbu)
     for point in points[1:]:
-        path.lineTo(point.x * dbu, point.y * dbu)
+        path.lineTo(point.x * dbu, -point.y * dbu)
     path.closeSubpath()
+
+
+def _text_shape_to_paths(shape, dbu):
+    try:
+        text = shape.text
+        text_string = text.string
+        trans = text.trans
+        x = trans.disp.x * dbu
+        y = -trans.disp.y * dbu
+    except Exception:
+        box = shape.bbox()
+        if box is None:
+            return []
+        return [_boxes_to_path([_xy_box(box.left * dbu, -box.top * dbu, box.right * dbu, -box.bottom * dbu)])]
+
+    text_path = QPainterPath()
+    font = QFont("Segoe UI", 8)
+    text_path.addText(0.0, 0.0, font, text_string)
+    bounds = text_path.boundingRect()
+    return [text_path.translated(x - bounds.left(), y - bounds.bottom())]
+
+
+def _geometry_to_paths(geometry, dbu=DEFAULT_DBU):
+    if geometry is None:
+        return []
+    if isinstance(geometry, pya.Box):
+        return [_boxes_to_path([_xy_box(geometry.left * dbu, -geometry.top * dbu, geometry.right * dbu, -geometry.bottom * dbu)])]
+    if isinstance(geometry, pya.Polygon):
+        return _polygon_to_paths(geometry, dbu)
+    if isinstance(geometry, pya.Path):
+        return _polygon_to_paths(geometry.polygon(), dbu)
+    if isinstance(geometry, pya.Region):
+        paths = []
+        for polygon in geometry.each():
+            paths.extend(_polygon_to_paths(polygon, dbu))
+        return paths
+    if isinstance(geometry, pya.Text):
+        text_path = QPainterPath()
+        font = QFont("Segoe UI", 8)
+        text_path.addText(0.0, 0.0, font, geometry.string)
+        bounds = text_path.boundingRect()
+        return [text_path.translated(geometry.x * dbu - bounds.left(), -geometry.y * dbu - bounds.bottom())]
+    if hasattr(geometry, "bbox"):
+        box = geometry.bbox()
+        if box is not None:
+            return [_boxes_to_path([_xy_box(box.left * dbu, -box.top * dbu, box.right * dbu, -box.bottom * dbu)])]
+    return []
 
 
 def _build_preview_layout(tool_spec, values):
@@ -2090,57 +2286,41 @@ def render_meander_component(scene, values, visible_layers=None):
 
 
 def render_mosfet_component(scene, values, visible_layers=None):
-    visible_layers = visible_layers or {"channel": True, "sd": True, "gate": True}
-    x = values["x"]
-    y = values["y"]
-    half_l = values["channel_length"] / 2.0
-    half_w = values["channel_width"] / 2.0
-    overlap = values["gate_overlap"]
-    channel = _center_box(x, y, values["channel_length"], values["channel_width"])
-    sd_boxes = []
-    gate_boxes = []
+    from components.mosfet import MOSFET
 
-    if values["enable_source_drain"]:
-        pad_ext = 5.0
-        sd_boxes.extend(
-            [
-                _center_box(x - half_l - pad_ext, y, pad_ext * 2.0, values["channel_width"] * 1.2),
-                _center_box(x + half_l + pad_ext, y, pad_ext * 2.0, values["channel_width"] * 1.2),
-            ]
-        )
-        if values["fanout_enabled"]:
-            if values["fanout_direction"] == "vertical":
-                sd_boxes.extend(
-                    [
-                        _center_box(x - half_l - pad_ext, y + 7.0, values["channel_width"] * 0.8, 14.0),
-                        _center_box(x + half_l + pad_ext, y + 7.0, values["channel_width"] * 0.8, 14.0),
-                    ]
-                )
-            else:
-                sd_boxes.extend(
-                    [
-                        _center_box(x - half_l - pad_ext - 7.0, y, 14.0, values["channel_width"] * 0.8),
-                        _center_box(x + half_l + pad_ext + 7.0, y, 14.0, values["channel_width"] * 0.8),
-                    ]
-                )
+    visible_layers = visible_layers or {}
+    params = dict(values)
+    params.pop("cell_name", None)
+    device = MOSFET(**params)
+    device.generate()
+    layer_ids = device.get_layer_ids()
 
-    if values["enable_bottom_gate"]:
-        gate_width = overlap * 2.0
-        gate_boxes.extend(
-            [
-                _center_box(x - half_l - overlap, y, gate_width, values["channel_width"] * 1.2),
-                _center_box(x + half_l + overlap, y, gate_width, values["channel_width"] * 1.2),
-            ]
-        )
-    if values["enable_top_gate"]:
-        gate_boxes.append(_center_box(x, y + half_w + overlap, values["channel_length"] + 2.0 * overlap, overlap * 2.0))
+    buckets = {
+        "channel": list(device.shapes.get("channel", [])),
+        "bottom_dielectric": list(device.shapes.get("bottom_dielectric", [])),
+        "top_dielectric": list(device.shapes.get("top_dielectric", [])),
+        "bottom_gate": list(device.get_all_shapes().get("bottom_gate", [])),
+        "source_drain": list(device.get_all_shapes().get("source", [])) + list(device.get_all_shapes().get("drain", [])),
+        "top_gate": list(device.get_all_shapes().get("top_gate", [])),
+        "labels": list(device.shapes.get("device_label", [])) + list(device.shapes.get("parameter_labels", [])),
+        "alignment_marks": list(device.shapes.get("alignment_marks", [])),
+    }
 
-    if visible_layers.get("channel", True):
-        _draw_path(scene, _boxes_to_path([channel]), QPen(QColor("#f4d35e"), 0), QBrush(QColor(244, 211, 94, 70)))
-    if visible_layers.get("sd", True) and sd_boxes:
-        _draw_path(scene, _boxes_to_path(sd_boxes), QPen(QColor("#ee6c4d"), 0), QBrush(QColor(238, 108, 77, 90)))
-    if visible_layers.get("gate", True) and gate_boxes:
-        _draw_path(scene, _boxes_to_path(gate_boxes), QPen(QColor("#2a9d8f"), 0), QBrush(QColor(42, 157, 143, 95)))
+    for layer_key, shapes in buckets.items():
+        if not visible_layers.get(layer_key, True):
+            continue
+        if layer_key == "source_drain":
+            style_layer_id = layer_ids.get("source", layer_ids.get("drain"))
+        elif layer_key == "labels":
+            style_layer_id = layer_ids.get("device_label")
+        elif layer_key == "alignment_marks":
+            style_layer_id = layer_ids.get("alignment_marks")
+        else:
+            style_layer_id = layer_ids.get(layer_key)
+        pen, brush = _preview_style_for_layer_id(style_layer_id, layer_key)
+        for shape in shapes:
+            for path in _geometry_to_paths(shape):
+                _draw_path(scene, path, pen, brush)
 
 
 MOSFET_COMPONENT_TOOL = ToolSpec(
@@ -2164,44 +2344,44 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "MOSFET_Device", kind="string"),
         ParameterSpec("x", "Center X", "Cx", "Placement", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("y", "Center Y", "Cy", "Placement", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("channel_width", "Channel Width", "W", "Geometry", 5.0, minimum=0.1, maximum=1000.0, suffix=" um"),
-        ParameterSpec("channel_length", "Channel Length", "L", "Geometry", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("channel_width", "Channel Width", "W", "Geometry", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("channel_length", "Channel Length", "L", "Geometry", 5.0, minimum=0.1, maximum=1000.0, suffix=" um"),
         ParameterSpec("gate_overlap", "Gate Overlap", "Ov", "Geometry", 2.0, minimum=0.1, maximum=500.0, suffix=" um"),
-        ParameterSpec("channel_type", "Channel Type", "Type", "Geometry", "p", kind="choice", choices=[("p", "p"), ("n", "n")]),
-        ParameterSpec("outer_pad_size", "Outer Pad", "Pad", "Geometry", 80.0, minimum=1.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("channel_type", "Channel Type", "Type", "Geometry", "n", kind="choice", choices=[("p", "p"), ("n", "n")]),
+        ParameterSpec("outer_pad_size", "Outer Pad", "Pad", "Geometry", 60.0, minimum=1.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("chamfer_size", "Chamfer", "Cham", "Geometry", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
-        ParameterSpec("channel_extension_ratio", "Channel Ext", "ChEx", "Geometry", 3.0, minimum=0.1, maximum=20.0),
-        ParameterSpec("dielectric_extension_ratio", "Dielectric Ext", "DiEx", "Geometry", 2.0, minimum=0.1, maximum=20.0),
-        ParameterSpec("dielectric_margin", "Dielectric Margin", "DiMg", "Geometry", 4.0, minimum=0.0, maximum=500.0, suffix=" um"),
+        ParameterSpec("channel_extension_ratio", "Channel Ext", "ChEx", "Geometry", 4.0, minimum=0.1, maximum=20.0),
+        ParameterSpec("dielectric_extension_ratio", "Dielectric Ext", "DiEx", "Geometry", 1.0, minimum=0.1, maximum=20.0),
+        ParameterSpec("dielectric_margin", "Dielectric Margin", "DiMg", "Geometry", 25.0, minimum=0.0, maximum=500.0, suffix=" um"),
         ParameterSpec("device_label", "Device Label", "Lbl", "Labels", "D1", kind="string"),
-        ParameterSpec("label_size", "Label Size", "LS", "Labels", 14.0, minimum=1.0, maximum=200.0, suffix=" um"),
-        ParameterSpec("label_offset_x", "Label Offset X", "LOx", "Labels", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("label_offset_y", "Label Offset Y", "LOy", "Labels", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("mark_type_1", "Mark 1", "M1", "Marks", "double_square", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("label_size", "Label Size", "LS", "Labels", 20.0, minimum=1.0, maximum=200.0, suffix=" um"),
+        ParameterSpec("label_offset_x", "Label Offset X", "LOx", "Labels", -6.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("label_offset_y", "Label Offset Y", "LOy", "Labels", -13.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("mark_type_1", "Mark 1", "M1", "Marks", "sq_missing", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
         ParameterSpec("mark_type_2", "Mark 2", "M2", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
         ParameterSpec("mark_type_3", "Mark 3", "M3", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
         ParameterSpec("mark_type_4", "Mark 4", "M4", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
         ParameterSpec("mark_rotation_1", "Rot 1", "R1", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
         ParameterSpec("mark_rotation_2", "Rot 2", "R2", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
-        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
-        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 180, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 270, minimum=0, maximum=360, suffix=" deg"),
         ParameterSpec("mark_size", "Mark Size", "MS", "Marks", 20.0, minimum=1.0, maximum=500.0, suffix=" um"),
-        ParameterSpec("mark_width", "Mark Width", "MW", "Marks", 3.0, minimum=0.1, maximum=100.0, suffix=" um"),
-        ParameterSpec("device_region_margin_x", "Region Margin X", "RMx", "Marks", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
-        ParameterSpec("device_region_margin_y", "Region Margin Y", "RMy", "Marks", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("mark_width", "Mark Width", "MW", "Marks", 5.0, minimum=0.1, maximum=100.0, suffix=" um"),
+        ParameterSpec("device_region_margin_x", "Region Margin X", "RMx", "Marks", 0.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("device_region_margin_y", "Region Margin Y", "RMy", "Marks", 0.0, minimum=0.0, maximum=1000.0, suffix=" um"),
         ParameterSpec("source_drain_inner_width_ratio", "SD Width Ratio", "SDWr", "Source / Drain", 1.2, minimum=0.1, maximum=20.0),
-        ParameterSpec("source_drain_outer_offset_x", "SD Outer X", "SDOx", "Source / Drain", 110.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("source_drain_outer_offset_x", "SD Outer X", "SDOx", "Source / Drain", 50.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("source_drain_outer_offset_y", "SD Outer Y", "SDOy", "Source / Drain", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("source_drain_inner_chamfer", "SD Inner Chamfer", "SDIc", "Source / Drain", "none", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("source_drain_outer_chamfer", "SD Outer Chamfer", "SDOc", "Source / Drain", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("bottom_gate_inner_width_ratio", "BG Width Ratio", "BGWr", "Bottom Gate", 1.5, minimum=0.1, maximum=20.0),
         ParameterSpec("bottom_gate_outer_offset_x", "BG Outer X", "BGOx", "Bottom Gate", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("bottom_gate_outer_offset_y", "BG Outer Y", "BGOy", "Bottom Gate", -100.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bottom_gate_outer_offset_y", "BG Outer Y", "BGOy", "Bottom Gate", -55.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("bottom_gate_inner_chamfer", "BG Inner Chamfer", "BGIc", "Bottom Gate", "none", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("bottom_gate_outer_chamfer", "BG Outer Chamfer", "BGOc", "Bottom Gate", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
-        ParameterSpec("top_gate_inner_width_ratio", "TG Width Ratio", "TGWr", "Top Gate", 1.2, minimum=0.1, maximum=20.0),
+        ParameterSpec("top_gate_inner_width_ratio", "TG Width Ratio", "TGWr", "Top Gate", 1.5, minimum=0.1, maximum=20.0),
         ParameterSpec("top_gate_outer_offset_x", "TG Outer X", "TGOx", "Top Gate", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("top_gate_outer_offset_y", "TG Outer Y", "TGOy", "Top Gate", 100.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_gate_outer_offset_y", "TG Outer Y", "TGOy", "Top Gate", 55.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("top_gate_inner_chamfer", "TG Inner Chamfer", "TGIc", "Top Gate", "none", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("top_gate_outer_chamfer", "TG Outer Chamfer", "TGOc", "Top Gate", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("fanout_enabled", "Enable Fanout", "Fan", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
@@ -2210,7 +2390,7 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("enable_top_gate", "Top Gate", "TG", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
         ParameterSpec("enable_source_drain", "Source/Drain", "SD", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
         ParameterSpec("show_device_labels", "Show Device Label", "DL", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
-        ParameterSpec("show_parameter_labels", "Show Param Label", "PL", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("show_parameter_labels", "Show Param Label", "PL", "Options", 0, kind="choice", choices=[("true", True), ("false", False)]),
         ParameterSpec("show_alignment_marks", "Show Marks", "Mk", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
     ],
 )

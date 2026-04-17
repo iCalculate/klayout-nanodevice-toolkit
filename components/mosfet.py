@@ -65,8 +65,8 @@ class MOSFET:
         self,
         x=0.0,
         y=0.0,
-        channel_width=5.0,
-        channel_length=20.0,
+        channel_width=20.0,
+        channel_length=5.0,
         gate_overlap=2.0,
         device_label="D1",
         device_id=1,
@@ -85,7 +85,7 @@ class MOSFET:
         self.channel_width = float(channel_width)
         self.channel_length = float(channel_length)
         self.gate_overlap = float(gate_overlap)
-        self.channel_type = str(kwargs.get("channel_type", "p")).lower()
+        self.channel_type = str(kwargs.get("channel_type", "n")).lower()
         self.device_label = device_label
         self.device_id = device_id
 
@@ -99,39 +99,39 @@ class MOSFET:
         self.show_alignment_marks = show_alignment_marks
 
         # Geometry defaults aligned with the FET implementation style.
-        self.outer_pad_size = kwargs.get("outer_pad_size", 80.0)
+        self.outer_pad_size = kwargs.get("outer_pad_size", 60.0)
         self.chamfer_size = kwargs.get("chamfer_size", 10.0)
 
-        self.channel_extension_ratio = kwargs.get("channel_extension_ratio", 3.0)
-        self.dielectric_extension_ratio = kwargs.get("dielectric_extension_ratio", 2.0)
-        self.dielectric_margin = kwargs.get("dielectric_margin", 2.0 * self.gate_overlap)
+        self.channel_extension_ratio = kwargs.get("channel_extension_ratio", 4.0)
+        self.dielectric_extension_ratio = kwargs.get("dielectric_extension_ratio", 1.0)
+        self.dielectric_margin = kwargs.get("dielectric_margin", 25.0)
 
         self.source_drain_inner_width_ratio = kwargs.get("source_drain_inner_width_ratio", 1.2)
-        self.source_drain_outer_offset_x = kwargs.get("source_drain_outer_offset_x", 110.0)
+        self.source_drain_outer_offset_x = kwargs.get("source_drain_outer_offset_x", 50.0)
         self.source_drain_outer_offset_y = kwargs.get("source_drain_outer_offset_y", 0.0)
         self.source_drain_inner_chamfer = kwargs.get("source_drain_inner_chamfer", "none")
         self.source_drain_outer_chamfer = kwargs.get("source_drain_outer_chamfer", "straight")
 
         self.bottom_gate_inner_width_ratio = kwargs.get("bottom_gate_inner_width_ratio", 1.5)
         self.bottom_gate_outer_offset_x = kwargs.get("bottom_gate_outer_offset_x", 0.0)
-        self.bottom_gate_outer_offset_y = kwargs.get("bottom_gate_outer_offset_y", -100.0)
+        self.bottom_gate_outer_offset_y = kwargs.get("bottom_gate_outer_offset_y", -55.0)
         self.bottom_gate_inner_chamfer = kwargs.get("bottom_gate_inner_chamfer", "none")
         self.bottom_gate_outer_chamfer = kwargs.get("bottom_gate_outer_chamfer", "straight")
 
-        self.top_gate_inner_width_ratio = kwargs.get("top_gate_inner_width_ratio", 1.2)
+        self.top_gate_inner_width_ratio = kwargs.get("top_gate_inner_width_ratio", 1.5)
         self.top_gate_outer_offset_x = kwargs.get("top_gate_outer_offset_x", 0.0)
-        self.top_gate_outer_offset_y = kwargs.get("top_gate_outer_offset_y", 100.0)
+        self.top_gate_outer_offset_y = kwargs.get("top_gate_outer_offset_y", 55.0)
         self.top_gate_inner_chamfer = kwargs.get("top_gate_inner_chamfer", "none")
         self.top_gate_outer_chamfer = kwargs.get("top_gate_outer_chamfer", "straight")
 
-        self.mark_size = kwargs.get("mark_size", 8.0)
+        self.mark_size = kwargs.get("mark_size", 20.0)
         self.mark_margin_x = kwargs.get("mark_margin_x", 30.0)
         self.mark_margin_y = kwargs.get("mark_margin_y", 30.0)
-        self.device_region_margin_x = kwargs.get("device_region_margin_x", 20.0)
-        self.device_region_margin_y = kwargs.get("device_region_margin_y", 20.0)
-        self.mark_width = kwargs.get("mark_width", max(self.mark_size * 0.12, 0.5))
+        self.device_region_margin_x = kwargs.get("device_region_margin_x", 0.0)
+        self.device_region_margin_y = kwargs.get("device_region_margin_y", 0.0)
+        self.mark_width = kwargs.get("mark_width", 5.0)
         self.mark_types = [
-            kwargs.get("mark_type_1", "double_square"),
+            kwargs.get("mark_type_1", "sq_missing"),
             kwargs.get("mark_type_2", "L_shape"),
             kwargs.get("mark_type_3", "L_shape"),
             kwargs.get("mark_type_4", "L_shape"),
@@ -143,10 +143,10 @@ class MOSFET:
             int(kwargs.get("mark_rotation_4", 270)),
         ]
         self.label_font = kwargs.get("label_font", "C:/Windows/Fonts/OCRAEXT.TTF")
-        self.label_size = kwargs.get("label_size", 14.0)
+        self.label_size = kwargs.get("label_size", 20.0)
         self.label_anchor = kwargs.get("label_anchor", "left_bottom")
-        self.label_offset_x = kwargs.get("label_offset_x", 0.0)
-        self.label_offset_y = kwargs.get("label_offset_y", 0.0)
+        self.label_offset_x = kwargs.get("label_offset_x", -6.0)
+        self.label_offset_y = kwargs.get("label_offset_y", -13.0)
 
         self.shapes = {
             "channel": [],
@@ -356,6 +356,14 @@ class MOSFET:
         right_um = region_bbox.right / 1000.0
         top_um = region_bbox.top / 1000.0
         bottom_um = region_bbox.bottom / 1000.0
+        def center_from_corner(idx, px, py):
+            if idx == 0:
+                return (px + self.mark_size / 2.0, py - self.mark_size / 2.0)
+            if idx == 1:
+                return (px - self.mark_size / 2.0, py - self.mark_size / 2.0)
+            if idx == 2:
+                return (px + self.mark_size / 2.0, py + self.mark_size / 2.0)
+            return (px - self.mark_size / 2.0, py + self.mark_size / 2.0)
         center_positions = [
             (left_um + self.mark_size / 2.0, top_um - self.mark_size / 2.0),
             (right_um - self.mark_size / 2.0, top_um - self.mark_size / 2.0),
@@ -378,7 +386,8 @@ class MOSFET:
                 f"Creating mark {idx + 1}: type={mark_type}, rotation_deg={rotation_deg}, center=({cx}, {cy}), corner=({px}, {py})"
             )
             if mark_type == "cross":
-                mark = MarkUtils.cross(cx, cy, self.mark_size, self.mark_width)
+                mx, my = center_from_corner(idx, px, py)
+                mark = MarkUtils.cross(mx, my, self.mark_size, self.mark_width)
             elif mark_type == "square":
                 mark = MarkUtils.square(cx, cy, self.mark_size)
             elif mark_type == "circle":
@@ -394,7 +403,8 @@ class MOSFET:
             elif mark_type == "T_shape":
                 mark = MarkUtils.t_shape(cx, cy, self.mark_size, ratio=self.mark_width / max(self.mark_size, 1e-6), arm_ratio=0.6)
             elif mark_type == "sq_missing":
-                mark = MarkUtils.sq_missing(cx, cy, self.mark_size, missing=(2, 4))
+                mx, my = center_from_corner(idx, px, py)
+                mark = MarkUtils.sq_missing(mx, my, self.mark_size, missing=(2, 4))
             elif mark_type == "cross_tri":
                 mark = MarkUtils.cross_tri(cx, cy, self.mark_size, ratio=max(self.mark_width / max(self.mark_size, 1e-6), 0.1), triangle_leg_ratio=0.3)
             else:
