@@ -672,6 +672,15 @@ def _preview_layer_ids_for_tool_key(tool_spec, values, raw_key):
     layer_key = PREVIEW_LAYER_KEY_ALIASES.get(raw_key, raw_key)
     layer_ids = list(PREVIEW_LAYER_IDS.get(layer_key, []))
 
+    if tool_spec.key == "mosfet_component":
+        channel_type = str(values.get("channel_type", "p")).lower()
+        if raw_key == "channel":
+            layer_ids = [13 if channel_type.startswith("n") else 14]
+        elif raw_key == "source_drain":
+            layer_ids = [15 if channel_type.startswith("n") else 16]
+        elif raw_key in ("labels", "alignment_marks"):
+            layer_ids = [LAYER_DEFINITIONS["alignment_layer1"]["id"]]
+
     if raw_key in ("labels", "text") and "layer_spec" in values and isinstance(values["layer_spec"], tuple):
         layer_ids = [int(values["layer_spec"][0])]
     elif raw_key == "source_drain" and "sd_layer_spec" in values and isinstance(values["sd_layer_spec"], tuple):
@@ -1834,6 +1843,7 @@ def _insert_mosfet_component(layout, top_cell, values):
         channel_width=values["channel_width"],
         channel_length=values["channel_length"],
         gate_overlap=values["gate_overlap"],
+        channel_type=values["channel_type"],
         fanout_enabled=values["fanout_enabled"],
         fanout_direction=values["fanout_direction"],
         enable_bottom_gate=values["enable_bottom_gate"],
@@ -1843,21 +1853,46 @@ def _insert_mosfet_component(layout, top_cell, values):
         show_parameter_labels=values["show_parameter_labels"],
         show_alignment_marks=values["show_alignment_marks"],
         device_label=values["device_label"],
+        mark_type_1=values["mark_type_1"],
+        mark_type_2=values["mark_type_2"],
+        mark_type_3=values["mark_type_3"],
+        mark_type_4=values["mark_type_4"],
+        mark_rotation_1=values["mark_rotation_1"],
+        mark_rotation_2=values["mark_rotation_2"],
+        mark_rotation_3=values["mark_rotation_3"],
+        mark_rotation_4=values["mark_rotation_4"],
+        outer_pad_size=values["outer_pad_size"],
+        chamfer_size=values["chamfer_size"],
+        channel_extension_ratio=values["channel_extension_ratio"],
+        dielectric_extension_ratio=values["dielectric_extension_ratio"],
+        dielectric_margin=values["dielectric_margin"],
+        source_drain_inner_width_ratio=values["source_drain_inner_width_ratio"],
+        source_drain_outer_offset_x=values["source_drain_outer_offset_x"],
+        source_drain_outer_offset_y=values["source_drain_outer_offset_y"],
+        source_drain_inner_chamfer=values["source_drain_inner_chamfer"],
+        source_drain_outer_chamfer=values["source_drain_outer_chamfer"],
+        bottom_gate_inner_width_ratio=values["bottom_gate_inner_width_ratio"],
+        bottom_gate_outer_offset_x=values["bottom_gate_outer_offset_x"],
+        bottom_gate_outer_offset_y=values["bottom_gate_outer_offset_y"],
+        bottom_gate_inner_chamfer=values["bottom_gate_inner_chamfer"],
+        bottom_gate_outer_chamfer=values["bottom_gate_outer_chamfer"],
+        top_gate_inner_width_ratio=values["top_gate_inner_width_ratio"],
+        top_gate_outer_offset_x=values["top_gate_outer_offset_x"],
+        top_gate_outer_offset_y=values["top_gate_outer_offset_y"],
+        top_gate_inner_chamfer=values["top_gate_inner_chamfer"],
+        top_gate_outer_chamfer=values["top_gate_outer_chamfer"],
+        device_region_margin_x=values["device_region_margin_x"],
+        device_region_margin_y=values["device_region_margin_y"],
+        mark_size=values["mark_size"],
+        mark_width=values["mark_width"],
+        label_size=values["label_size"],
+        label_offset_x=values["label_offset_x"],
+        label_offset_y=values["label_offset_y"],
     )
     device.generate()
     cell = layout.create_cell(_next_cell_name(layout, values["cell_name"]))
 
-    layer_map = {
-        "channel": layout.layer(LAYER_DEFINITIONS["channel"]["id"], 0),
-        "top_dielectric": layout.layer(LAYER_DEFINITIONS["top_dielectric"]["id"], 0),
-        "bottom_gate": layout.layer(LAYER_DEFINITIONS["bottom_gate"]["id"], 0),
-        "source": layout.layer(LAYER_DEFINITIONS["source_drain"]["id"], 0),
-        "drain": layout.layer(LAYER_DEFINITIONS["source_drain"]["id"], 0),
-        "top_gate": layout.layer(LAYER_DEFINITIONS["top_gate"]["id"], 0),
-        "device_label": layout.layer(LAYER_DEFINITIONS["labels"]["id"], 0),
-        "parameter_labels": layout.layer(LAYER_DEFINITIONS["labels"]["id"], 0),
-        "alignment_marks": layout.layer(LAYER_DEFINITIONS["alignment_marks"]["id"], 0),
-    }
+    layer_map = {name: layout.layer(layer_id, 0) for name, layer_id in device.get_layer_ids().items()}
     for name, shapes in device.shapes.items():
         for shape in shapes:
             cell.shapes(layer_map[name]).insert(shape)
@@ -2116,6 +2151,7 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
     preview_renderer=render_mosfet_component,
     preview_layers=[
         ("channel", "Channel"),
+        ("bottom_dielectric", "Bottom Dielectric"),
         ("top_dielectric", "Dielectric"),
         ("bottom_gate", "Bottom Gate"),
         ("source_drain", "Source / Drain"),
@@ -2131,7 +2167,43 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("channel_width", "Channel Width", "W", "Geometry", 5.0, minimum=0.1, maximum=1000.0, suffix=" um"),
         ParameterSpec("channel_length", "Channel Length", "L", "Geometry", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
         ParameterSpec("gate_overlap", "Gate Overlap", "Ov", "Geometry", 2.0, minimum=0.1, maximum=500.0, suffix=" um"),
+        ParameterSpec("channel_type", "Channel Type", "Type", "Geometry", "p", kind="choice", choices=[("p", "p"), ("n", "n")]),
+        ParameterSpec("outer_pad_size", "Outer Pad", "Pad", "Geometry", 80.0, minimum=1.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("chamfer_size", "Chamfer", "Cham", "Geometry", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("channel_extension_ratio", "Channel Ext", "ChEx", "Geometry", 3.0, minimum=0.1, maximum=20.0),
+        ParameterSpec("dielectric_extension_ratio", "Dielectric Ext", "DiEx", "Geometry", 2.0, minimum=0.1, maximum=20.0),
+        ParameterSpec("dielectric_margin", "Dielectric Margin", "DiMg", "Geometry", 4.0, minimum=0.0, maximum=500.0, suffix=" um"),
         ParameterSpec("device_label", "Device Label", "Lbl", "Labels", "D1", kind="string"),
+        ParameterSpec("label_size", "Label Size", "LS", "Labels", 14.0, minimum=1.0, maximum=200.0, suffix=" um"),
+        ParameterSpec("label_offset_x", "Label Offset X", "LOx", "Labels", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("label_offset_y", "Label Offset Y", "LOy", "Labels", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("mark_type_1", "Mark 1", "M1", "Marks", "double_square", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_2", "Mark 2", "M2", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_3", "Mark 3", "M3", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_4", "Mark 4", "M4", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_rotation_1", "Rot 1", "R1", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_rotation_2", "Rot 2", "R2", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_size", "Mark Size", "MS", "Marks", 20.0, minimum=1.0, maximum=500.0, suffix=" um"),
+        ParameterSpec("mark_width", "Mark Width", "MW", "Marks", 3.0, minimum=0.1, maximum=100.0, suffix=" um"),
+        ParameterSpec("device_region_margin_x", "Region Margin X", "RMx", "Marks", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("device_region_margin_y", "Region Margin Y", "RMy", "Marks", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("source_drain_inner_width_ratio", "SD Width Ratio", "SDWr", "Source / Drain", 1.2, minimum=0.1, maximum=20.0),
+        ParameterSpec("source_drain_outer_offset_x", "SD Outer X", "SDOx", "Source / Drain", 110.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("source_drain_outer_offset_y", "SD Outer Y", "SDOy", "Source / Drain", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("source_drain_inner_chamfer", "SD Inner Chamfer", "SDIc", "Source / Drain", "none", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("source_drain_outer_chamfer", "SD Outer Chamfer", "SDOc", "Source / Drain", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("bottom_gate_inner_width_ratio", "BG Width Ratio", "BGWr", "Bottom Gate", 1.5, minimum=0.1, maximum=20.0),
+        ParameterSpec("bottom_gate_outer_offset_x", "BG Outer X", "BGOx", "Bottom Gate", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bottom_gate_outer_offset_y", "BG Outer Y", "BGOy", "Bottom Gate", -100.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bottom_gate_inner_chamfer", "BG Inner Chamfer", "BGIc", "Bottom Gate", "none", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("bottom_gate_outer_chamfer", "BG Outer Chamfer", "BGOc", "Bottom Gate", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("top_gate_inner_width_ratio", "TG Width Ratio", "TGWr", "Top Gate", 1.2, minimum=0.1, maximum=20.0),
+        ParameterSpec("top_gate_outer_offset_x", "TG Outer X", "TGOx", "Top Gate", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_gate_outer_offset_y", "TG Outer Y", "TGOy", "Top Gate", 100.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_gate_inner_chamfer", "TG Inner Chamfer", "TGIc", "Top Gate", "none", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("top_gate_outer_chamfer", "TG Outer Chamfer", "TGOc", "Top Gate", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("fanout_enabled", "Enable Fanout", "Fan", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
         ParameterSpec("fanout_direction", "Fanout Direction", "Dir", "Options", "horizontal", kind="choice", choices=[("horizontal", "horizontal"), ("vertical", "vertical")]),
         ParameterSpec("enable_bottom_gate", "Bottom Gate", "BG", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
