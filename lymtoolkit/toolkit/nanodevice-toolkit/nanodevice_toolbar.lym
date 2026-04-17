@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>NanoDevice Toolbar Button</description>
+ <version>v0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>2</priority>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import os
+import sys
+
+import pya
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QAction, QApplication, QMainWindow, QToolBar
+
+this_dir = os.path.dirname(__file__)
+if this_dir not in sys.path:
+    sys.path.insert(0, this_dir)
+
+from nanodevice_toolkit import launch_toolkit_dialog
+
+_toolbar_refs = globals().setdefault("_nanodevice_toolbar_refs", {})
+
+
+def _find_main_window():
+    app = QApplication.instance()
+    if app is None:
+        return None
+    for widget in app.topLevelWidgets():
+        if isinstance(widget, QMainWindow):
+            return widget
+    return None
+
+
+def _install_toolbar_button():
+    main_window = _find_main_window()
+    if main_window is None:
+        return
+
+    toolbar_name = "NanoDevice Toolkit"
+    action_name = "nanodevice_toolkit_action"
+
+    existing_toolbar = main_window.findChild(QToolBar, toolbar_name)
+    if existing_toolbar is None:
+        existing_toolbar = QToolBar(toolbar_name, main_window)
+        existing_toolbar.setObjectName(toolbar_name)
+        main_window.addToolBar(existing_toolbar)
+
+    for action in existing_toolbar.actions():
+        if action.objectName() == action_name:
+            _toolbar_refs["toolbar"] = existing_toolbar
+            _toolbar_refs["action"] = action
+            return
+
+    icon_path = os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "logo.ico"))
+    action = QAction(QIcon(icon_path) if os.path.exists(icon_path) else QIcon(), "NanoDevice Toolkit", main_window)
+    action.setObjectName(action_name)
+    action.setToolTip("Open NanoDevice Toolkit")
+    action.triggered.connect(launch_toolkit_dialog)
+    existing_toolbar.addAction(action)
+
+    _toolbar_refs["toolbar"] = existing_toolbar
+    _toolbar_refs["action"] = action
+
+
+_install_toolbar_button()
+</text>
+</klayout-macro>

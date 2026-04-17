@@ -58,7 +58,7 @@ class TextUtils:
             import numpy as np
         except ImportError:
             print("[WARN] freetype or numpy not available, fallback to rectangle")
-            return [GeometryUtils.create_rectangle(x*TextUtils.UNIT_SCALE, y*TextUtils.UNIT_SCALE, size_um * 0.6 * len(text) * TextUtils.UNIT_SCALE, size_um * TextUtils.UNIT_SCALE, center=False)]
+            return [GeometryUtils.create_rectangle(x, y, size_um * 0.6 * len(text), size_um, center=False)]
         
         polys_all = []
         # 计算字符串总宽度（nm）
@@ -108,7 +108,13 @@ class TextUtils:
                 cursor_x += advance
             except Exception as e:
                 print(f"[WARN] Failed to process character '{char}': {e}")
-                char_box = GeometryUtils.create_rectangle(cursor_x, y_top - size_um * TextUtils.UNIT_SCALE, size_um * 0.6 * TextUtils.UNIT_SCALE, size_um * TextUtils.UNIT_SCALE, center=False)
+                char_box = GeometryUtils.create_rectangle(
+                    cursor_x / TextUtils.UNIT_SCALE,
+                    (y_top - size_um * TextUtils.UNIT_SCALE) / TextUtils.UNIT_SCALE,
+                    size_um * 0.6,
+                    size_um,
+                    center=False,
+                )
                 polys_all.append(char_box)
                 cursor_x += size_um * 0.6 * TextUtils.UNIT_SCALE + spacing_um * TextUtils.UNIT_SCALE
         

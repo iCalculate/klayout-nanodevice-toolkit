@@ -1,5 +1,33 @@
 import json
+import site
 import sys
+
+
+def _ensure_user_site():
+    candidates = []
+    try:
+        candidates.extend(site.getsitepackages())
+    except Exception:
+        pass
+    try:
+        candidates.append(site.getusersitepackages())
+    except Exception:
+        pass
+
+    for path in candidates:
+        if path and path not in sys.path:
+            sys.path.append(path)
+
+
+def _extract_polygons(component):
+    if hasattr(component, "get_polygons_points"):
+        polygons = component.get_polygons_points()
+        if isinstance(polygons, dict):
+            return list(polygons.values())
+        return list(polygons)
+    if hasattr(component, "get_polygons"):
+        return list(component.get_polygons())
+    raise RuntimeError("gdsfactory text component does not expose polygon extraction API")
 
 
 def main():
@@ -10,6 +38,7 @@ def main():
     size_um = float(sys.argv[2])
     justify = sys.argv[3]
 
+    _ensure_user_site()
     import gdsfactory as gf
 
     component = gf.components.text(
@@ -20,7 +49,7 @@ def main():
     )
     bbox = component.bbox
     polygons = []
-    for polygon in component.get_polygons():
+    for polygon in _extract_polygons(component):
         polygons.append([[float(x), float(y)] for x, y in polygon])
 
     payload = {

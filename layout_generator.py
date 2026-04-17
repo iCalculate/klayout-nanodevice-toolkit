@@ -214,9 +214,12 @@ class LayoutGenerator:
                 elif shape_name == 'top_dielectric':
                     for shape in shapes:
                         self.top_cell.shapes(self.layer_indices['top_dielectric']).insert(shape)
-                elif shape_name in ['device_label', 'parameter_labels']:
+                elif shape_name == 'device_label':
                     for shape in shapes:
                         self.top_cell.shapes(self.layer_indices['labels']).insert(shape)
+                elif shape_name == 'parameter_labels':
+                    for shape in shapes:
+                        self.top_cell.shapes(self.layer_indices['note']).insert(shape)
                 elif shape_name == 'alignment_marks':
                     for shape in shapes:
                         self.top_cell.shapes(self.layer_indices['alignment_marks']).insert(shape)

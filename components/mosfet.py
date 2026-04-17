@@ -198,7 +198,7 @@ class MOSFET:
             "drain": self._contact_layer_id(),
             "top_gate": LAYER_DEFINITIONS["top_gate"]["id"],
             "device_label": LAYER_DEFINITIONS["alignment_layer1"]["id"],
-            "parameter_labels": LAYER_DEFINITIONS["alignment_layer1"]["id"],
+            "parameter_labels": LAYER_DEFINITIONS["note"]["id"],
             "alignment_marks": LAYER_DEFINITIONS["alignment_layer1"]["id"],
         }
 
@@ -301,6 +301,11 @@ class MOSFET:
         except Exception:
             self._log_info(f"KLayout text generator failed for '{text}', falling back to raw pya.Text")
             return [pya.Text(text, int(x * 1000), int(y * 1000))]
+
+    def _append_note_text(self, text, x, y):
+        if not text:
+            return []
+        return [pya.Text(str(text), int(x * 1000), int(y * 1000))]
 
     def _double_square_mark(self, cx, cy, size):
         ring = max(self.mark_width, size * 0.12)
@@ -526,8 +531,13 @@ class MOSFET:
             self.shapes["device_label"] = []
 
         if self.show_parameter_labels:
-            param_text = f"{self.channel_type.upper()} W={self.channel_width:g} L={self.channel_length:g}"
-            self.shapes["parameter_labels"] = self._append_text_shape(
+            param_text = (
+                f"{self.channel_type.upper()}MOS "
+                f"W={self.channel_width:.2f} "
+                f"L={self.channel_length:.2f} "
+                f"Ov={self.gate_overlap:.2f}"
+            )
+            self.shapes["parameter_labels"] = self._append_note_text(
                 param_text,
                 region_bbox.left / 1000.0 + self.mark_size + 4.0,
                 region_bbox.bottom / 1000.0 + self.mark_size + 4.0,

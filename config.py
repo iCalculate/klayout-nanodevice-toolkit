@@ -16,6 +16,7 @@ PROCESS_CONFIG = {
 # 图层定义
 # Layer definitions
 LAYER_DEFINITIONS = {
+    'note': {'id': 6, 'name': 'Note', 'color': 0xFFC840, 'description': 'MOS/Hall parameter notes'},
     'bottom_gate': {'id': 11, 'name': 'Bottom Gate', 'color': 0x00C8FF, 'description': '底栅电极'},
     'bottom_dielectric': {'id': 12, 'name': 'Bottom Dielectric', 'color': 0xFF5050, 'description': '底介电层'},
     'channel': {'id': 14, 'name': 'Channel', 'color': 0xFF8840, 'description': '沟道材料'},

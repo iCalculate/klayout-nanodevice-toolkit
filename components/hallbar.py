@@ -9,12 +9,33 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import klayout.db as db
-from config import LAYER_DEFINITIONS
+try:
+    import pya
+except ImportError:
+    pya = db
+
+from config import LAYER_DEFINITIONS, PROCESS_CONFIG
 from utils.geometry import GeometryUtils
-from utils.text_utils import TextUtils
 from utils.mark_utils import MarkUtils
 from utils.fanout_utils import draw_pad, draw_trapezoidal_fanout
 from typing import cast, Literal
+
+
+_GF_CACHE = None
+_GF_IMPORT_ATTEMPTED = False
+
+
+def _get_gdsfactory():
+    global _GF_CACHE, _GF_IMPORT_ATTEMPTED
+    if _GF_IMPORT_ATTEMPTED:
+        return _GF_CACHE
+    _GF_IMPORT_ATTEMPTED = True
+    try:
+        import gdsfactory as gf
+        _GF_CACHE = gf
+    except Exception:
+        _GF_CACHE = None
+    return _GF_CACHE
 
 class HallBar:
     """Hall Bar器件类
@@ -22,6 +43,15 @@ class HallBar:
     """
     def __init__(self, layout=None, **kwargs):
         self.layout = layout or db.Layout()
+        dist_v_value = kwargs.get('dist_v', kwargs.get('Dist_V', 25.0))
+        label_anchor_value = kwargs.get('label_anchor', kwargs.get('label_cursor', 'left_top'))
+        self._layer_ids = {
+            'channel': kwargs.get('channel_layer_id', 13),
+            'source_drain': kwargs.get('source_drain_layer_id', 15),
+            'labels': kwargs.get('label_layer_id', 3),
+            'alignment_marks': kwargs.get('alignment_mark_layer_id', 3),
+            'parameter_labels': kwargs.get('parameter_label_layer_id', 6),
+        }
         self.setup_layers()
 
         # ===== 沟道与突出参数 =====
@@ -29,7 +59,7 @@ class HallBar:
         self.bar_width = kwargs.get('bar_width', 10.0)        # 沟道主宽度 (μm)
         self.v_protrude = kwargs.get('v_protrude_width', 3.0)       # V区突出宽度 (μm)
         self.v_protrude_length = kwargs.get('v_protrude_length', 5.0)  # V区突出区域长度(沿沟道方向)
-        self.dist_v = kwargs.get('Dist_V', 25.0)              # V电极间距 (μm)
+        self.dist_v = dist_v_value                            # V电极间距 (μm)
 
         # ===== V电极参数 =====
         self.v_inner_length = kwargs.get('v_inner_length', None)  # 沿沟道方向，None时自动联动
@@ -72,7 +102,7 @@ class HallBar:
         self.mark_rotations = kwargs.get('mark_rotations', [0, 0, 2, 1])
         self.label_size = kwargs.get('label_size', 20.0)
         self.label_font = kwargs.get('label_font', 'C:/Windows/Fonts/OCRAEXT.TTF')
-        self.label_anchor = kwargs.get('label_cursor', 'left_top')  # 编号位置: 'right_bottom', 'right_top', 'left_bottom', 'left_top'
+        self.label_anchor = label_anchor_value  # 编号位置: 'right_bottom', 'right_top', 'left_bottom', 'left_top'
         self.label_offset_x = kwargs.get('label_offset_x',  10.0)
         self.label_offset_y = kwargs.get('label_offset_y', -10.0)
         self.electrode_text_label = kwargs.get('electrode_text_label', False)  # 是否为电极添加KLayout text label
@@ -80,13 +110,93 @@ class HallBar:
     def setup_layers(self):
         for layer_name, layer_info in LAYER_DEFINITIONS.items():
             self.layout.layer(layer_info['id'], 0)
+        for layer_id in self._layer_ids.values():
+            self.layout.layer(layer_id, 0)
+
+    def _layer_index(self, layer_key):
+        return self.layout.layer(self._layer_ids[layer_key], 0)
 
     def set_device_parameters(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
+    def get_layer_ids(self):
+        return dict(self._layer_ids)
+
+    def _append_text_shape(self, text, x, y, layer_key):
+        if not text:
+            return []
+        text = str(text)
+        layer_id = self._layer_ids[layer_key]
+
+        gf = _get_gdsfactory()
+        if gf is not None:
+            try:
+                text_component = gf.components.text(
+                    text=text,
+                    size=self.label_size,
+                    justify="left",
+                    layer=(layer_id, 0),
+                )
+                bbox = text_component.bbox
+                offset_x = x - float(bbox[0][0])
+                offset_y = y - float(bbox[0][1])
+                polygons = []
+                for polygon in text_component.get_polygons():
+                    points = [pya.Point(int(px + offset_x), int(py + offset_y)) for px, py in polygon]
+                    if len(points) >= 3:
+                        polygons.append(pya.Polygon(points))
+                if polygons:
+                    return polygons
+            except Exception:
+                pass
+
+        try:
+            generator = pya.TextGenerator.default_generator()
+            mag = float(self.label_size) / max(generator.dheight(), 1e-9)
+            region = generator.text(text, PROCESS_CONFIG["dbu"], mag, False, 0.0, 0.0, 0.0).merged()
+            bbox = region.bbox()
+            dx = int(round(x / PROCESS_CONFIG["dbu"] - bbox.left))
+            dy = int(round(y / PROCESS_CONFIG["dbu"] - bbox.bottom))
+            return [region.moved(dx, dy)]
+        except Exception:
+            return [pya.Text(text, int(x * 1000), int(y * 1000))]
+
+    def _append_note_text(self, text, x, y):
+        if not text:
+            return []
+        return [pya.Text(str(text), int(x * 1000), int(y * 1000))]
+
+    def _normalized_mark_type(self, mark_type):
+        aliases = {
+            "l": "l_shape",
+            "L_shape": "l_shape",
+            "t": "t_shape",
+            "T_shape": "t_shape",
+        }
+        return aliases.get(str(mark_type), mark_type)
+
+    def _create_mark(self, x, y, mark_type, rotation):
+        normalized = self._normalized_mark_type(mark_type)
+        stroke_ratio = max(self.mark_width / max(self.mark_size, 1e-9), 1e-3)
+
+        if normalized == "sq_missing":
+            return MarkUtils.sq_missing(x, y, self.mark_size).rotate(rotation)
+        if normalized in ("l_shape", "t_shape", "cross_tri"):
+            return getattr(MarkUtils, normalized)(x, y, self.mark_size, stroke_ratio).rotate(rotation)
+        if normalized in ("square", "circle", "diamond"):
+            return getattr(MarkUtils, normalized)(x, y, self.mark_size).rotate(rotation)
+        if normalized == "triangle":
+            return MarkUtils.triangle(x, y, self.mark_size).rotate(rotation)
+        if hasattr(MarkUtils, normalized):
+            try:
+                return getattr(MarkUtils, normalized)(x, y, self.mark_size, self.mark_width).rotate(rotation)
+            except TypeError:
+                return getattr(MarkUtils, normalized)(x, y, self.mark_size).rotate(rotation)
+        return MarkUtils.cross(x, y, self.mark_size, self.mark_width).rotate(rotation)
+
     def create_bar(self, cell, x=0.0, y=0.0):
-        layer_id = LAYER_DEFINITIONS['channel']['id']
+        layer_id = self._layer_index('channel')
         # 沟道主区
         bar = GeometryUtils.create_rectangle(
             x, y, self.bar_length, self.bar_width, center=True
@@ -109,8 +219,7 @@ class HallBar:
         cell.shapes(layer_id).insert(bar_right)
 
     def create_contacts(self, cell, x=0.0, y=0.0):
-        layer_id = LAYER_DEFINITIONS['source_drain']['id']
-        label_layer = LAYER_DEFINITIONS['labels']['id']
+        layer_id = self._layer_index('source_drain')
         # I电极
         I_contacts = [
             ("I_source", (x - self.bar_length/2, y), "left", (x - self.i_outer_offset_x, y + self.i_outer_offset_y)),
@@ -129,8 +238,8 @@ class HallBar:
             fanout = draw_trapezoidal_fanout(inner, outer)
             cell.shapes(layer_id).insert(fanout)
             if self.electrode_text_label:
-                text_obj = db.Text(name, int(outer_center[0] * 1000), int(outer_center[1] * 1000))
-                cell.shapes(label_layer).insert(text_obj)
+                for shape in self._append_text_shape(name, outer_center[0], outer_center[1], 'labels'):
+                    cell.shapes(self._layer_index('labels')).insert(shape)
         # V电极
         V_contacts = [
             ("V_source_pos", (x - self.dist_v/2, y + (self.bar_width + self.v_protrude)/2), "top", (x - self.v_outer_offset_x, y + self.v_outer_offset_y)),
@@ -148,11 +257,11 @@ class HallBar:
             fanout = draw_trapezoidal_fanout(inner, outer)
             cell.shapes(layer_id).insert(fanout)
             if self.electrode_text_label:
-                text_obj = db.Text(name, int(outer_center[0] * 1000), int(outer_center[1] * 1000))
-                cell.shapes(label_layer).insert(text_obj)
+                for shape in self._append_text_shape(name, outer_center[0], outer_center[1], 'labels'):
+                    cell.shapes(self._layer_index('labels')).insert(shape)
 
     def create_alignment_marks(self, cell, x=0.0, y=0.0):
-        layer_id = LAYER_DEFINITIONS['alignment_marks']['id']
+        layer_id = self._layer_index('alignment_marks')
         device_width = self.device_margin_x * 2
         device_height = self.device_margin_y * 2
         mark_positions = [
@@ -164,13 +273,7 @@ class HallBar:
         for i, (mark_x, mark_y) in enumerate(mark_positions):
             mark_type = self.mark_types[i] if i < len(self.mark_types) else 'cross'
             rotation = self.mark_rotations[i] if i < len(self.mark_rotations) else 0
-            if hasattr(MarkUtils, mark_type):
-                if mark_type == 'sq_missing':
-                    marks = getattr(MarkUtils, mark_type)(mark_x, mark_y, self.mark_size).rotate(rotation)
-                else:
-                    marks = getattr(MarkUtils, mark_type)(mark_x, mark_y, self.mark_size, self.mark_width).rotate(rotation)
-            else:
-                marks = MarkUtils.cross(mark_x, mark_y, self.mark_size, self.mark_width).rotate(rotation)
+            marks = self._create_mark(mark_x, mark_y, mark_type, rotation)
             shapes = marks.get_shapes() if hasattr(marks, 'get_shapes') else [marks]
             if isinstance(shapes, list):
                 for shape in shapes:
@@ -179,20 +282,14 @@ class HallBar:
                 cell.shapes(layer_id).insert(shapes)
 
     def create_device_label(self, cell, x, y, label_text="HallBar", anchor="center"):
-        layer_id = LAYER_DEFINITIONS['labels']['id']
+        layer_id = self._layer_index('labels')
         if anchor == "topleft_mark":
             label_x = x - self.device_margin_x + self.label_offset_x
             label_y = y + self.device_margin_y + self.label_offset_y
         else:
             label_x = x + self.label_offset_x
             label_y = y + self.label_offset_y
-        text_shapes = TextUtils.create_text_freetype(
-            label_text, label_x, label_y,
-            size_um=int(self.label_size),
-            font_path=self.label_font,
-            spacing_um=0.5,
-            anchor=self.label_anchor
-        )
+        text_shapes = self._append_text_shape(label_text, label_x, label_y, 'labels')
         for shape in text_shapes:
             cell.shapes(layer_id).insert(shape)
 
@@ -212,9 +309,9 @@ class HallBar:
             label_x = mark_x + 10
             label_y = mark_y + 10
             param_text = f"W={self.bar_width:.2f}, L={self.bar_length:.2f}, VP={self.v_protrude_length:.2f}"
-            layer_id = LAYER_DEFINITIONS['labels']['id']
-            text_obj = db.Text(param_text, int(label_x * 1000), int(label_y * 1000))
-            cell.shapes(layer_id).insert(text_obj)
+            layer_id = self._layer_index('parameter_labels')
+            for shape in self._append_note_text(param_text, label_x, label_y):
+                cell.shapes(layer_id).insert(shape)
         return cell
 
     def create_device_array(self, rows=4, cols=4, device_spacing_x=None, device_spacing_y=None, label_prefix="HB"):
@@ -224,7 +321,7 @@ class HallBar:
             device_spacing_y = self.device_margin_y * 2 + 50
         array_cell = self.layout.create_cell("HallBar_Array")
         device_id = 1
-        label_layer = LAYER_DEFINITIONS['labels']['id']
+        label_layer = self._layer_index('labels')
         label_offset_x = 20.0  # um
         label_offset_y = -20.0 # um
         for row in range(rows):
@@ -246,8 +343,8 @@ class HallBar:
                 mark_x = device_x - self.device_margin_x
                 mark_y = device_y + self.device_margin_y
                 # 插入label（右下角偏移）
-                text_obj = db.Text(excel_label, int((mark_x + label_offset_x) * 1000), int((mark_y + label_offset_y) * 1000))
-                array_cell.shapes(label_layer).insert(text_obj)
+                for shape in self._append_text_shape(excel_label, mark_x + label_offset_x, mark_y + label_offset_y, 'labels'):
+                    array_cell.shapes(label_layer).insert(shape)
                 device_id += 1
         return array_cell 
 
@@ -347,4 +444,3 @@ def main():
 
 if __name__ == "__main__":
     main() 
-

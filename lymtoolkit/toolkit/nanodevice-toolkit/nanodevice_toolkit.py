@@ -1,6 +1,8 @@
 import json
 import math
 import os
+import shutil
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -52,6 +54,11 @@ ROOT_DIR = _discover_root_dir()
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+TEXT_POLYGON_SCRIPT = os.path.join(
+    os.path.abspath(os.path.dirname(__file__)),
+    "generate_gdsfactory_text_polygons.py",
+)
+
 from config import DEFAULT_DBU, LAYER_DEFINITIONS
 
 def _discover_layer_map_path():
@@ -86,7 +93,7 @@ PREVIEW_LAYER_IDS = {
     "alignment_marks": [LAYER_DEFINITIONS["alignment_marks"]["id"], LAYER_DEFINITIONS["alignment_layer1"]["id"], LAYER_DEFINITIONS["alignment_layer2"]["id"]],
     "labels": [LAYER_DEFINITIONS["labels"]["id"]],
 }
-DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component"}
+DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hall_component", "tlm_component"}
 
 
 @dataclass
@@ -135,6 +142,7 @@ class PreviewView(QGraphicsView):
         self._preview_bounds = QRectF(-100.0, -100.0, 200.0, 200.0)
         self._base_grid_px = 28.0
         self._has_fitted_once = False
+        self._last_tool_key = None
 
     def set_layer_visibility(self, layer_key, visible):
         self._layer_visibility[layer_key] = visible
@@ -179,26 +187,37 @@ class PreviewView(QGraphicsView):
         scene = self.scene()
         saved_transform = self.transform()
         saved_center = self.mapToScene(self.viewport().rect().center())
+        tool_changed = tool_spec.key != self._last_tool_key
         scene.clear()
         try:
             if tool_spec.key in DIRECT_PREVIEW_TOOL_KEYS:
                 tool_spec.preview_renderer(scene, values, self._layer_visibility)
             else:
                 _draw_generated_preview(scene, tool_spec, values, self._layer_visibility)
-        except Exception:
-            tool_spec.preview_renderer(scene, values, self._layer_visibility)
+        except Exception as exc:
+            self._draw_preview_error(scene, str(exc))
         item_bounds = scene.itemsBoundingRect()
         if item_bounds.isNull():
             item_bounds = QRectF(-50.0, -50.0, 100.0, 100.0)
         self._preview_bounds = item_bounds.adjusted(-20.0, -20.0, 20.0, 20.0)
         scene.setSceneRect(self._preview_bounds)
-        if preserve_view and self._has_fitted_once:
+        if preserve_view and self._has_fitted_once and not tool_changed:
             self.setTransform(saved_transform)
             self.centerOn(saved_center)
+            self._last_tool_key = tool_spec.key
             return
         self.resetTransform()
         self.fitInView(self._preview_bounds, Qt.KeepAspectRatio)
         self._has_fitted_once = True
+        self._last_tool_key = tool_spec.key
+
+    def _draw_preview_error(self, scene, message):
+        text_item = scene.addText("Preview unavailable")
+        text_item.setDefaultTextColor(QColor("#ff8c69"))
+        text_item.setPos(-70.0, -10.0)
+        detail = scene.addText(message[:240])
+        detail.setDefaultTextColor(QColor("#d9d9d9"))
+        detail.setPos(-110.0, 18.0)
 
     def _grid_step_scene(self):
         scale = abs(self.transform().m11()) or 1.0
@@ -357,6 +376,7 @@ class ToolkitDialog(QDialog):
         self.controls = {}
         self._clear_layout(self.form_layout)
         tool = self._current_tool()
+        self.preview._has_fitted_once = False
 
         groups = {}
         for param in tool.params:
@@ -1289,17 +1309,31 @@ def render_gdsfactory_text(scene, values, visible_layers=None):
         return
 
     text = values["text"] or "Text"
-    text_region = _preview_text_region(text, max(values["size_um"], 0.1))
-    bbox = text_region.bbox()
-    center_x = (bbox.left + bbox.right) * 0.001 / 2.0
-    center_y = -(bbox.bottom + bbox.top) * 0.001 / 2.0
-    dx = values["x"] - center_x
-    dy = values["y"] - center_y
+    pen = QPen(QColor("#6cc0ff"), 0)
+    brush = QBrush(QColor(108, 192, 255, 70))
+    backend = _text_backend_mode(values)
+    if backend in ("auto", "gdsfactory"):
+        try:
+            payload = _run_external_text_polygon_script(text, max(values["size_um"], 0.1), "left")
+            for path in _text_payload_to_paths(payload, values["x"], values["y"]):
+                _draw_path(scene, path, pen, brush)
+            return
+        except Exception as exc:
+            if backend == "gdsfactory":
+                raise RuntimeError(f"gdsfactory text generation failed: {exc}") from exc
+
+    text_region = _build_klayout_text_region(
+        text,
+        max(values["size_um"], 0.1),
+        values["x"],
+        values["y"],
+        0.001,
+    )
 
     path = QPainterPath()
     path.setFillRule(Qt.OddEvenFill)
     for polygon in text_region.each():
-        hull = [QPointF(point.x * 0.001 + dx, -point.y * 0.001 + dy) for point in polygon.each_point_hull()]
+        hull = [QPointF(point.x * 0.001, -point.y * 0.001) for point in polygon.each_point_hull()]
         if len(hull) < 3:
             continue
         path.moveTo(hull[0])
@@ -1307,16 +1341,13 @@ def render_gdsfactory_text(scene, values, visible_layers=None):
             path.lineTo(pt)
         path.closeSubpath()
         for hole_index in range(polygon.holes()):
-            hole = [QPointF(point.x * 0.001 + dx, -point.y * 0.001 + dy) for point in polygon.each_point_hole(hole_index)]
+            hole = [QPointF(point.x * 0.001, -point.y * 0.001) for point in polygon.each_point_hole(hole_index)]
             if len(hole) < 3:
                 continue
             path.moveTo(hole[0])
             for pt in hole[1:]:
                 path.lineTo(pt)
             path.closeSubpath()
-
-    pen = QPen(QColor("#6cc0ff"), 0)
-    brush = QBrush(QColor(108, 192, 255, 70))
     _draw_path(scene, path, pen, brush)
 
 
@@ -1710,6 +1741,44 @@ def _gdsfactory_text_insert_params(values):
     }
 
 
+def _text_backend_mode(values):
+    return str(values.get("backend", "auto") or "auto").strip().lower()
+
+
+def _build_klayout_text_region(text, size_um, center_x, center_y, dbu=0.001):
+    text_region = _preview_text_region(text, max(size_um, 0.1))
+    bbox = text_region.bbox()
+    src_center_x = (bbox.left + bbox.right) * 0.001 / 2.0
+    src_center_y = (bbox.bottom + bbox.top) * 0.001 / 2.0
+    dx = int(round((center_x - src_center_x) / dbu))
+    dy = int(round((center_y - src_center_y) / dbu))
+    return text_region.moved(dx, dy)
+
+
+def _insert_gdsfactory_text(layout, top_cell, values):
+    layer, datatype = values["layer_spec"]
+    layer_index = layout.layer(int(layer), int(datatype))
+    backend = _text_backend_mode(values)
+    if backend in ("auto", "gdsfactory"):
+        try:
+            payload = _run_external_text_polygon_script(values["text"] or "Text", max(values["size_um"], 0.1), "left")
+            region = _text_payload_to_region(payload, values["x"], values["y"])
+            top_cell.shapes(layer_index).insert(region)
+            return
+        except Exception as exc:
+            if backend == "gdsfactory":
+                raise RuntimeError(f"gdsfactory text generation failed: {exc}") from exc
+
+    region = _build_klayout_text_region(
+        values["text"] or "Text",
+        max(values["size_um"], 0.1),
+        values["x"],
+        values["y"],
+        layout.dbu,
+    )
+    top_cell.shapes(layer_index).insert(region)
+
+
 def _layer_insert_params(param_key):
     def builder(values):
         layer, datatype = values[param_key]
@@ -1733,6 +1802,92 @@ def _preview_text_region(text, size_um):
     generator = pya.TextGenerator.default_generator()
     mag = float(size_um) / max(generator.dheight(), 1e-9)
     return generator.text(text, 0.001, mag, False, 0.0, 0.0, 0.0).merged()
+
+
+def _external_python_candidates():
+    candidates = []
+    env_python = os.environ.get("NANODEVICE_EXTERNAL_PYTHON")
+    if env_python:
+        candidates.append([env_python])
+
+    conda_python = shutil.which("python")
+    if conda_python:
+        candidates.append([conda_python])
+
+    py_launcher = shutil.which("py")
+    if py_launcher:
+        candidates.append([py_launcher, "-3"])
+    return candidates
+
+
+def _run_external_text_polygon_script(text, size_um, justify="left"):
+    if not os.path.exists(TEXT_POLYGON_SCRIPT):
+        raise RuntimeError(f"Text polygon generator not found: {TEXT_POLYGON_SCRIPT}")
+
+    errors = []
+    for candidate in _external_python_candidates():
+        if not candidate:
+            continue
+        try:
+            completed = subprocess.run(
+                [*candidate, TEXT_POLYGON_SCRIPT, text, str(float(size_um)), justify],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return json.loads(completed.stdout)
+        except Exception as exc:
+            errors.append(f"{' '.join(candidate)}: {exc}")
+
+    raise RuntimeError(
+        "Unable to run external gdsfactory text generator. "
+        "Set NANODEVICE_EXTERNAL_PYTHON or install gdsfactory in an external Python environment.\n"
+        + "\n".join(errors)
+    )
+
+
+def _text_payload_to_paths(payload, center_x, center_y):
+    bbox = payload.get("bbox") or [[0.0, 0.0], [0.0, 0.0]]
+    min_x = float(bbox[0][0])
+    min_y = float(bbox[0][1])
+    max_x = float(bbox[1][0])
+    max_y = float(bbox[1][1])
+    bbox_center_x = (min_x + max_x) / 2.0
+    bbox_center_y = (min_y + max_y) / 2.0
+    dx = float(center_x) - bbox_center_x
+    dy = float(center_y) - bbox_center_y
+
+    paths = []
+    for polygon in payload.get("polygons", []):
+        if len(polygon) < 3:
+            continue
+        path = QPainterPath()
+        first_x, first_y = polygon[0]
+        path.moveTo(float(first_x) + dx, -(float(first_y) + dy))
+        for px, py in polygon[1:]:
+            path.lineTo(float(px) + dx, -(float(py) + dy))
+        path.closeSubpath()
+        paths.append(path)
+    return paths
+
+
+def _text_payload_to_region(payload, center_x, center_y):
+    bbox = payload.get("bbox") or [[0.0, 0.0], [0.0, 0.0]]
+    min_x = float(bbox[0][0])
+    min_y = float(bbox[0][1])
+    max_x = float(bbox[1][0])
+    max_y = float(bbox[1][1])
+    bbox_center_x = (min_x + max_x) / 2.0
+    bbox_center_y = (min_y + max_y) / 2.0
+    dx = float(center_x) - bbox_center_x
+    dy = float(center_y) - bbox_center_y
+
+    region = pya.Region()
+    for polygon in payload.get("polygons", []):
+        points = [pya.Point(int(round((float(px) + dx) * 1000.0)), int(round((float(py) + dy) * 1000.0))) for px, py in polygon]
+        if len(points) >= 3:
+            region.insert(pya.Polygon(points))
+    return region
 
 
 NANODEVICE_FET_TOOL = ToolSpec(
@@ -1790,15 +1945,16 @@ NANODEVICE_FET_TOOL = ToolSpec(
 GDSFACTORY_TEXT_TOOL = ToolSpec(
     key="gdsfactory_text",
     title="KLayout Text",
-    library_name="NanoDeviceToolkitLib",
-    pcell_name="NanoDeviceTextPCell",
+    library_name="",
+    pcell_name="",
     preview_renderer=render_gdsfactory_text,
     preview_layers=[("labels", "Text")],
-    insert_params_builder=_gdsfactory_text_insert_params,
+    insert_handler=_insert_gdsfactory_text,
     params=[
-        ParameterSpec("text", "Text", "Txt", "Placement", "ABC123", kind="string", tooltip="Text rendered with gdsfactory."),
+        ParameterSpec("text", "Text", "Txt", "Placement", "ABC123", kind="string", tooltip="Text rendered with external Python + gdsfactory."),
         ParameterSpec("x", "Center X", "Cx", "Placement", 0.0, minimum=-1000.0, maximum=1000.0, suffix=" um"),
         ParameterSpec("y", "Center Y", "Cy", "Placement", 0.0, minimum=-1000.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("backend", "Backend", "BE", "Geometry", "auto", kind="choice", choices=[("auto", "auto"), ("gdsfactory", "gdsfactory"), ("klayout", "klayout")], tooltip="auto = prefer external gdsfactory then fallback, gdsfactory = require external polygon generator, klayout = use built-in KLayout text."),
         ParameterSpec("size_um", "Text Size", "Htxt", "Geometry", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
         ParameterSpec("layer_spec", "Layer", "L", "Layer", (10, 0), kind="layer_choice"),
     ],
@@ -2030,6 +2186,16 @@ def _next_cell_name(layout, base_name):
     return f"{base_name}_{index}"
 
 
+def _normalize_mark_rotation_value(value, default=0):
+    try:
+        rotation = int(value)
+    except Exception:
+        rotation = int(default)
+    if rotation in (0, 1, 2, 3):
+        return rotation
+    return int(round(rotation / 90.0)) % 4
+
+
 def _insert_mosfet_component(layout, top_cell, values):
     from components.mosfet import MOSFET
 
@@ -2053,10 +2219,10 @@ def _insert_mosfet_component(layout, top_cell, values):
         mark_type_2=values["mark_type_2"],
         mark_type_3=values["mark_type_3"],
         mark_type_4=values["mark_type_4"],
-        mark_rotation_1=values["mark_rotation_1"],
-        mark_rotation_2=values["mark_rotation_2"],
-        mark_rotation_3=values["mark_rotation_3"],
-        mark_rotation_4=values["mark_rotation_4"],
+        mark_rotation_1=_normalize_mark_rotation_value(values["mark_rotation_1"], 0),
+        mark_rotation_2=_normalize_mark_rotation_value(values["mark_rotation_2"], 0),
+        mark_rotation_3=_normalize_mark_rotation_value(values["mark_rotation_3"], 2),
+        mark_rotation_4=_normalize_mark_rotation_value(values["mark_rotation_4"], 3),
         outer_pad_size=values["outer_pad_size"],
         chamfer_size=values["chamfer_size"],
         channel_extension_ratio=values["channel_extension_ratio"],
@@ -2114,7 +2280,7 @@ def _insert_fet_component(layout, top_cell, values):
 def _insert_hall_component(layout, top_cell, values):
     from components.hallbar import HallBar
 
-    params = dict(values)
+    params = _normalize_hall_component_params(values)
     x = params.pop("x")
     y = params.pop("y")
     cell_name = params.pop("cell_name")
@@ -2123,6 +2289,51 @@ def _insert_hall_component(layout, top_cell, values):
     device = HallBar(layout=layout, **params)
     cell = device.create_single_device(_next_cell_name(layout, cell_name), x, y, label_text, show_param_label)
     top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+
+def _normalize_hall_component_params(values):
+    params = dict(values)
+    params["mark_types"] = [
+        params.pop("mark_type_1", "sq_missing"),
+        params.pop("mark_type_2", "L_shape"),
+        params.pop("mark_type_3", "L_shape"),
+        params.pop("mark_type_4", "cross"),
+    ]
+    params["mark_rotations"] = [
+        _normalize_mark_rotation_value(params.pop("mark_rotation_1", 0), 0),
+        _normalize_mark_rotation_value(params.pop("mark_rotation_2", 0), 0),
+        _normalize_mark_rotation_value(params.pop("mark_rotation_3", 2), 2),
+        _normalize_mark_rotation_value(params.pop("mark_rotation_4", 1), 1),
+    ]
+    if params.get("i_inner_width", 0.0) <= 0.0:
+        params["i_inner_width"] = None
+    if params.get("v_inner_length", 0.0) <= 0.0:
+        params["v_inner_length"] = None
+    return params
+
+
+def _normalize_tlm_component_params(values):
+    params = dict(values)
+    if params.get("inner_pad_width") == 0:
+        params["inner_pad_width"] = None
+    if params.get("outer_pad_spacing") == 0:
+        params["outer_pad_spacing"] = None
+    if params.get("channel_length") == 0:
+        params["channel_length"] = None
+
+    params["mark_types"] = [
+        params.pop("mark_type_1", "sq_missing"),
+        params.pop("mark_type_2", "L_shape"),
+        params.pop("mark_type_3", "L_shape"),
+        params.pop("mark_type_4", "cross"),
+    ]
+    params["mark_rotations"] = [
+        _normalize_mark_rotation_value(params.pop("mark_rotation_1", 0), 0),
+        _normalize_mark_rotation_value(params.pop("mark_rotation_2", 0), 0),
+        _normalize_mark_rotation_value(params.pop("mark_rotation_3", 2), 2),
+        _normalize_mark_rotation_value(params.pop("mark_rotation_4", 1), 1),
+    ]
+    return params
 
 
 def _insert_tlm_component(layout, top_cell, values):
@@ -2197,24 +2408,39 @@ def render_fet_component(scene, values, visible_layers=None):
 
 
 def render_hall_component(scene, values, visible_layers=None):
-    visible_layers = visible_layers or {"channel": True, "contacts": True}
-    x = values["x"]
-    y = values["y"]
-    bar = _center_box(x, y, values["bar_length"], values["bar_width"])
-    left_v = _center_box(x - values["dist_v"] / 2.0, y, values["v_protrude_length"], values["bar_width"] + 2.0 * values["v_protrude_width"])
-    right_v = _center_box(x + values["dist_v"] / 2.0, y, values["v_protrude_length"], values["bar_width"] + 2.0 * values["v_protrude_width"])
-    contacts = [
-        _center_box(x - values["i_outer_offset_x"], y + values["i_outer_offset_y"], values["i_outer_length"], values["i_outer_width"]),
-        _center_box(x + values["i_outer_offset_x"], y + values["i_outer_offset_y"], values["i_outer_length"], values["i_outer_width"]),
-        _center_box(x - values["v_outer_offset_x"], y + values["v_outer_offset_y"], values["v_outer_length"], values["v_outer_width"]),
-        _center_box(x + values["v_outer_offset_x"], y + values["v_outer_offset_y"], values["v_outer_length"], values["v_outer_width"]),
-        _center_box(x - values["v_outer_offset_x"], y - values["v_outer_offset_y"], values["v_outer_length"], values["v_outer_width"]),
-        _center_box(x + values["v_outer_offset_x"], y - values["v_outer_offset_y"], values["v_outer_length"], values["v_outer_width"]),
-    ]
-    if visible_layers.get("channel", True):
-        _draw_path(scene, _boxes_to_path([bar, left_v, right_v]), QPen(QColor("#f4d35e"), 0), QBrush(QColor(244, 211, 94, 70)))
-    if visible_layers.get("contacts", True):
-        _draw_path(scene, _boxes_to_path(contacts), QPen(QColor("#3d5a80"), 0), QBrush(QColor(61, 90, 128, 95)))
+    from components.hallbar import HallBar
+
+    visible_layers = visible_layers or {}
+    params = _normalize_hall_component_params(values)
+    params.pop("cell_name", None)
+    label_text = params.pop("label_text", "HallBar")
+    show_param_label = params.pop("show_param_label", True)
+
+    layout = pya.Layout()
+    layout.dbu = DEFAULT_DBU
+    device = HallBar(layout=layout, **params)
+    cell = device.create_single_device("__HALL_PREVIEW__", params["x"], params["y"], label_text, show_param_label)
+    cell.flatten(-1, True)
+    layer_ids = device.get_layer_ids()
+
+    buckets = {
+        "channel": [layer_ids["channel"]],
+        "source_drain": [layer_ids["source_drain"]],
+        "labels": [layer_ids["labels"]],
+        "alignment_marks": [layer_ids["alignment_marks"]],
+        "parameter_labels": [layer_ids["parameter_labels"]],
+    }
+
+    for layer_key, layer_list in buckets.items():
+        if not visible_layers.get(layer_key, True):
+            continue
+        style_layer_id = layer_list[0]
+        pen, brush = _preview_style_for_layer_id(style_layer_id, layer_key)
+        for layer_id in layer_list:
+            layer_index = layout.layer(layer_id, 0)
+            for shape in cell.shapes(layer_index).each():
+                for path in _shape_to_paths(shape, layout.dbu):
+                    _draw_path(scene, path, pen, brush)
 
 
 def _tlm_positions(values):
@@ -2235,22 +2461,37 @@ def _tlm_positions(values):
 
 
 def render_tlm_component(scene, values, visible_layers=None):
-    visible_layers = visible_layers or {"channel": True, "pads": True}
-    x = values["x"]
-    y = values["y"]
-    xs = _tlm_positions(values)
-    pad_width = values["inner_pad_width"] if values["inner_pad_width"] > 0 else values["channel_width"] * 1.2
-    inner_boxes = [_center_box(x + xc, y, values["inner_pad_length"], pad_width) for xc in xs]
-    outer_boxes = []
-    for index, xc in enumerate(xs):
-        outer_y = y + values["outer_pad_offset_y"] if index % 2 == 0 else y - values["outer_pad_offset_y"]
-        outer_boxes.append(_center_box(x + xc, outer_y, values["outer_pad_length"], values["outer_pad_width"]))
-    channel_length = values["channel_length"] if values["channel_length"] > 0 else abs(xs[-1] - xs[0]) * 1.1
-    channel = _center_box(x, y, channel_length, values["channel_width"])
-    if visible_layers.get("channel", True):
-        _draw_path(scene, _boxes_to_path([channel]), QPen(QColor("#f4d35e"), 0), QBrush(QColor(244, 211, 94, 70)))
-    if visible_layers.get("pads", True):
-        _draw_path(scene, _boxes_to_path(inner_boxes + outer_boxes), QPen(QColor("#e76f51"), 0), QBrush(QColor(231, 111, 81, 95)))
+    from components.tlm import TLM
+
+    visible_layers = visible_layers or {}
+    params = _normalize_tlm_component_params(values)
+    params.pop("cell_name", None)
+
+    layout = pya.Layout()
+    layout.dbu = DEFAULT_DBU
+    device = TLM(layout=layout, **params)
+    cell = device.create_single_device("__TLM_PREVIEW__", params["x"], params["y"])
+    layer_ids = device.get_layer_ids()
+
+    buckets = {
+        "channel": [layer_ids["channel"]],
+        "source_drain": [layer_ids["source_drain"]],
+        "labels": [layer_ids["labels"]],
+        "alignment_marks": [layer_ids["alignment_marks"]],
+        "parameter_labels": [layer_ids["parameter_labels"]],
+    }
+
+    for layer_key, layer_list in buckets.items():
+        if not visible_layers.get(layer_key, True):
+            continue
+        style_layer_id = layer_list[0]
+        pen, brush = _preview_style_for_layer_id(style_layer_id, layer_key)
+        for layer_id in layer_list:
+            layer_index = layout.layer(layer_id, 0)
+            for preview_cell in _iter_cells_recursive(layout, cell):
+                for shape in preview_cell.shapes(layer_index).each():
+                    for path in _shape_to_paths(shape, layout.dbu):
+                        _draw_path(scene, path, pen, brush)
 
 
 def render_meander_component(scene, values, visible_layers=None):
@@ -2302,7 +2543,8 @@ def render_mosfet_component(scene, values, visible_layers=None):
         "bottom_gate": list(device.get_all_shapes().get("bottom_gate", [])),
         "source_drain": list(device.get_all_shapes().get("source", [])) + list(device.get_all_shapes().get("drain", [])),
         "top_gate": list(device.get_all_shapes().get("top_gate", [])),
-        "labels": list(device.shapes.get("device_label", [])) + list(device.shapes.get("parameter_labels", [])),
+        "labels": list(device.shapes.get("device_label", [])),
+        "parameter_labels": list(device.shapes.get("parameter_labels", [])),
         "alignment_marks": list(device.shapes.get("alignment_marks", [])),
     }
 
@@ -2313,6 +2555,8 @@ def render_mosfet_component(scene, values, visible_layers=None):
             style_layer_id = layer_ids.get("source", layer_ids.get("drain"))
         elif layer_key == "labels":
             style_layer_id = layer_ids.get("device_label")
+        elif layer_key == "parameter_labels":
+            style_layer_id = layer_ids.get("parameter_labels")
         elif layer_key == "alignment_marks":
             style_layer_id = layer_ids.get("alignment_marks")
         else:
@@ -2337,6 +2581,7 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
         ("source_drain", "Source / Drain"),
         ("top_gate", "Top Gate"),
         ("labels", "Labels"),
+        ("parameter_labels", "Notes"),
         ("alignment_marks", "Marks"),
     ],
     insert_handler=_insert_mosfet_component,
@@ -2361,10 +2606,10 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("mark_type_2", "Mark 2", "M2", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
         ParameterSpec("mark_type_3", "Mark 3", "M3", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
         ParameterSpec("mark_type_4", "Mark 4", "M4", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
-        ParameterSpec("mark_rotation_1", "Rot 1", "R1", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
-        ParameterSpec("mark_rotation_2", "Rot 2", "R2", "Marks", 0, minimum=0, maximum=360, suffix=" deg"),
-        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 180, minimum=0, maximum=360, suffix=" deg"),
-        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 270, minimum=0, maximum=360, suffix=" deg"),
+        ParameterSpec("mark_rotation_1", "Rot 1", "R1", "Marks", 0, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_2", "Rot 2", "R2", "Marks", 0, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 2, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 3, kind="int", minimum=0, maximum=3),
         ParameterSpec("mark_size", "Mark Size", "MS", "Marks", 20.0, minimum=1.0, maximum=500.0, suffix=" um"),
         ParameterSpec("mark_width", "Mark Width", "MW", "Marks", 5.0, minimum=0.1, maximum=100.0, suffix=" um"),
         ParameterSpec("device_region_margin_x", "Region Margin X", "RMx", "Marks", 0.0, minimum=0.0, maximum=1000.0, suffix=" um"),
@@ -2441,27 +2686,52 @@ HALL_COMPONENT_TOOL = ToolSpec(
     library_name="",
     pcell_name="",
     preview_renderer=render_hall_component,
-    preview_layers=[("channel", "Channel"), ("source_drain", "Contacts"), ("labels", "Labels"), ("alignment_marks", "Marks")],
+    preview_layers=[("channel", "Channel"), ("source_drain", "Contacts"), ("labels", "Labels"), ("alignment_marks", "Marks"), ("parameter_labels", "Notes")],
     insert_handler=_insert_hall_component,
     params=[
         ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "HallBar_Device", kind="string"),
         ParameterSpec("x", "Center X", "Cx", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
         ParameterSpec("y", "Center Y", "Cy", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
-        ParameterSpec("label_text", "Label Text", "Lbl", "Labels", "HallBar", kind="string"),
+        ParameterSpec("label_text", "Label Text", "Lbl", "Labels", "HB_D1", kind="string"),
         ParameterSpec("show_param_label", "Show Param Label", "PL", "Labels", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("label_size", "Label Size", "LS", "Labels", 20.0, minimum=1.0, maximum=500.0, suffix=" um"),
+        ParameterSpec("label_anchor", "Label Anchor", "LA", "Labels", "left_top", kind="choice", choices=[("left_top", "left_top"), ("left_bottom", "left_bottom"), ("right_top", "right_top"), ("right_bottom", "right_bottom"), ("center", "center")]),
+        ParameterSpec("label_offset_x", "Label Offset X", "LOx", "Labels", 5.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("label_offset_y", "Label Offset Y", "LOy", "Labels", -23.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("electrode_text_label", "Electrode Text", "ET", "Labels", 0, kind="choice", choices=[("true", True), ("false", False)]),
         ParameterSpec("bar_length", "Bar Length", "Lb", "Channel", 50.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("bar_width", "Bar Width", "Wb", "Channel", 10.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("v_protrude_width", "V Protrude Width", "VpW", "Channel", 3.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bar_width", "Bar Width", "Wb", "Channel", 20.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_protrude_width", "V Protrude Width", "VpW", "Channel", 5.0, minimum=0.1, maximum=5000.0, suffix=" um"),
         ParameterSpec("v_protrude_length", "V Protrude Length", "VpL", "Channel", 5.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("dist_v", "V Distance", "Dv", "Channel", 25.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("i_outer_length", "I Pad Length", "IL", "Contacts", 100.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("i_outer_width", "I Pad Width", "IW", "Contacts", 100.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("i_outer_offset_x", "I Offset X", "Ix", "Contacts", 150.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("dist_v", "V Distance", "Dv", "Channel", 15.5, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("device_margin_x", "Device Margin X", "DMx", "Marks", 170.0, minimum=0.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("device_margin_y", "Device Margin Y", "DMy", "Marks", 140.0, minimum=0.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_size", "Mark Size", "MS", "Marks", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("mark_width", "Mark Width", "MW", "Marks", 5.0, minimum=0.1, maximum=100.0, suffix=" um"),
+        ParameterSpec("mark_type_1", "Mark 1", "M1", "Marks", "sq_missing", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_2", "Mark 2", "M2", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_3", "Mark 3", "M3", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_4", "Mark 4", "M4", "Marks", "cross", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_rotation_1", "Rot 1", "R1", "Marks", 0, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_2", "Rot 2", "R2", "Marks", 0, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 2, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 1, kind="int", minimum=0, maximum=3),
+        ParameterSpec("i_inner_length", "I Inner Length", "IiL", "Current Contacts", 10.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("i_inner_width", "I Inner Width", "IiW", "Current Contacts", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="0 means auto from bar width"),
+        ParameterSpec("i_outer_length", "I Pad Length", "IL", "Contacts", 80.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("i_outer_width", "I Pad Width", "IW", "Contacts", 80.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("i_outer_chamfer", "I Chamfer", "ICh", "Contacts", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("i_outer_chamfer_type", "I Chamfer Type", "ICt", "Contacts", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("i_outer_offset_x", "I Offset X", "Ix", "Contacts", 110.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("i_outer_offset_y", "I Offset Y", "Iy", "Contacts", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("v_outer_length", "V Pad Length", "VL", "Contacts", 100.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("v_outer_width", "V Pad Width", "VW", "Contacts", 100.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("v_outer_offset_x", "V Offset X", "Vx", "Contacts", 60.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
-        ParameterSpec("v_outer_offset_y", "V Offset Y", "Vy", "Contacts", 120.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_inner_length", "V Inner Length", "ViL", "Voltage Contacts", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="0 means auto from protrude length"),
+        ParameterSpec("v_inner_width", "V Inner Width", "ViW", "Voltage Contacts", 3.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_outer_length", "V Pad Length", "VL", "Contacts", 80.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_outer_width", "V Pad Width", "VW", "Contacts", 80.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_outer_chamfer", "V Chamfer", "VCh", "Contacts", 10.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("v_outer_chamfer_type", "V Chamfer Type", "VCt", "Contacts", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("v_outer_offset_x", "V Offset X", "Vx", "Contacts", 45.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_outer_offset_y", "V Offset Y", "Vy", "Contacts", 90.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
     ],
 )
 
@@ -2472,23 +2742,44 @@ TLM_COMPONENT_TOOL = ToolSpec(
     library_name="",
     pcell_name="",
     preview_renderer=render_tlm_component,
-    preview_layers=[("channel", "Channel"), ("source_drain", "Pads / Fanout"), ("labels", "Labels"), ("alignment_marks", "Marks")],
+    preview_layers=[("channel", "Channel"), ("source_drain", "Pads / Fanout"), ("labels", "Labels"), ("alignment_marks", "Marks"), ("parameter_labels", "Notes")],
     insert_handler=_insert_tlm_component,
     params=[
         ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "TLM_Device", kind="string"),
         ParameterSpec("x", "Center X", "Cx", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
         ParameterSpec("y", "Center Y", "Cy", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
-        ParameterSpec("num_electrodes", "Electrode Count", "N", "Structure", 6, kind="int", minimum=3, maximum=100),
+        ParameterSpec("label_text", "Label Text", "Lbl", "Labels", "TLM", kind="string"),
+        ParameterSpec("num_electrodes", "Electrode Count", "N", "Structure", 8, kind="int", minimum=3, maximum=100),
         ParameterSpec("min_spacing", "Min Spacing", "Smin", "Structure", 1.0, minimum=0.01, maximum=1000.0, suffix=" um"),
         ParameterSpec("max_spacing", "Max Spacing", "Smax", "Structure", 20.0, minimum=0.01, maximum=5000.0, suffix=" um"),
-        ParameterSpec("distribution", "Distribution", "Dist", "Structure", "log", kind="choice", choices=[("log", "log"), ("linear", "linear"), ("exp", "exp"), ("inv", "inv")]),
-        ParameterSpec("inner_pad_length", "Inner Pad Length", "Li", "Pads", 0.5, minimum=0.01, maximum=1000.0, suffix=" um"),
+        ParameterSpec("distribution", "Distribution", "Dist", "Structure", "inv", kind="choice", choices=[("log", "log"), ("linear", "linear"), ("exp", "exp"), ("inv", "inv")]),
+        ParameterSpec("spacing_mode", "Spacing Mode", "SM", "Structure", "centered", kind="choice", choices=[("centered", "centered"), ("left_to_right", "left_to_right")]),
+        ParameterSpec("inner_pad_length", "Inner Pad Length", "Li", "Pads", 2.0, minimum=0.01, maximum=1000.0, suffix=" um"),
         ParameterSpec("inner_pad_width", "Inner Pad Width", "Wi", "Pads", 0.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="0 means auto"),
         ParameterSpec("outer_pad_length", "Outer Pad Length", "Lo", "Pads", 60.0, minimum=0.1, maximum=5000.0, suffix=" um"),
         ParameterSpec("outer_pad_width", "Outer Pad Width", "Wo", "Pads", 60.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("outer_pad_spacing", "Outer Pad Spacing", "Os", "Pads", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="0 means auto"),
         ParameterSpec("outer_pad_offset_y", "Outer Pad Offset Y", "Oy", "Pads", 100.0, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("outer_pad_chamfer_size", "Pad Chamfer", "Ch", "Pads", 6.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("outer_pad_chamfer_type", "Chamfer Type", "CT", "Pads", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("channel_length", "Channel Length", "Lch", "Channel", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="0 means auto"),
-        ParameterSpec("channel_width", "Channel Width", "Wch", "Channel", 5.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("channel_width", "Channel Width", "Wch", "Channel", 10.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("device_margin_x", "Device Margin X", "DMx", "Marks", 150.0, minimum=0.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("device_margin_y", "Device Margin Y", "DMy", "Marks", 140.0, minimum=0.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("add_alignment_mark", "Show Marks", "AM", "Marks", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("mark_size", "Mark Size", "MS", "Marks", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("mark_width", "Mark Width", "MW", "Marks", 2.0, minimum=0.1, maximum=100.0, suffix=" um"),
+        ParameterSpec("mark_type_1", "Mark 1", "M1", "Marks", "sq_missing", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_2", "Mark 2", "M2", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_3", "Mark 3", "M3", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_type_4", "Mark 4", "M4", "Marks", "L_shape", kind="choice", choices=[("double_square", "double_square"), ("square", "square"), ("diamond", "diamond"), ("triangle", "triangle"), ("cross", "cross"), ("circle", "circle"), ("L_shape", "L_shape"), ("T_shape", "T_shape"), ("sq_missing", "sq_missing"), ("cross_tri", "cross_tri")]),
+        ParameterSpec("mark_rotation_1", "Rot 1", "R1", "Marks", 2, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_2", "Rot 2", "R2", "Marks", 0, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_3", "Rot 3", "R3", "Marks", 2, kind="int", minimum=0, maximum=3),
+        ParameterSpec("mark_rotation_4", "Rot 4", "R4", "Marks", 3, kind="int", minimum=0, maximum=3),
+        ParameterSpec("label_size", "Label Size", "LS", "Labels", 20.0, minimum=1.0, maximum=500.0, suffix=" um"),
+        ParameterSpec("label_offset_x", "Label Offset X", "LOx", "Labels", 30.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("label_offset_y", "Label Offset Y", "LOy", "Labels", -10.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
     ],
 )
 
