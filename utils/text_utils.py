@@ -18,6 +18,7 @@ except (ImportError, AttributeError):
 
 from config import DEFAULT_UNIT_SCALE, DEFAULT_DBU
 from utils.geometry import GeometryUtils
+from utils.deplof_font import _glyph as DEPLOF_GLYPH, _indent as DEPLOF_INDENT, _width as DEPLOF_WIDTH
 
 class TextUtils:
     """文本工具类"""
@@ -162,6 +163,107 @@ class TextUtils:
     
         
         return polys_all
+
+    @staticmethod
+    def create_text_deplof(text, x, y, size_um=10, anchor='left_bottom', justify='left', line_pitch_ratio=1.5):
+        """
+        Create text polygons using the vendored DEPLOF polygon font.
+
+        The geometry matches the built-in polygon font style used by
+        ``gdsfactory.components.text()`` without depending on gdsfactory.
+        """
+        if not text:
+            return []
+
+        text = str(text)
+        scaling = float(size_um) / 1000.0
+        line_pitch = max(float(line_pitch_ratio), 0.1) * float(size_um)
+        line_regions = []
+
+        for line_index, line in enumerate(text.splitlines() or [text]):
+            xoffset = 0.0
+            yoffset = -line_index * line_pitch
+            polys = []
+            for char in line:
+                ascii_val = ord(char)
+                if char == " ":
+                    xoffset += 500.0 * scaling
+                    continue
+                if ascii_val not in DEPLOF_GLYPH:
+                    continue
+                for poly in DEPLOF_GLYPH[ascii_val]:
+                    if len(poly) < 3:
+                        continue
+                    points = [
+                        GeometryUtils.Point(
+                            int(round((xoffset + px * scaling) * TextUtils.UNIT_SCALE)),
+                            int(round((yoffset + py * scaling) * TextUtils.UNIT_SCALE)),
+                        )
+                        for px, py in poly
+                    ]
+                    if len(points) >= 2 and points[0] == points[-1]:
+                        points = points[:-1]
+                    if len(points) >= 3:
+                        polys.append(GeometryUtils.Polygon(points))
+                xoffset += (DEPLOF_WIDTH[ascii_val] + DEPLOF_INDENT[ascii_val]) * scaling
+
+            if not polys:
+                continue
+
+            if justify != 'left':
+                bbox = polys[0].bbox()
+                for poly in polys[1:]:
+                    other = poly.bbox()
+                    bbox = pya.Box(
+                        min(bbox.left, other.left),
+                        min(bbox.bottom, other.bottom),
+                        max(bbox.right, other.right),
+                        max(bbox.top, other.top)
+                    )
+                if justify == 'center':
+                    dx = int(round(-(bbox.left + bbox.right) / 2.0))
+                elif justify == 'right':
+                    dx = -bbox.right
+                else:
+                    dx = 0
+                if dx:
+                    polys = [poly.transformed(pya.Trans(dx, 0)) for poly in polys]
+
+            line_regions.extend(polys)
+
+        if not line_regions:
+            return []
+
+        bbox = line_regions[0].bbox()
+        for poly in line_regions[1:]:
+            other = poly.bbox()
+            bbox = pya.Box(
+                min(bbox.left, other.left),
+                min(bbox.bottom, other.bottom),
+                max(bbox.right, other.right),
+                max(bbox.top, other.top)
+            )
+
+        center_x = (bbox.left + bbox.right) / 2.0
+        center_y = (bbox.top + bbox.bottom) / 2.0
+        target_x = x * TextUtils.UNIT_SCALE
+        target_y = y * TextUtils.UNIT_SCALE
+        anchor_map = {
+            'left_top':      (bbox.left, bbox.top),
+            'left_center':   (bbox.left, center_y),
+            'left_bottom':   (bbox.left, bbox.bottom),
+            'center_top':    (center_x, bbox.top),
+            'center':        (center_x, center_y),
+            'center_bottom': (center_x, bbox.bottom),
+            'right_top':     (bbox.right, bbox.top),
+            'right_center':  (bbox.right, center_y),
+            'right_bottom':  (bbox.right, bbox.bottom),
+        }
+
+        anchor_x, anchor_y = anchor_map.get(anchor, anchor_map['left_bottom'])
+        dx = int(round(target_x - anchor_x))
+        dy = int(round(target_y - anchor_y))
+        return [poly.transformed(pya.Trans(dx, dy)) for poly in line_regions]
 
 # 测试部分
 if __name__ == "__main__":

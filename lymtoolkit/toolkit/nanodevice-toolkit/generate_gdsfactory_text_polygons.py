@@ -1,10 +1,13 @@
 import json
+import os
 import site
 import sys
 
 
 def _ensure_user_site():
     candidates = []
+    this_dir = os.path.abspath(os.path.dirname(__file__))
+    candidates.append(os.path.join(this_dir, "pydeps"))
     try:
         candidates.extend(site.getsitepackages())
     except Exception:
@@ -13,9 +16,13 @@ def _ensure_user_site():
         candidates.append(site.getusersitepackages())
     except Exception:
         pass
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        pyver = f"Python{sys.version_info.major}{sys.version_info.minor}"
+        candidates.append(os.path.join(appdata, "Python", pyver, "site-packages"))
 
     for path in candidates:
-        if path and path not in sys.path:
+        if path and os.path.isdir(path) and path not in sys.path:
             sys.path.append(path)
 
 

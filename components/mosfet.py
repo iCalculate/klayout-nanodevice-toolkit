@@ -39,23 +39,7 @@ from config import LAYER_DEFINITIONS, PROCESS_CONFIG, get_gds_path
 from utils.fanout_utils import draw_pad, draw_trapezoidal_fanout
 from utils.geometry import GeometryUtils
 from utils.mark_utils import MarkUtils
-
-
-_GF_CACHE = None
-_GF_IMPORT_ATTEMPTED = False
-
-
-def _get_gdsfactory():
-    global _GF_CACHE, _GF_IMPORT_ATTEMPTED
-    if _GF_IMPORT_ATTEMPTED:
-        return _GF_CACHE
-    _GF_IMPORT_ATTEMPTED = True
-    try:
-        import gdsfactory as gf
-        _GF_CACHE = gf
-    except Exception:
-        _GF_CACHE = None
-    return _GF_CACHE
+from utils.text_utils import TextUtils
 
 
 class MOSFET:
@@ -202,18 +186,57 @@ class MOSFET:
             "alignment_marks": LAYER_DEFINITIONS["alignment_layer1"]["id"],
         }
 
-    def _single_gate_inner_length(self):
-        return self.channel_length + 2.0 * self.gate_overlap
+    def _gate_inner_dimensions(self, width_ratio):
+        gate_along_flow = self.channel_length + 2.0 * self.gate_overlap
+        gate_cross_flow = self.channel_width * width_ratio
+        if self._is_vertical_flow():
+            return gate_cross_flow, gate_along_flow
+        return gate_along_flow, gate_cross_flow
 
-    def _single_gate_inner_width(self, width_ratio):
-        return self.channel_width * width_ratio
+    def _is_vertical_flow(self):
+        return str(self.fanout_direction).lower() == "vertical"
+
+    def _channel_box_dimensions(self):
+        if self._is_vertical_flow():
+            return self.channel_width, self.channel_length * self.channel_extension_ratio
+        return self.channel_length * self.channel_extension_ratio, self.channel_width
+
+    def _dielectric_box_dimensions(self):
+        diel_length = max(
+            self.channel_length * self.dielectric_extension_ratio,
+            self.channel_length + self.dielectric_margin,
+        )
+        diel_width = max(
+            self.channel_width * self.dielectric_extension_ratio,
+            self.channel_width + self.dielectric_margin,
+        )
+        if self._is_vertical_flow():
+            return diel_width, diel_length
+        return diel_length, diel_width
+
+    def _sd_inner_dimensions(self):
+        if self._is_vertical_flow():
+            return self.channel_width * self.source_drain_inner_width_ratio, self.channel_length
+        return self.channel_length, self.channel_width * self.source_drain_inner_width_ratio
+
+    def _sd_inner_centers(self):
+        if self._is_vertical_flow():
+            return (self.x, self.y - self.channel_length), (self.x, self.y + self.channel_length)
+        return (self.x - self.channel_length, self.y), (self.x + self.channel_length, self.y)
+
+    def _sd_outer_centers(self):
+        return (
+            (self.x - self.source_drain_outer_offset_x, self.y + self.source_drain_outer_offset_y),
+            (self.x + self.source_drain_outer_offset_x, self.y + self.source_drain_outer_offset_y),
+        )
 
     def _append_sd_shapes(self, name, inner_center, outer_center):
         self._log_info(f"Building {name} inner pad at {inner_center} and outer pad at {outer_center}")
+        inner_length, inner_width = self._sd_inner_dimensions()
         inner_pad = draw_pad(
             center=inner_center,
-            length=self.channel_length,
-            width=self.channel_width * self.source_drain_inner_width_ratio,
+            length=inner_length,
+            width=inner_width,
             chamfer_size=0 if self.source_drain_inner_chamfer == "none" else self.chamfer_size,
             chamfer_type=self.source_drain_inner_chamfer,
         )
@@ -236,10 +259,11 @@ class MOSFET:
         self._log_info(
             f"Building {layer_name} with inner width ratio={width_ratio}, outer offset=({outer_offset_x}, {outer_offset_y})"
         )
+        inner_length, inner_width = self._gate_inner_dimensions(width_ratio)
         inner_pad = draw_pad(
             center=(self.x, self.y),
-            length=self._single_gate_inner_length(),
-            width=self._single_gate_inner_width(width_ratio),
+            length=inner_length,
+            width=inner_width,
             chamfer_size=0 if inner_chamfer == "none" else self.chamfer_size,
             chamfer_type=inner_chamfer,
         )
@@ -264,29 +288,20 @@ class MOSFET:
         text = str(text)
         self._log_info(f"Generating label text '{text}' at ({x}, {y})")
 
-        gf = _get_gdsfactory()
-        if gf is not None:
-            try:
-                self._log_info(f"Using gdsfactory text for '{text}'")
-                text_component = gf.components.text(
-                    text=text,
-                    size=self.label_size,
-                    justify="left",
-                    layer=(self.get_layer_ids()["device_label"], 0),
-                )
-                bbox = text_component.bbox
-                offset_x = x - float(bbox[0][0])
-                offset_y = y - float(bbox[0][1])
-                polygons = []
-                for polygon in text_component.get_polygons():
-                    points = [pya.Point(int(px + offset_x), int(py + offset_y)) for px, py in polygon]
-                    if len(points) >= 3:
-                        polygons.append(pya.Polygon(points))
-                if polygons:
-                    self._log_info(f"gdsfactory text generated {len(polygons)} polygons for '{text}'")
-                    return polygons
-            except Exception:
-                self._log_info(f"gdsfactory text failed for '{text}', falling back to KLayout text generator")
+        try:
+            polygons = TextUtils.create_text_deplof(
+                text=text,
+                x=x,
+                y=y,
+                size_um=self.label_size,
+                anchor="left_bottom",
+                justify="left",
+            )
+            if polygons:
+                self._log_info(f"DEPLOF text generated {len(polygons)} polygons for '{text}'")
+                return polygons
+        except Exception:
+            self._log_info(f"DEPLOF text failed for '{text}', falling back to KLayout text generator")
 
         try:
             self._log_info(f"Using KLayout text generator for '{text}'")
@@ -435,12 +450,12 @@ class MOSFET:
         ch_l = self.channel_length
 
         self._log_info("Generating channel geometry")
+        channel_box_w, channel_box_h = self._channel_box_dimensions()
         self.shapes["channel"] = [
-            self._box_um(x, y, ch_l * self.channel_extension_ratio, ch_w, center=True)
+            self._box_um(x, y, channel_box_w, channel_box_h, center=True)
         ]
 
-        diel_w = max(ch_l * self.dielectric_extension_ratio, ch_l + self.dielectric_margin)
-        diel_h = max(ch_w * self.dielectric_extension_ratio, ch_w + self.dielectric_margin)
+        diel_w, diel_h = self._dielectric_box_dimensions()
         self._log_info(f"Generating dielectric geometry with size=({diel_w}, {diel_h})")
         self.shapes["bottom_dielectric"] = [self._box_um(x, y, diel_w, diel_h, center=True)]
         self.shapes["top_dielectric"] = [self._box_um(x, y, diel_w, diel_h, center=True)]
@@ -464,27 +479,10 @@ class MOSFET:
 
         if self.enable_source_drain:
             self._log_info(f"Generating source/drain with fanout_direction={self.fanout_direction}")
-            if self.fanout_direction == "vertical":
-                source_outer = (
-                    x - ch_l,
-                    y + self.source_drain_outer_offset_y + self.source_drain_outer_offset_x * 0.25,
-                )
-                drain_outer = (
-                    x + ch_l,
-                    y + self.source_drain_outer_offset_y + self.source_drain_outer_offset_x * 0.25,
-                )
-            else:
-                source_outer = (
-                    x - ch_l / 2.0 - self.source_drain_outer_offset_x,
-                    y + self.source_drain_outer_offset_y,
-                )
-                drain_outer = (
-                    x + ch_l / 2.0 + self.source_drain_outer_offset_x,
-                    y + self.source_drain_outer_offset_y,
-                )
-
-            self._append_sd_shapes("source", (x - ch_l, y), source_outer)
-            self._append_sd_shapes("drain", (x + ch_l, y), drain_outer)
+            source_inner, drain_inner = self._sd_inner_centers()
+            source_outer, drain_outer = self._sd_outer_centers()
+            self._append_sd_shapes("source", source_inner, source_outer)
+            self._append_sd_shapes("drain", drain_inner, drain_outer)
 
         if self.enable_top_gate:
             self._append_single_gate(

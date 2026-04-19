@@ -18,24 +18,7 @@ from config import LAYER_DEFINITIONS, PROCESS_CONFIG
 from utils.fanout_utils import draw_pad, draw_trapezoidal_fanout
 from utils.geometry import GeometryUtils
 from utils.mark_utils import MarkUtils
-
-
-_GF_CACHE = None
-_GF_IMPORT_ATTEMPTED = False
-
-
-def _get_gdsfactory():
-    global _GF_CACHE, _GF_IMPORT_ATTEMPTED
-    if _GF_IMPORT_ATTEMPTED:
-        return _GF_CACHE
-    _GF_IMPORT_ATTEMPTED = True
-    try:
-        import gdsfactory as gf
-
-        _GF_CACHE = gf
-    except Exception:
-        _GF_CACHE = None
-    return _GF_CACHE
+from utils.text_utils import TextUtils
 
 
 class TLM:
@@ -111,29 +94,20 @@ class TLM:
             return []
         text = str(text)
         text_size = float(size if size is not None else self.label_size)
-        layer_id = self._layer_ids[layer_key]
 
-        gf = _get_gdsfactory()
-        if gf is not None:
-            try:
-                text_component = gf.components.text(
-                    text=text,
-                    size=text_size,
-                    justify="left",
-                    layer=(layer_id, 0),
-                )
-                bbox = text_component.bbox
-                offset_x = x - float(bbox[0][0])
-                offset_y = y - float(bbox[0][1])
-                polygons = []
-                for polygon in text_component.get_polygons():
-                    points = [pya.Point(int(px + offset_x), int(py + offset_y)) for px, py in polygon]
-                    if len(points) >= 3:
-                        polygons.append(pya.Polygon(points))
-                if polygons:
-                    return polygons
-            except Exception:
-                pass
+        try:
+            polygons = TextUtils.create_text_deplof(
+                text=text,
+                x=x,
+                y=y,
+                size_um=text_size,
+                anchor="left_bottom",
+                justify="left",
+            )
+            if polygons:
+                return polygons
+        except Exception:
+            pass
 
         try:
             generator = pya.TextGenerator.default_generator()

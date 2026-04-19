@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import pya
 from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import QColor, QBrush, QFont, QPainter, QPainterPath, QPen
+from PyQt5.QtGui import QColor, QBrush, QFont, QFontDatabase, QFontMetricsF, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -60,7 +60,7 @@ TEXT_POLYGON_SCRIPT = os.path.join(
 )
 
 from config import DEFAULT_DBU, LAYER_DEFINITIONS
-
+from utils.deplof_font import _glyph as DEPLOF_GLYPH, _indent as DEPLOF_INDENT, _width as DEPLOF_WIDTH
 def _discover_layer_map_path():
     candidates = [
         os.path.join(ROOT_DIR, "lymtoolkit", "pdk", "layers", "layer_map.lyp"),
@@ -94,6 +94,7 @@ PREVIEW_LAYER_IDS = {
     "labels": [LAYER_DEFINITIONS["labels"]["id"]],
 }
 DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hall_component", "tlm_component"}
+_FONT_FAMILY_CACHE = {}
 
 
 @dataclass
@@ -398,6 +399,25 @@ class ToolkitDialog(QDialog):
         self._refresh_preview()
 
     def _make_control(self, param):
+        if param.kind == "font_path":
+            holder = QWidget()
+            layout = QHBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(6)
+            text = QLineEdit()
+            text.setText(str(param.default))
+            text.textChanged.connect(self._refresh_preview)
+            if param.tooltip:
+                text.setToolTip(param.tooltip)
+            button = QPushButton("Open")
+            button.setFixedWidth(58)
+            button.clicked.connect(lambda _=False, field=text: self._browse_font_path(field))
+            layout.addWidget(text, 1)
+            layout.addWidget(button, 0)
+            holder.setLayout(layout)
+            holder._line_edit = text
+            return holder
+
         if param.kind == "string":
             text = QLineEdit()
             text.setText(str(param.default))
@@ -466,7 +486,9 @@ class ToolkitDialog(QDialog):
         values = {}
         for param in self._current_tool().params:
             control = self.controls[param.key]
-            if param.kind == "string":
+            if param.kind == "font_path":
+                values[param.key] = control._line_edit.text()
+            elif param.kind == "string":
                 values[param.key] = control.text()
             elif param.kind == "layer_choice":
                 values[param.key] = control.currentData()
@@ -479,6 +501,10 @@ class ToolkitDialog(QDialog):
     def _set_control_value(self, param, value):
         control = self.controls.get(param.key)
         if control is None or value is None:
+            return
+
+        if param.kind == "font_path":
+            control._line_edit.setText(str(value))
             return
 
         if param.kind == "string":
@@ -503,6 +529,20 @@ class ToolkitDialog(QDialog):
             control.setValue(float(value))
         except Exception:
             return
+
+    def _browse_font_path(self, field):
+        current = field.text().strip()
+        start_dir = _default_font_directory()
+        if current and os.path.exists(current):
+            start_dir = os.path.dirname(current)
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select TrueType Font",
+            start_dir,
+            "Font Files (*.ttf *.otf *.ttc);;All Files (*)",
+        )
+        if file_path:
+            field.setText(file_path)
 
     def _config_payload(self):
         tool = self._current_tool()
@@ -1303,52 +1343,134 @@ def render_nanodevice_fet(scene, values, visible_layers=None):
             )
 
 
+def _default_font_directory():
+    windir = os.environ.get("WINDIR", "C:/Windows")
+    return os.path.join(windir, "Fonts")
+
+
+def _font_family_from_path(font_path):
+    path = os.path.normpath(str(font_path or "").strip())
+    if path in _FONT_FAMILY_CACHE:
+        return _FONT_FAMILY_CACHE[path]
+
+    family = "Segoe UI"
+    if path and os.path.exists(path):
+        font_id = QFontDatabase.addApplicationFont(path)
+        if font_id >= 0:
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if families:
+                family = families[0]
+
+    _FONT_FAMILY_CACHE[path] = family
+    return family
+
+
+def _build_truetype_text_path(values):
+    text = values.get("text", "") or "Text"
+    size_um = max(float(values.get("size_um", 10.0)), 0.1)
+    x = float(values.get("x", 0.0))
+    y = float(values.get("y", 0.0))
+    anchor = str(values.get("anchor", "center") or "center")
+    font_path = str(values.get("font_path", os.path.join(_default_font_directory(), "arial.ttf")))
+    spacing_um = max(float(values.get("spacing_um", 0.0)), 0.0)
+
+    font = QFont(_font_family_from_path(font_path))
+    font.setStyleStrategy(QFont.PreferAntialias)
+    font.setPointSizeF(max(size_um * 0.55, 1.0))
+    metrics = QFontMetricsF(font)
+    spacing_px = spacing_um * 0.55
+
+    path = QPainterPath()
+    cursor_x = 0.0
+    for char in text:
+        char_path = QPainterPath()
+        char_path.addText(0.0, 0.0, font, char)
+        char_bounds = char_path.boundingRect()
+        path.addPath(char_path.translated(cursor_x - char_bounds.left(), 0.0))
+        cursor_x += metrics.horizontalAdvance(char) + spacing_px
+
+    bounds = path.boundingRect()
+    anchor_x, anchor_y = _anchor_offset(bounds, anchor)
+    return path.translated(x - anchor_x, y - anchor_y)
+
+
+def _build_deplof_text_path(values):
+    text = values.get("text", "") or "Text"
+    size_um = max(float(values.get("size_um", 10.0)), 0.1)
+    x = float(values.get("x", 0.0))
+    y = float(values.get("y", 0.0))
+    anchor = str(values.get("anchor", "center") or "center")
+    justify = str(values.get("justify", "left") or "left").lower()
+    scaling = size_um / 1000.0
+
+    path = QPainterPath()
+    line_paths = []
+    yoffset = 0.0
+    for line in text.split("\n"):
+        line_path = QPainterPath()
+        xoffset = 0.0
+        for char in line:
+            ascii_val = ord(char)
+            if char == " ":
+                xoffset += 500.0 * scaling
+                continue
+            if ascii_val not in DEPLOF_GLYPH:
+                continue
+            for poly in DEPLOF_GLYPH[ascii_val]:
+                if not poly:
+                    continue
+                poly_path = QPainterPath()
+                first_x, first_y = poly[0]
+                poly_path.moveTo(first_x * scaling + xoffset, -(first_y * scaling + yoffset))
+                for px, py in poly[1:]:
+                    poly_path.lineTo(px * scaling + xoffset, -(py * scaling + yoffset))
+                poly_path.closeSubpath()
+                line_path.addPath(poly_path)
+            xoffset += (DEPLOF_WIDTH[ascii_val] + DEPLOF_INDENT[ascii_val]) * scaling
+
+        bounds = line_path.boundingRect()
+        if justify == "center":
+            line_path = line_path.translated(-bounds.center().x(), 0.0)
+        elif justify == "right":
+            line_path = line_path.translated(-bounds.right(), 0.0)
+        line_paths.append(line_path)
+        yoffset += 1500.0 * scaling
+
+    for line_path in line_paths:
+        path.addPath(line_path)
+
+    bounds = path.boundingRect()
+    anchor_x, anchor_y = _anchor_offset(bounds, anchor)
+    return path.translated(x - anchor_x, y - anchor_y)
+
+
+def _build_text_path(values):
+    engine = str(values.get("font_engine", "truetype") or "truetype").lower()
+    if engine == "deplof":
+        return _build_deplof_text_path(values)
+    return _build_truetype_text_path(values)
+
+
+def _truetype_text_shapes(values, dbu=DEFAULT_DBU):
+    path = _build_text_path(values)
+    shapes = []
+    for polygon in path.toFillPolygons():
+        points = [pya.Point(int(round(point.x() / dbu)), int(round(-point.y() / dbu))) for point in polygon]
+        if len(points) >= 2 and points[0] == points[-1]:
+            points = points[:-1]
+        if len(points) >= 3:
+            shapes.append(pya.Polygon(points))
+    return shapes
+
+
 def render_gdsfactory_text(scene, values, visible_layers=None):
     visible_layers = visible_layers or {"labels": True}
     if not visible_layers.get("labels", visible_layers.get("text", True)):
         return
 
-    text = values["text"] or "Text"
     pen = QPen(QColor("#6cc0ff"), 0)
     brush = QBrush(QColor(108, 192, 255, 70))
-    backend = _text_backend_mode(values)
-    if backend in ("auto", "gdsfactory"):
-        try:
-            payload = _run_external_text_polygon_script(text, max(values["size_um"], 0.1), "left")
-            for path in _text_payload_to_paths(payload, values["x"], values["y"]):
-                _draw_path(scene, path, pen, brush)
-            return
-        except Exception as exc:
-            if backend == "gdsfactory":
-                raise RuntimeError(f"gdsfactory text generation failed: {exc}") from exc
-
-    text_region = _build_klayout_text_region(
-        text,
-        max(values["size_um"], 0.1),
-        values["x"],
-        values["y"],
-        0.001,
-    )
-
-    path = QPainterPath()
-    path.setFillRule(Qt.OddEvenFill)
-    for polygon in text_region.each():
-        hull = [QPointF(point.x * 0.001, -point.y * 0.001) for point in polygon.each_point_hull()]
-        if len(hull) < 3:
-            continue
-        path.moveTo(hull[0])
-        for pt in hull[1:]:
-            path.lineTo(pt)
-        path.closeSubpath()
-        for hole_index in range(polygon.holes()):
-            hole = [QPointF(point.x * 0.001, -point.y * 0.001) for point in polygon.each_point_hole(hole_index)]
-            if len(hole) < 3:
-                continue
-            path.moveTo(hole[0])
-            for pt in hole[1:]:
-                path.lineTo(pt)
-            path.closeSubpath()
-    _draw_path(scene, path, pen, brush)
+    _draw_path(scene, _build_text_path(values), pen, brush)
 
 
 def _anchor_offset(bounds, anchor):
@@ -1758,25 +1880,8 @@ def _build_klayout_text_region(text, size_um, center_x, center_y, dbu=0.001):
 def _insert_gdsfactory_text(layout, top_cell, values):
     layer, datatype = values["layer_spec"]
     layer_index = layout.layer(int(layer), int(datatype))
-    backend = _text_backend_mode(values)
-    if backend in ("auto", "gdsfactory"):
-        try:
-            payload = _run_external_text_polygon_script(values["text"] or "Text", max(values["size_um"], 0.1), "left")
-            region = _text_payload_to_region(payload, values["x"], values["y"])
-            top_cell.shapes(layer_index).insert(region)
-            return
-        except Exception as exc:
-            if backend == "gdsfactory":
-                raise RuntimeError(f"gdsfactory text generation failed: {exc}") from exc
-
-    region = _build_klayout_text_region(
-        values["text"] or "Text",
-        max(values["size_um"], 0.1),
-        values["x"],
-        values["y"],
-        layout.dbu,
-    )
-    top_cell.shapes(layer_index).insert(region)
+    for shape in _truetype_text_shapes(values):
+        top_cell.shapes(layer_index).insert(shape)
 
 
 def _layer_insert_params(param_key):
@@ -1841,7 +1946,8 @@ def _run_external_text_polygon_script(text, size_um, justify="left"):
 
     raise RuntimeError(
         "Unable to run external gdsfactory text generator. "
-        "Set NANODEVICE_EXTERNAL_PYTHON or install gdsfactory in an external Python environment.\n"
+        "Set NANODEVICE_EXTERNAL_PYTHON or install gdsfactory in an external Python environment. "
+        "You can also install it into the local pydeps folder beside generate_gdsfactory_text_polygons.py.\n"
         + "\n".join(errors)
     )
 
@@ -1951,11 +2057,33 @@ GDSFACTORY_TEXT_TOOL = ToolSpec(
     preview_layers=[("labels", "Text")],
     insert_handler=_insert_gdsfactory_text,
     params=[
-        ParameterSpec("text", "Text", "Txt", "Placement", "ABC123", kind="string", tooltip="Text rendered with external Python + gdsfactory."),
-        ParameterSpec("x", "Center X", "Cx", "Placement", 0.0, minimum=-1000.0, maximum=1000.0, suffix=" um"),
-        ParameterSpec("y", "Center Y", "Cy", "Placement", 0.0, minimum=-1000.0, maximum=1000.0, suffix=" um"),
-        ParameterSpec("backend", "Backend", "BE", "Geometry", "auto", kind="choice", choices=[("auto", "auto"), ("gdsfactory", "gdsfactory"), ("klayout", "klayout")], tooltip="auto = prefer external gdsfactory then fallback, gdsfactory = require external polygon generator, klayout = use built-in KLayout text."),
-        ParameterSpec("size_um", "Text Size", "Htxt", "Geometry", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("text", "Text", "Txt", "Content", "ABC123", kind="string", tooltip="Text rendered from the specified TrueType font."),
+        ParameterSpec("x", "Anchor X", "X", "Placement", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("y", "Anchor Y", "Y", "Placement", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("font_engine", "Font Engine", "FE", "Style", "truetype", kind="choice", choices=[("truetype", "truetype"), ("deplof_polygon", "deplof")], tooltip="truetype uses a selected TTF/OTF font. deplof_polygon reproduces the vendored gdsfactory DEPLOF polygon font."),
+        ParameterSpec("size_um", "Font Size", "H", "Style", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("font_path", "Font Path", "Font", "Style", os.path.join(_default_font_directory(), "OCRAEXT.TTF"), kind="font_path", tooltip="Path to the TrueType font used for polygon generation."),
+        ParameterSpec("spacing_um", "Char Spacing", "Sp", "Style", 0.0, minimum=0.0, maximum=100.0, suffix=" um"),
+        ParameterSpec("justify", "Justify", "J", "Style", "left", kind="choice", choices=[("left", "left"), ("center", "center"), ("right", "right")]),
+        ParameterSpec(
+            "anchor",
+            "Anchor",
+            "Anc",
+            "Placement",
+            "center",
+            kind="choice",
+            choices=[
+                ("left_top", "left_top"),
+                ("center_top", "center_top"),
+                ("right_top", "right_top"),
+                ("left_center", "left_center"),
+                ("center", "center"),
+                ("right_center", "right_center"),
+                ("left_bottom", "left_bottom"),
+                ("center_bottom", "center_bottom"),
+                ("right_bottom", "right_bottom"),
+            ],
+        ),
         ParameterSpec("layer_spec", "Layer", "L", "Layer", (10, 0), kind="layer_choice"),
     ],
 )
@@ -1974,7 +2102,7 @@ NANODEVICE_TEXT_TOOL = ToolSpec(
         ParameterSpec("x", "Anchor X", "X", "Placement", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("y", "Anchor Y", "Y", "Placement", 0.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("size_um", "Font Size", "H", "Style", 10.0, minimum=0.1, maximum=1000.0, suffix=" um"),
-        ParameterSpec("font_path", "Font Path", "Font", "Style", "C:/Windows/Fonts/OCRAEXT.TTF", kind="string"),
+        ParameterSpec("font_path", "Font Path", "Font", "Style", os.path.join(_default_font_directory(), "OCRAEXT.TTF"), kind="font_path"),
         ParameterSpec("spacing_um", "Char Spacing", "Sp", "Style", 0.0, minimum=0.0, maximum=100.0, suffix=" um"),
         ParameterSpec(
             "anchor",
