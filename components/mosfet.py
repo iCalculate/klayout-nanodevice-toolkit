@@ -123,8 +123,8 @@ class MOSFET:
         self.mark_rotations = [
             int(kwargs.get("mark_rotation_1", 0)),
             int(kwargs.get("mark_rotation_2", 0)),
-            int(kwargs.get("mark_rotation_3", 180)),
-            int(kwargs.get("mark_rotation_4", 270)),
+            int(kwargs.get("mark_rotation_3", 2)),
+            int(kwargs.get("mark_rotation_4", 3)),
         ]
         self.label_font = kwargs.get("label_font", "C:/Windows/Fonts/OCRAEXT.TTF")
         self.label_size = kwargs.get("label_size", 20.0)
@@ -398,12 +398,11 @@ class MOSFET:
         ]
         for idx in range(4):
             mark_type = self.mark_types[idx] if idx < len(self.mark_types) else "square"
-            rotation_deg = self.mark_rotations[idx] if idx < len(self.mark_rotations) else 0
-            rotation = (rotation_deg // 90) % 4
+            rotation = int(self.mark_rotations[idx]) % 4 if idx < len(self.mark_rotations) else 0
             cx, cy = center_positions[idx]
             px, py = corner_positions[idx]
             self._log_info(
-                f"Creating mark {idx + 1}: type={mark_type}, rotation_deg={rotation_deg}, center=({cx}, {cy}), corner=({px}, {py})"
+                f"Creating mark {idx + 1}: type={mark_type}, rotation={rotation}, center=({cx}, {cy}), corner=({px}, {py})"
             )
             if mark_type == "cross":
                 mx, my = center_from_corner(idx, px, py)
@@ -667,8 +666,8 @@ if __name__ == "__main__":
         "mark_type_4": "L_shape",               # Bottom-right mark
         "mark_rotation_1": 0,                   # Chessy rotation
         "mark_rotation_2": 0,                 # L opens outward at top-right
-        "mark_rotation_3": 180,                  # L opens outward at bottom-left
-        "mark_rotation_4": 270,                   # L opens outward at bottom-right
+        "mark_rotation_3": 2,                  # quarter-turns
+        "mark_rotation_4": 3,                   # quarter-turns
 
         # Label rendering
         "label_font": "C:/Windows/Fonts/OCRAEXT.TTF",  # Font path used by the project
