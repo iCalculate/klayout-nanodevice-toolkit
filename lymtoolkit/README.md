@@ -15,7 +15,11 @@ lymtoolkit/
   install_lymtoolkit.bat      # Install toolkit into KLayout salt
   install_pdk.bat             # Install LabPDK into KLayout tech
   install_klayout_setup.bat   # Restore saved KLayout user setup
-  README.md
+README.md
+
+Included toolkit modules:
+- `nanodevice-toolkit`: NanoDevice GUI, toolbar, and PCells
+- `nanorouting-toolkit`: NanoRouting GUI, toolbar, preview, selection import, and routing PCells
 ```
 
 ## Installers

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>NanoRouting GUI</description>
+ <version>v0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>1</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name>NanoDevice</group-name>
+ <menu-path>tools_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from nanorouting_toolkit import launch_nanorouting_dialog
+
+launch_nanorouting_dialog()
+</text>
+</klayout-macro>

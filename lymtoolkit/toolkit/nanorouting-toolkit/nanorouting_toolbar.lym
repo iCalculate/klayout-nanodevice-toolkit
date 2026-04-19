@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>NanoRouting Toolbar Button</description>
+ <version>v0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>2</priority>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import os
+import sys
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QAction, QApplication, QMainWindow, QToolBar
+
+this_dir = os.path.dirname(__file__)
+if this_dir not in sys.path:
+    sys.path.insert(0, this_dir)
+
+from nanorouting_toolkit import launch_nanorouting_dialog
+
+_toolbar_refs = globals().setdefault("_nanorouting_toolbar_refs", {})
+
+
+def _find_main_window():
+    app = QApplication.instance()
+    if app is None:
+        return None
+    for widget in app.topLevelWidgets():
+        if isinstance(widget, QMainWindow):
+            return widget
+    return None
+
+
+def _install_toolbar_button():
+    main_window = _find_main_window()
+    if main_window is None:
+        return
+
+    toolbar_name = "NanoDevice Toolkit"
+    action_name = "nanorouting_toolkit_action"
+
+    existing_toolbar = main_window.findChild(QToolBar, toolbar_name)
+    if existing_toolbar is None:
+        existing_toolbar = QToolBar(toolbar_name, main_window)
+        existing_toolbar.setObjectName(toolbar_name)
+        main_window.addToolBar(existing_toolbar)
+
+    existing_toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+
+    for action in existing_toolbar.actions():
+        if action.objectName() == action_name:
+            _toolbar_refs["toolbar"] = existing_toolbar
+            _toolbar_refs["action"] = action
+            return
+
+    icon_candidates = [
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "NanoRoutingLogo.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "NanoRoutingLogo.ico")),
+    ]
+    icon_path = next((path for path in icon_candidates if os.path.exists(path)), "")
+    action = QAction(QIcon(icon_path) if icon_path else QIcon(), "NanoRouting", main_window)
+    action.setObjectName(action_name)
+    action.setIconText("")
+    action.setToolTip("Open NanoRouting")
+    action.triggered.connect(launch_nanorouting_dialog)
+    existing_toolbar.addAction(action)
+
+    _toolbar_refs["toolbar"] = existing_toolbar
+    _toolbar_refs["action"] = action
+
+
+_install_toolbar_button()
+</text>
+</klayout-macro>

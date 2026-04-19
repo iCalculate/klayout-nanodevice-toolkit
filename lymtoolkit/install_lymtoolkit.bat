@@ -115,6 +115,8 @@ call :headline "Installed content"
 call :bullet "NanoDeviceLib PCells"
 call :bullet "NanoDeviceToolkitLib PCells"
 call :bullet "Unified NanoDevice Toolkit GUI"
+call :bullet "NanoRoutingLib PCells"
+call :bullet "NanoRouting GUI and toolbar button"
 call :bullet "config.py, utils, components, and PDK runtime files"
 echo.
 call :headline "Next step"
