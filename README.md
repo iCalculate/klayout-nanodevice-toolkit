@@ -1,146 +1,96 @@
-# KLayout 纳米器件版图工具包
-
-[![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
-[![KLayout](https://img.shields.io/badge/KLayout-0.28+-green.svg)](https://www.klayout.de/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+# KLayout Nanodevice Toolkit
 
 <p align="center">
-  <img src="lymtoolkit/assets/logo.ico" alt="KLayout Nanodevice Toolkit Logo" width="300"/>
+  <a href="docs/README_CN.md"><strong>中文文档</strong></a>
+  ·
+  <a href="docs/README_EN.md"><strong>English Mirror</strong></a>
 </p>
 
-<h1 align="center">KLayout Nanodevice Toolkit</h1>
 <p align="center">
-  一个模块化、专业的 Python 工具包，用于在 KLayout 中快速生成半导体器件版图。
+  <img src="lymtoolkit/assets/logo.ico" alt="KLayout Nanodevice Toolkit logo" width="120" />
 </p>
 
----
+<p align="center">
+  <strong>A Python-first toolkit for generating semiconductor device layouts, parameter sweeps, grayscale patterns, and KLayout macros from one workspace.</strong>
+</p>
 
-## 📋 目录
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+" /></a>
+  <a href="https://www.klayout.de/"><img src="https://img.shields.io/badge/KLayout-0.27%2B-2E8B57" alt="KLayout 0.27+" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-F4B400" alt="MIT License" /></a>
+</p>
 
-- [快速开始](#快速开始)
-- [项目结构](#项目结构)
-- [核心功能](#核心功能)
-- [使用示例](#使用示例)
-- [输出文件](#输出文件)
-- [许可证](#许可证)
+## Why This Repo
 
----
+This project brings together several layout workflows that are usually scattered across scripts, macros, and one-off experiments:
 
-## 🚀 快速开始
+- Parametric device generation for MOSFET, FET, Hall bar, TLM, meander, and electrode structures
+- Array and parameter-scan generation with export to `output/`
+- GUI-based layout configuration through `gui_interface.py`
+- KLayout macro and PDK tooling under `lymtoolkit/`
+- Grayscale and image-based pattern generation for nanofabrication workflows
 
-### 1. 环境配置
+If you want one place to prototype, generate, and iterate on device layouts in Python while still supporting KLayout-native workflows, this repo is the working surface.
 
-创建 conda 环境：
+## At A Glance
+
+| Workflow | Entry Point | What It Does |
+| --- | --- | --- |
+| Python scripting | `main.py`, `layout_generator.py` | Build device arrays and save GDS layouts programmatically |
+| Desktop GUI | `gui_interface.py` | Configure array size, scan parameters, device options, and output path |
+| KLayout macros | `lymtoolkit/install_lymtoolkit.bat` | Install toolkit macros into KLayout for interactive use |
+| PDK tooling | `lymtoolkit/PDK/` | Keep technology files, layers, examples, and registration macros together |
+| Grayscale patterns | `components/greyscale/` | Generate grayscale lithography assets and image-derived structures |
+
+## Visual Preview
+
+<p align="center">
+  <img src="lymtoolkit/assets/singleFET.png" alt="Single FET example" width="31%" />
+  <img src="lymtoolkit/assets/arrayFET.png" alt="FET array example" width="31%" />
+  <img src="lymtoolkit/assets/arrayTLM.png" alt="TLM array example" width="31%" />
+</p>
+
+## Quick Start
+
+### 1. Create the environment
+
 ```bash
 conda env create -f environment.yml
 conda activate klayout-nanodevice-toolkit
-```
-
-> 💡 **提示**: 如果 Python 11 不可用，请修改 `environment.yml` 中的 `python=11` 为 `python=3.11` 或 `python=3.12`
-
-### 2. 验证安装
-
-```python
-python --version
-python -c "import gdsfactory; print('gdsfactory 已安装')"
-```
-
-### 3. 安装 Python 依赖
-
-```bash
 pip install -r requirements.txt
 ```
 
----
+The checked-in `environment.yml` already targets `python=3.11`, so the old Python-version workaround is no longer needed.
 
-## 📁 项目结构
+### 2. Sanity-check the install
 
-```
-klayout-nanodevice-toolkit/
-├── components/              # 器件组件模块
-│   ├── fet.py              # FET 器件生成器
-│   ├── hallbar.py          # Hall bar 器件生成器
-│   ├── tlm.py              # TLM 结构生成器
-│   ├── electrode.py        # 电极与焊盘生成器
-│   ├── resolution.py       # 分辨率测试图案
-│   ├── meander.py          # 蜿蜒结构
-│   ├── greyscale/          # 灰度图像生成器
-│   ├── MyLayoutTemplate/   # 自定义版图模板
-│   └── RaithEBL/           # Raith EBL 相关
-├── utils/                  # 工具函数库
-│   ├── geometry.py         # 几何操作
-│   ├── fanout_utils.py     # 扇出布线
-│   ├── mark_utils.py       # 对准标记
-│   ├── text_utils.py       # 文本标签
-│   ├── digital_utils.py    # 数字图案
-│   ├── QRcode_utils.py     # 二维码
-│   ├── alignment_utils.py  # 对准工具
-│   └── ...
-├── lymtoolkit/             # KLayout 宏与插件
-│   ├── toolkit/            # NanoDeviceLib 与统一 GUI 工具
-│   ├── pdk/                # LabPDK 技术目录
-│   ├── assets/             # 图标与示意图
-│   └── install_lymtoolkit.bat
-├── docs/                   # 文档
-│   ├── ENV_SETUP.md        # 环境设置
-│   ├── QUICK_START.md      # 快速配置
-│   └── README_EN.md        # 英文说明
-├── output/                 # 输出目录（自动创建，生成文件存放处）
-│   ├── *.gds               # GDS 文件
-│   └── grayscaleImg/       # 灰度图像（BMP/PNG/TIFF）
-│
-├── config.py               # 全局配置
-├── main.py                 # 主程序入口
-├── layout_generator.py     # 版图生成与参数扫描
-├── gui_interface.py        # GUI 界面
-├── environment.yml         # Conda 环境配置
-├── requirements.txt        # Pip 依赖
-├── README.md               # 本说明
-└── LICENSE                 # 许可证
+```bash
+python --version
+python -c "import gdsfactory; print('gdsfactory ready')"
+python -c "import klayout.db as kdb; print('klayout python api ready')"
 ```
 
----
+### 3. Run a workflow
 
-## ⚙️ 核心功能
+Programmatic generation:
 
-### 工具函数库 (`utils/`)
-
-- **geometry.py**: 核心几何图元、形状操作、变换、布尔运算
-- **fanout_utils.py**: 自动扇出布线、焊盘阵列生成、连接逻辑
-- **mark_utils.py**: 对准、测量及自定义标记生成
-- **text_utils.py**: 多语言文本标签渲染与布局
-- **digital_utils.py**: 数字器件图案工具
-- **QRcode_utils.py**: 二维码生成与版图嵌入
-
-### 器件组件 (`components/`)
-
-- **fet.py**: 场效应管（FET）生成器
-- **hallbar.py**: 霍尔条（Hall bar）器件生成器
-- **tlm.py**: 转移长度法（TLM）结构生成器
-- **electrode.py**: 自定义电极与焊盘生成器
-- **resolution.py**: 分辨率测试图案
-- **greyscale/**: 灰度图像生成器（用于灰度光刻）
-
----
-
-## 💡 使用示例
-
-### 1. 单个器件生成（Python API）
-
-```python
-from components.fet import FET
-
-fet = FET(
-    x=0, y=0,
-    channel_width=5.0,
-    channel_length=20.0,
-    gate_overlap=2.0,
-    device_label="FET_1"
-)
-fet.generate()
+```bash
+python main.py
 ```
 
-### 2. 参数扫描阵列生成（Python API）
+Standalone GUI:
+
+```bash
+python gui_interface.py
+```
+
+KLayout macro setup on Windows:
+
+```bash
+.\lymtoolkit\install_lymtoolkit.bat
+```
+
+## Example
 
 ```python
 from layout_generator import LayoutGenerator
@@ -148,76 +98,74 @@ from layout_generator import LayoutGenerator
 gen = LayoutGenerator()
 gen.set_array_config(rows=3, cols=3, spacing_x=100, spacing_y=100)
 gen.set_scan_config(
-    channel_width_range=[2, 4, 6],
-    channel_length_range=[10, 20, 30],
-    scan_type='grid'
+    channel_width_range=[2.0, 4.0, 6.0],
+    channel_length_range=[10.0, 20.0, 30.0],
+    gate_overlap_range=[1.0, 2.0, 3.0],
+    scan_type="grid",
 )
 gen.generate_layout()
 gen.save_layout("device_array.gds")
 ```
 
-### 3. 使用 GUI 界面
+Generated GDS files are written to `output/`, and grayscale image outputs are written to `output/grayscaleImg/`.
 
-```python
-from gui_interface import show_mosfet_layout_gui
-show_mosfet_layout_gui()
+## Repository Map
+
+```text
+KLayout_Nanodevice_Toolkit/
+|-- components/                 Parametric device modules and grayscale generators
+|-- docs/                       Supporting docs and language-specific entry pages
+|-- lymtoolkit/                 KLayout macros, install scripts, toolkit integration, and PDK assets
+|-- output/                     Generated layouts and image outputs
+|-- utils/                      Geometry, fanout, labels, marks, QR, and helper utilities
+|-- config.py                   Process, layer, font, and output-path configuration
+|-- gui_interface.py            Desktop GUI for layout configuration
+|-- layout_generator.py         Core array and sweep generation logic
+|-- main.py                     Simple entry script and example launcher
+|-- environment.yml             Conda environment definition
+`-- requirements.txt            Pip dependencies
 ```
 
-### 4. KLayout 宏使用
+## Core Modules
 
-1. 安装宏：运行 `lymtoolkit/install_lymtoolkit.bat`
-2. 在 KLayout 中：**Tools → Macros → Run Macro...**
-3. 选择相应的宏（如 `fet_pcell`）并输入参数
+### Device generators
 
----
+- `components/mosfet.py`: dual-gate MOSFET layout generation
+- `components/fet.py`: FET-focused parametric structures
+- `components/hallbar.py`: Hall bar generators
+- `components/tlm.py`: transfer-length-method structures
+- `components/electrode.py`: electrode and pad geometries
+- `components/meander.py`: meander-style routing or structures
+- `components/resolution.py`: resolution-test patterns
 
-## 📤 输出文件
+### Utility layer
 
-所有生成的文件会自动保存到以下位置：
+- `utils/geometry.py`: geometry primitives and shape operations
+- `utils/fanout_utils.py`: fanout routing and pad-array helpers
+- `utils/mark_utils.py`: alignment and registration marks
+- `utils/text_utils.py`: layout text generation and placement
+- `utils/QRcode_utils.py`: QR code generation for layout embedding
+- `utils/alignment_utils.py`: overlay and alignment helpers
 
-- **GDS 文件**: `output/*.gds`
-- **灰度图像**: `output/grayscaleImg/*.bmp`, `*.png`, `*.tif`
+### KLayout integration
 
-> 💡 **注意**: 输出目录会自动创建，无需手动创建
+- `lymtoolkit/toolkit/nanodevice-toolkit/`: toolkit-facing KLayout macros and library registration
+- `lymtoolkit/toolkit/nanodevice-pcell/`: PCell-oriented macro modules
+- `lymtoolkit/PDK/`: technology definition, layer map, examples, and registration macro
 
----
+## Recommended Reading
 
-## 📚 详细文档
+- [Chinese documentation](docs/README_CN.md)
+- [Environment setup notes](docs/ENV_SETUP.md)
+- [Quick start notes](docs/QUICK_START.md)
+- [KLayout toolkit notes](lymtoolkit/README.md)
 
-更多详细信息请参考：
+## Known Boundaries
 
-- [环境设置指南](docs/ENV_SETUP.md) - 详细的 Conda 环境配置说明
-- [快速配置指南](docs/QUICK_START.md) - 三步快速配置教程
-- [英文文档](docs/README_EN.md) - English documentation
+- The current top-level generator centers on the MOSFET-style array workflow in `layout_generator.py`
+- Some folders contain experimental or lab-specific templates alongside production utilities
+- KLayout GUI loading requires a working KLayout environment; pure Python execution can still generate files offline
 
----
+## License
 
-## 🔧 常见问题
-
-### Q: Python 11 找不到？
-A: Python 11 可能还未在 conda 中发布。请修改 `environment.yml` 中的 `python=11` 为 `python=3.11`。
-
-### Q: 如何确保 Cursor/VS Code 使用正确的环境？
-A: 
-1. 按 `Ctrl+Shift+P`
-2. 输入 "Python: Select Interpreter"
-3. 选择 `klayout-nanodevice-toolkit` 环境
-
-### Q: 输出文件在哪里？
-A: 所有 GDS 文件保存在 `output/` 文件夹，灰度图像保存在 `output/grayscaleImg/` 文件夹。
-
----
-
-## 📄 许可证
-
-MIT License. 详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 🙏 致谢
-
-基于 [KLayout](https://www.klayout.de/) 开发。致敬开源 EDA 社区。
-
----
-
-**English**: See [English README](docs/README_EN.md) for English documentation.
+MIT. See [LICENSE](LICENSE).
