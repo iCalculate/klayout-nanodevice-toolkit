@@ -328,7 +328,7 @@ class FET:
             (x - device_width/2 + self.mark_margin, y - device_height/2 + self.mark_margin),  # 左下
             (x + device_width/2 - self.mark_margin, y - device_height/2 + self.mark_margin)   # 右下
         ]
-        
+
         # 创建标记
         for i, (mark_x, mark_y) in enumerate(mark_positions):
             mark_type = self.mark_types[i] if i < len(self.mark_types) else 'cross'

@@ -15,18 +15,47 @@ class MarkWrapper:
     Mark wrapper class supporting chained rotation operations.
     """
     
-    def __init__(self, shapes, x, y):
+    def __init__(self, shapes, x=None, y=None, anchor_dbu=None):
         """
         初始化包装器
         
         Initialize the wrapper.
         ``shapes`` can be a single shape, region, or list of shapes.
-        ``x`` and ``y`` specify the center coordinates of the mark.
+        By default the rotation anchor is the mark bounding-box center.
+        ``anchor_dbu`` can be provided to override that behavior.
         """
         self.shapes = shapes
         self.x = x
         self.y = y
+        self.anchor_x_dbu, self.anchor_y_dbu = self._resolve_anchor(anchor_dbu)
         self.rotation = 0
+
+    def _resolve_anchor(self, anchor_dbu):
+        if anchor_dbu is not None:
+            return int(round(anchor_dbu[0])), int(round(anchor_dbu[1]))
+        return self._bbox_center_dbu(self.shapes)
+
+    @staticmethod
+    def _bbox_center_dbu(shapes):
+        def shape_bbox(shape):
+            bbox_method = getattr(shape, "bbox", None)
+            return bbox_method() if callable(bbox_method) else None
+
+        if isinstance(shapes, list):
+            bboxes = [shape_bbox(shape) for shape in shapes]
+            bboxes = [bbox for bbox in bboxes if bbox is not None]
+            if not bboxes:
+                return 0, 0
+            left = min(bbox.left for bbox in bboxes)
+            right = max(bbox.right for bbox in bboxes)
+            bottom = min(bbox.bottom for bbox in bboxes)
+            top = max(bbox.top for bbox in bboxes)
+            return int(round((left + right) / 2)), int(round((bottom + top) / 2))
+
+        bbox = shape_bbox(shapes)
+        if bbox is None:
+            return 0, 0
+        return int(round((bbox.left + bbox.right) / 2)), int(round((bbox.bottom + bbox.top) / 2))
     
     def rotate(self, angle):
         """
@@ -46,10 +75,9 @@ class MarkWrapper:
         if self.rotation == 0:
             return self.shapes
         
-        # 计算旋转中心（以mark中心为原点）
-        # 注意：这里需要转换为数据库单位
-        center_x = int(self.x * MarkUtils.UNIT_SCALE)
-        center_y = int(self.y * MarkUtils.UNIT_SCALE)
+        # Use the resolved mark anchor directly in database units.
+        center_x = self.anchor_x_dbu
+        center_y = self.anchor_y_dbu
         
         # 创建旋转变换：先移动到旋转中心，旋转，再移回
         # 1. 移动到旋转中心
@@ -79,6 +107,34 @@ class MarkUtils:
     def set_unit_scale(scale):
         MarkUtils.UNIT_SCALE = scale
         GeometryUtils.UNIT_SCALE = scale
+
+    @staticmethod
+    def translate_shapes(shapes, dx_dbu, dy_dbu):
+        from klayout.db import Trans
+
+        trans = Trans(0, False, int(round(dx_dbu)), int(round(dy_dbu)))
+
+        def transform_shape(shape):
+            transformed = getattr(shape, "transformed", None)
+            if callable(transformed):
+                return transformed(trans)
+            duplicate = getattr(shape, "dup", None)
+            if callable(duplicate):
+                copied = duplicate()
+                copied.transform(trans)
+                return copied
+            return shape
+
+        if isinstance(shapes, list):
+            return [transform_shape(shape) for shape in shapes]
+        return transform_shape(shapes)
+
+    @staticmethod
+    def center_shapes_at(shapes, x, y):
+        target_x = int(round(x * MarkUtils.UNIT_SCALE))
+        target_y = int(round(y * MarkUtils.UNIT_SCALE))
+        center_x, center_y = MarkWrapper._bbox_center_dbu(shapes)
+        return MarkUtils.translate_shapes(shapes, target_x - center_x, target_y - center_y)
 
     @staticmethod
     def create_mark(shape, x, y, size, width=None, **kwargs):
@@ -131,7 +187,8 @@ class MarkUtils:
     @staticmethod
     def l(x, y, size, width):
         shapes = GeometryUtils.create_L_shape(x, y, size, width/size, 0.5)
-        return MarkWrapper(shapes, x, y)
+        anchor_dbu = (x * MarkUtils.UNIT_SCALE, y * MarkUtils.UNIT_SCALE)
+        return MarkWrapper(shapes, x, y, anchor_dbu=anchor_dbu)
 
     @staticmethod
     def t(x, y, size, width):
@@ -162,7 +219,8 @@ class MarkUtils:
     @staticmethod
     def l_shape(x, y, size=10.0, ratio=0.1, arm_ratio=0.5):
         shapes = GeometryUtils.create_L_shape(x, y, size, ratio, arm_ratio)
-        return MarkWrapper(shapes, x, y)
+        anchor_dbu = (x * MarkUtils.UNIT_SCALE, y * MarkUtils.UNIT_SCALE)
+        return MarkWrapper(shapes, x, y, anchor_dbu=anchor_dbu)
 
     @staticmethod
     def t_shape(x, y, size=10.0, ratio=0.1, arm_ratio=0.5):

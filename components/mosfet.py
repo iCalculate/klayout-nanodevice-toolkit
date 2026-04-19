@@ -376,20 +376,6 @@ class MOSFET:
         right_um = region_bbox.right / 1000.0
         top_um = region_bbox.top / 1000.0
         bottom_um = region_bbox.bottom / 1000.0
-        def center_from_corner(idx, px, py):
-            if idx == 0:
-                return (px + self.mark_size / 2.0, py - self.mark_size / 2.0)
-            if idx == 1:
-                return (px - self.mark_size / 2.0, py - self.mark_size / 2.0)
-            if idx == 2:
-                return (px + self.mark_size / 2.0, py + self.mark_size / 2.0)
-            return (px - self.mark_size / 2.0, py + self.mark_size / 2.0)
-        center_positions = [
-            (left_um + self.mark_size / 2.0, top_um - self.mark_size / 2.0),
-            (right_um - self.mark_size / 2.0, top_um - self.mark_size / 2.0),
-            (left_um + self.mark_size / 2.0, bottom_um + self.mark_size / 2.0),
-            (right_um - self.mark_size / 2.0, bottom_um + self.mark_size / 2.0),
-        ]
         corner_positions = [
             (left_um, top_um),
             (right_um, top_um),
@@ -399,14 +385,12 @@ class MOSFET:
         for idx in range(4):
             mark_type = self.mark_types[idx] if idx < len(self.mark_types) else "square"
             rotation = int(self.mark_rotations[idx]) % 4 if idx < len(self.mark_rotations) else 0
-            cx, cy = center_positions[idx]
-            px, py = corner_positions[idx]
+            cx, cy = corner_positions[idx]
             self._log_info(
-                f"Creating mark {idx + 1}: type={mark_type}, rotation={rotation}, center=({cx}, {cy}), corner=({px}, {py})"
+                f"Creating mark {idx + 1}: type={mark_type}, rotation={rotation}, target_center=({cx}, {cy})"
             )
             if mark_type == "cross":
-                mx, my = center_from_corner(idx, px, py)
-                mark = MarkUtils.cross(mx, my, self.mark_size, self.mark_width)
+                mark = MarkUtils.cross(cx, cy, self.mark_size, self.mark_width)
             elif mark_type == "square":
                 mark = MarkUtils.square(cx, cy, self.mark_size)
             elif mark_type == "circle":
@@ -418,12 +402,11 @@ class MOSFET:
             elif mark_type in ("double_square", "chessy"):
                 mark = self._double_square_mark(cx, cy, self.mark_size)
             elif mark_type == "L_shape":
-                mark = MarkUtils.l_shape(px, py, self.mark_size, ratio=self.mark_width / max(self.mark_size, 1e-6), arm_ratio=0.6)
+                mark = MarkUtils.l_shape(cx, cy, self.mark_size, ratio=self.mark_width / max(self.mark_size, 1e-6), arm_ratio=0.6)
             elif mark_type == "T_shape":
                 mark = MarkUtils.t_shape(cx, cy, self.mark_size, ratio=self.mark_width / max(self.mark_size, 1e-6), arm_ratio=0.6)
             elif mark_type == "sq_missing":
-                mx, my = center_from_corner(idx, px, py)
-                mark = MarkUtils.sq_missing(mx, my, self.mark_size, missing=(2, 4))
+                mark = MarkUtils.sq_missing(cx, cy, self.mark_size, missing=(2, 4))
             elif mark_type == "cross_tri":
                 mark = MarkUtils.cross_tri(cx, cy, self.mark_size, ratio=max(self.mark_width / max(self.mark_size, 1e-6), 0.1), triangle_leg_ratio=0.3)
             else:
