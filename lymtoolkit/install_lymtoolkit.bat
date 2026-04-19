@@ -12,6 +12,7 @@ set "CONFIG_SRC=%PROJECT_ROOT%\config.py"
 set "UTILS_SRC=%PROJECT_ROOT%\utils"
 set "COMPONENTS_SRC=%PROJECT_ROOT%\components"
 set "PDK_SRC=%ROOT%PDK"
+set "ASSETS_SRC=%ROOT%assets"
 
 set /A TOTAL_STEPS=6
 set /A CURRENT_STEP=0
@@ -45,6 +46,11 @@ if not exist "%PDK_SRC%" (
   goto :end_fail
 )
 
+if not exist "%ASSETS_SRC%" (
+  call :fail "Assets directory not found: %ASSETS_SRC%"
+  goto :end_fail
+)
+
 call :step "Cleaning previous installation"
 if exist "%TARGET%" (
   rmdir /S /Q "%TARGET%"
@@ -67,6 +73,11 @@ call :step "Copying toolkit libraries and GUI files"
 xcopy /E /Y /I "%TOOLKIT_SRC%\*" "%TARGET%\" >nul
 if errorlevel 1 (
   call :fail "Toolkit copy failed."
+  goto :end_fail
+)
+xcopy /E /Y /I "%ASSETS_SRC%" "%TARGET%\assets\" >nul
+if errorlevel 1 (
+  call :fail "Assets copy failed."
   goto :end_fail
 )
 call :ok "Toolkit files copied"

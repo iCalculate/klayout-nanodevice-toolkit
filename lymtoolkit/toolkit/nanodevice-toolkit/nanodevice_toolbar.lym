@@ -19,6 +19,7 @@
 import sys
 
 import pya
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMainWindow, QToolBar
 
@@ -55,15 +56,22 @@ def _install_toolbar_button():
         existing_toolbar.setObjectName(toolbar_name)
         main_window.addToolBar(existing_toolbar)
 
+    existing_toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+
     for action in existing_toolbar.actions():
         if action.objectName() == action_name:
             _toolbar_refs["toolbar"] = existing_toolbar
             _toolbar_refs["action"] = action
             return
 
-    icon_path = os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "logo.ico"))
-    action = QAction(QIcon(icon_path) if os.path.exists(icon_path) else QIcon(), "NanoDevice Toolkit", main_window)
+    icon_candidates = [
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "logo.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "logo.ico")),
+    ]
+    icon_path = next((path for path in icon_candidates if os.path.exists(path)), "")
+    action = QAction(QIcon(icon_path) if icon_path else QIcon(), "NanoDevice Toolkit", main_window)
     action.setObjectName(action_name)
+    action.setIconText("")
     action.setToolTip("Open NanoDevice Toolkit")
     action.triggered.connect(launch_toolkit_dialog)
     existing_toolbar.addAction(action)
