@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -10,17 +11,20 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGraphicsScene,
     QGraphicsView,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QSizePolicy,
     QLabel,
     QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -51,6 +55,7 @@ if ROOT_DIR not in sys.path:
 from config import LAYER_DEFINITIONS
 from components.routing import Routing
 from utils.geometry import GeometryUtils
+from utils.routing_utils import RouteOverlapError
 
 
 def _point_key(point):
@@ -85,37 +90,67 @@ def _format_length(value_um):
 class PointTableWidget(QWidget):
     def __init__(self, title, columns):
         super().__init__()
+        self._change_handler = None
+        self._expand_handler = None
+        self._row_height_hint = 18
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-        layout.addWidget(QLabel(title))
+        layout.setSpacing(2)
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(2)
+        self.toggle_btn = QToolButton()
+        self.toggle_btn.setText("▼")
+        self.toggle_btn.setCheckable(True)
+        self.toggle_btn.setChecked(True)
+        self.toggle_btn.clicked.connect(self._toggle_collapsed)
+        self.title_label = QLabel(title)
+        header_row.addWidget(self.toggle_btn, 0)
+        header_row.addWidget(self.title_label, 1)
+        layout.addLayout(header_row)
+
+        self.content_widget = QWidget()
+        self.content_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        content_layout = QVBoxLayout(self.content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(2)
         self.table = QTableWidget(0, len(columns))
         self.table.setHorizontalHeaderLabels(columns)
         self.table.horizontalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(True)
+        self.table.verticalHeader().setDefaultSectionSize(self._row_height_hint)
+        self.table.verticalHeader().setMinimumSectionSize(self._row_height_hint)
+        self.table.verticalHeader().setMaximumSectionSize(self._row_height_hint)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setMinimumHeight(72)
-        self.table.setMaximumHeight(108)
-        layout.addWidget(self.table)
+        self.table.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        content_layout.addWidget(self.table)
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_row.setSpacing(4)
+        btn_row.setSpacing(2)
         add_btn = QPushButton("Add")
         remove_btn = QPushButton("Remove")
         clear_btn = QPushButton("Clear")
+        self.reverse_btn = QPushButton("Reverse")
         self.pick_btn = QPushButton("Pick")
+        self._button_row_buttons = [add_btn, remove_btn, clear_btn, self.reverse_btn, self.pick_btn]
+        for button in self._button_row_buttons:
+            button.setFixedHeight(22)
         add_btn.clicked.connect(self.add_row)
         remove_btn.clicked.connect(self.remove_selected_row)
         clear_btn.clicked.connect(self.clear_rows)
+        self.reverse_btn.clicked.connect(self.reverse_rows)
         btn_row.addWidget(add_btn)
         btn_row.addWidget(remove_btn)
         btn_row.addWidget(clear_btn)
+        btn_row.addWidget(self.reverse_btn)
         btn_row.addWidget(self.pick_btn)
         btn_row.addStretch(1)
-        layout.addLayout(btn_row)
+        content_layout.addLayout(btn_row)
+        layout.addWidget(self.content_widget)
 
     def add_row(self, values=None):
         row = self.table.rowCount()
@@ -124,17 +159,63 @@ class PointTableWidget(QWidget):
         for column, value in enumerate(values):
             item = QTableWidgetItem(f"{float(value):.3f}")
             self.table.setItem(row, column, item)
+        self._notify_changed()
 
     def remove_selected_row(self):
         indexes = self.table.selectionModel().selectedRows()
         for index in reversed(indexes):
             self.table.removeRow(index.row())
+        self._notify_changed()
 
     def clear_rows(self):
         self.table.setRowCount(0)
+        self._notify_changed()
+
+    def reverse_rows(self):
+        rows = self.points()
+        self.set_points(list(reversed(rows)))
+        self._notify_changed()
 
     def set_pick_handler(self, handler):
         self.pick_btn.clicked.connect(handler)
+
+    def set_change_handler(self, handler):
+        self._change_handler = handler
+
+    def set_expand_handler(self, handler):
+        self._expand_handler = handler
+
+    def _notify_changed(self):
+        if self._change_handler is not None:
+            self._change_handler()
+
+    def _toggle_collapsed(self):
+        expanded = self.toggle_btn.isChecked()
+        self.toggle_btn.setText("▼" if expanded else "▶")
+        self.content_widget.setVisible(expanded)
+        if self._expand_handler is not None:
+            self._expand_handler()
+
+    def set_expanded(self, expanded):
+        self.toggle_btn.setChecked(expanded)
+        self._toggle_collapsed()
+
+    def is_expanded(self):
+        return self.toggle_btn.isChecked()
+
+    def set_table_height(self, height):
+        height = max(int(height), 42)
+        self.table.setMinimumHeight(height)
+        self.table.setMaximumHeight(height)
+
+    def header_height(self):
+        return max(self.toggle_btn.sizeHint().height(), self.title_label.sizeHint().height())
+
+    def button_row_height(self):
+        return max(button.height() for button in self._button_row_buttons)
+
+    def minimum_table_height(self):
+        return self._row_height_hint * 2 + 6
 
     def points(self):
         points = []
@@ -153,7 +234,11 @@ class PointTableWidget(QWidget):
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         for point in points:
-            self.add_row(point)
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for column, value in enumerate(point):
+                item = QTableWidgetItem(f"{float(value):.3f}")
+                self.table.setItem(row, column, item)
         self.table.blockSignals(False)
 
 
@@ -268,13 +353,28 @@ class RoutingPreviewView(QGraphicsView):
                 )
         return QPolygonF(points)
 
-    def draw_error(self, message, starts=None, ends=None, obstacles=None):
+    def draw_error(self, message, starts=None, ends=None, obstacles=None, route_results=None):
         scene = self.scene()
         scene.clear()
         starts = starts or []
         ends = ends or []
         obstacles = obstacles or []
         self._draw_common(scene, starts, ends, obstacles)
+        if route_results:
+            fill_brush = QBrush(QColor(247, 201, 72, 55))
+            edge_pen = QPen(QColor(255, 219, 99), 0)
+            center_pen = QPen(QColor("#f7c948"), 0)
+            for result in route_results:
+                for shape in result.shapes:
+                    polygon = self._polygon_from_shape(shape)
+                    if not polygon.isEmpty():
+                        scene.addPolygon(polygon, edge_pen, fill_brush)
+                center_path = QPainterPath()
+                if result.points:
+                    center_path.moveTo(self._scene_point(result.points[0]))
+                    for point in result.points[1:]:
+                        center_path.lineTo(self._scene_point(point))
+                    scene.addPath(center_path, center_pen)
         text_item = scene.addText("Routing blocked")
         text_item.setDefaultTextColor(QColor("#ff8c69"))
         text_item.setPos(-80.0, -15.0)
@@ -292,12 +392,20 @@ class RoutingPreviewView(QGraphicsView):
         start_pen = QPen(QColor("#57cc99"), 0)
         end_pen = QPen(QColor("#4ea8de"), 0)
         marker_brush = QBrush(Qt.NoBrush)
-        for point in starts:
+        for index, point in enumerate(starts, start=1):
             sp = self._scene_point(point)
             scene.addRect(sp.x() - 3.0, sp.y() - 3.0, 6.0, 6.0, start_pen, marker_brush)
-        for point in ends:
+            label = scene.addText(str(index))
+            label.setDefaultTextColor(QColor("#57cc99"))
+            label.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            label.setPos(sp.x() + 5.0, sp.y() - 16.0)
+        for index, point in enumerate(ends, start=1):
             sp = self._scene_point(point)
             scene.addRect(sp.x() - 3.0, sp.y() - 3.0, 6.0, 6.0, end_pen, marker_brush)
+            label = scene.addText(str(index))
+            label.setDefaultTextColor(QColor("#4ea8de"))
+            label.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            label.setPos(sp.x() + 5.0, sp.y() + 2.0)
 
     def _finalize(self, scene):
         bounds = scene.itemsBoundingRect()
@@ -339,7 +447,9 @@ class NanoRoutingDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NanoRouting")
-        self.resize(1180, 780)
+        self.setMinimumHeight(520)
+        self.resize(1180, 640)
+        self._last_debug_payload = None
         self._build_ui()
 
     def _build_ui(self):
@@ -348,13 +458,16 @@ class NanoRoutingDialog(QDialog):
         root.setSpacing(10)
 
         left_widget = QWidget()
-        left_widget.setMaximumWidth(360)
+        self.left_widget = left_widget
+        left_widget.setMaximumWidth(252)
         left_panel = QVBoxLayout(left_widget)
+        self.left_panel = left_panel
         left_panel.setContentsMargins(0, 0, 0, 0)
-        left_panel.setSpacing(8)
+        left_panel.setSpacing(4)
         root.addWidget(left_widget, 0)
 
         mode_box = QGroupBox("Routing")
+        self.mode_box = mode_box
         mode_form = QFormLayout(mode_box)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["single", "bundle"])
@@ -374,6 +487,7 @@ class NanoRoutingDialog(QDialog):
         left_panel.addWidget(mode_box)
 
         param_box = QGroupBox("Parameters")
+        self.param_box = param_box
         param_form = QFormLayout(param_box)
         self.line_width_spin = self._double_spin(2.0, 0.1, 1000.0, 3)
         self.min_line_width_spin = self._double_spin(2.0, 0.1, 1000.0, 3)
@@ -393,25 +507,51 @@ class NanoRoutingDialog(QDialog):
         self.obstacles_table = RectTableWidget("Obstacle rectangles", ["", "", "", ""])
         for table_widget in (self.starts_table, self.ends_table, self.waypoints_table, self.obstacles_table):
             table_widget.table.itemChanged.connect(self._refresh_preview)
+            table_widget.set_change_handler(self._refresh_preview)
+            table_widget.set_expand_handler(self._update_table_heights)
         self.starts_table.set_pick_handler(lambda: self._load_selection("starts"))
         self.ends_table.set_pick_handler(lambda: self._load_selection("ends"))
         self.waypoints_table.set_pick_handler(lambda: self._load_selection("waypoints"))
         self.obstacles_table.set_pick_handler(lambda: self._load_selection("obstacles"))
-        left_panel.addWidget(self.starts_table, 1)
-        left_panel.addWidget(self.ends_table, 1)
-        left_panel.addWidget(self.waypoints_table, 1)
-        left_panel.addWidget(self.obstacles_table, 1)
-        compact_actions = QHBoxLayout()
+        self.starts_table.set_expanded(True)
+        self.ends_table.set_expanded(True)
+        self.waypoints_table.set_expanded(False)
+        self.obstacles_table.set_expanded(False)
+        left_panel.addWidget(self.starts_table)
+        left_panel.addWidget(self.ends_table)
+        left_panel.addWidget(self.waypoints_table)
+        left_panel.addWidget(self.obstacles_table)
+        self.compact_actions_widget = QWidget()
+        compact_actions = QHBoxLayout(self.compact_actions_widget)
         compact_actions.setContentsMargins(0, 0, 0, 0)
-        compact_actions.setSpacing(6)
-        self.swap_btn = QPushButton("Swap Starts / Ends")
-        self.swap_btn.clicked.connect(self._swap_points)
-        compact_actions.addWidget(self.swap_btn)
-        compact_actions.addStretch(1)
+        compact_actions.setSpacing(4)
         self.preview_markers_check = QCheckBox("Show start/end markers in layout preview")
         self.preview_markers_check.setChecked(True)
+        compact_actions.addStretch(1)
         compact_actions.addWidget(self.preview_markers_check)
-        left_panel.addLayout(compact_actions)
+        left_panel.addWidget(self.compact_actions_widget)
+
+        self.distribute_widget = QWidget()
+        distribute_row = QHBoxLayout(self.distribute_widget)
+        distribute_row.setContentsMargins(0, 0, 0, 0)
+        distribute_row.setSpacing(4)
+        self.distribute_x_btn = QPushButton("Distribute X")
+        self.distribute_y_btn = QPushButton("Distribute Y")
+        self.distribute_x_btn.setFixedHeight(24)
+        self.distribute_y_btn.setFixedHeight(24)
+        self.distribute_x_btn.clicked.connect(lambda: self._distribute_selected_objects("x"))
+        self.distribute_y_btn.clicked.connect(lambda: self._distribute_selected_objects("y"))
+        distribute_row.addWidget(self.distribute_x_btn)
+        distribute_row.addWidget(self.distribute_y_btn)
+        left_panel.addWidget(self.distribute_widget)
+        left_panel.addStretch(1)
+        self._table_widgets = [
+            self.starts_table,
+            self.ends_table,
+            self.waypoints_table,
+            self.obstacles_table,
+        ]
+        self._update_table_heights()
 
         right_panel = QVBoxLayout()
         right_panel.setSpacing(8)
@@ -424,14 +564,23 @@ class NanoRoutingDialog(QDialog):
         right_panel.addWidget(self.status_label)
 
         action_row = QHBoxLayout()
+        self.import_btn = QPushButton("Import Config")
+        self.export_btn = QPushButton("Export Config")
+        self.export_debug_btn = QPushButton("Export Debug JSON")
         self.preview_btn = QPushButton("Refresh Preview")
         self.preview_layout_btn = QPushButton("Preview In Layout")
         self.clear_preview_btn = QPushButton("Clear Layout Preview")
         self.insert_btn = QPushButton("Insert")
+        self.import_btn.clicked.connect(self._import_config)
+        self.export_btn.clicked.connect(self._export_config)
+        self.export_debug_btn.clicked.connect(self._export_debug_json)
         self.preview_btn.clicked.connect(self._refresh_preview)
         self.preview_layout_btn.clicked.connect(self._preview_in_layout)
         self.clear_preview_btn.clicked.connect(self._clear_layout_preview)
         self.insert_btn.clicked.connect(self._insert_routes)
+        action_row.addWidget(self.import_btn)
+        action_row.addWidget(self.export_btn)
+        action_row.addWidget(self.export_debug_btn)
         action_row.addWidget(self.preview_btn)
         action_row.addWidget(self.preview_layout_btn)
         action_row.addWidget(self.clear_preview_btn)
@@ -445,23 +594,61 @@ class NanoRoutingDialog(QDialog):
         spin.setValue(value)
         return spin
 
-    def _swap_points(self):
-        starts = self.starts_table.points()
-        ends = self.ends_table.points()
-        self.starts_table.set_points(ends)
-        self.ends_table.set_points(starts)
-        self._refresh_preview()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_table_heights()
+
+    def _update_table_heights(self):
+        expanded_tables = [widget for widget in getattr(self, "_table_widgets", []) if widget.is_expanded()]
+        if not expanded_tables or not hasattr(self, "left_widget"):
+            return
+        layout_spacing = self.left_panel.spacing() if hasattr(self, "left_panel") else 4
+        fixed_height = 0
+        fixed_height += self.mode_box.sizeHint().height()
+        fixed_height += self.param_box.sizeHint().height()
+        fixed_height += self.compact_actions_widget.sizeHint().height()
+        fixed_height += self.distribute_widget.sizeHint().height()
+        fixed_height += layout_spacing * (2 + len(self._table_widgets))
+        for widget in self._table_widgets:
+            fixed_height += widget.header_height()
+            if widget.is_expanded():
+                fixed_height += widget.button_row_height() + 2
+
+        available_height = max(self.left_widget.height() - fixed_height, 0)
+        per_table_height = max(
+            min(widget.minimum_table_height() for widget in expanded_tables),
+            int(available_height / max(len(expanded_tables), 1)),
+        )
+        for widget in self._table_widgets:
+            if widget.is_expanded():
+                widget.set_table_height(per_table_height)
 
     def _selected_objects(self):
         view = pya.LayoutView.current()
-        if view is None or not view.has_object_selection():
+        if view is None:
             return []
-        return list(view.each_object_selected())
+        objects = []
 
-    def _selected_boxes(self):
-        boxes = []
+        def add_objects(iterator):
+            for obj in iterator:
+                objects.append(obj)
+
+        if view.has_object_selection():
+            add_objects(view.each_object_selected())
+        if hasattr(view, "has_transient_object_selection") and view.has_transient_object_selection():
+            add_objects(view.each_object_selected_transient())
+        if not objects and hasattr(view, "object_selection"):
+            try:
+                add_objects(view.object_selection)
+            except Exception:
+                pass
+        return objects
+
+    def _selected_shape_entries(self):
+        entries = []
+        seen = set()
         for obj in self._selected_objects():
-            shape = obj.shape
+            shape = getattr(obj, "shape", None)
             if shape is None or shape.is_null():
                 continue
             box = shape.dbbox()
@@ -470,8 +657,63 @@ class NanoRoutingDialog(QDialog):
                 box = box.transformed(trans)
             except Exception:
                 pass
-            boxes.append(box)
+            key = (
+                round(float(box.left), 6),
+                round(float(box.bottom), 6),
+                round(float(box.right), 6),
+                round(float(box.top), 6),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append({"obj": obj, "shape": shape, "box": box})
+        return entries
+
+    def _selected_boxes(self):
+        boxes = []
+        for entry in self._selected_shape_entries():
+            boxes.append(entry["box"])
         return boxes
+
+    def _move_shape_by(self, shape, dx_um, dy_um):
+        dx_dbu = int(round(dx_um * GeometryUtils.UNIT_SCALE))
+        dy_dbu = int(round(dy_um * GeometryUtils.UNIT_SCALE))
+        if dx_dbu == 0 and dy_dbu == 0:
+            return
+        try:
+            shape.transform(pya.Trans(dx_dbu, dy_dbu))
+        except Exception:
+            shape.transform(pya.ICplxTrans(1.0, 0.0, False, dx_dbu, dy_dbu))
+
+    def _distribute_selected_objects(self, axis):
+        entries = self._selected_shape_entries()
+        if len(entries) < 3:
+            QMessageBox.information(self, "NanoRouting", "Select at least 3 objects to distribute.")
+            return
+
+        center_getter = (lambda entry: float(entry["box"].center().x)) if axis == "x" else (lambda entry: float(entry["box"].center().y))
+        ordered = sorted(entries, key=center_getter)
+        first_center = center_getter(ordered[0])
+        last_center = center_getter(ordered[-1])
+        step = (last_center - first_center) / float(len(ordered) - 1)
+
+        moved_count = 0
+        for index, entry in enumerate(ordered[1:-1], start=1):
+            target_center = first_center + index * step
+            current_center = center_getter(entry)
+            delta = target_center - current_center
+            if abs(delta) < 1e-9:
+                continue
+            if axis == "x":
+                self._move_shape_by(entry["shape"], delta, 0.0)
+            else:
+                self._move_shape_by(entry["shape"], 0.0, delta)
+            moved_count += 1
+
+        if moved_count == 0:
+            self.status_label.setText("Selected objects already evenly distributed")
+        else:
+            self.status_label.setText(f"Distributed {moved_count} selected object(s) along {axis.upper()}")
 
     def _load_selection(self, target):
         boxes = self._selected_boxes()
@@ -521,6 +763,100 @@ class NanoRoutingDialog(QDialog):
             "waypoints": self.waypoints_table.points(),
             "obstacles": self.obstacles_table.rects(),
         }
+
+    def _set_values(self, values):
+        self.mode_combo.setCurrentText(values.get("mode", self.mode_combo.currentText()))
+        self.route_mode_combo.setCurrentText(values.get("route_mode", self.route_mode_combo.currentText()))
+        self.extension_combo.setCurrentText(values.get("extension_type", self.extension_combo.currentText()))
+        self.layer_combo.setCurrentText(values.get("layer_name", self.layer_combo.currentText()))
+        self.line_width_spin.setValue(float(values.get("line_width", self.line_width_spin.value())))
+        self.min_line_width_spin.setValue(float(values.get("min_line_width", self.min_line_width_spin.value())))
+        self.bundle_spacing_spin.setValue(float(values.get("bundle_spacing", self.bundle_spacing_spin.value())))
+        self.clearance_spin.setValue(float(values.get("clearance", self.clearance_spin.value())))
+        self.starts_table.set_points(values.get("starts", []))
+        self.ends_table.set_points(values.get("ends", []))
+        self.waypoints_table.set_points(values.get("waypoints", []))
+        self.obstacles_table.set_rects(values.get("obstacles", []))
+
+    def _export_config(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export NanoRouting Config",
+            "nanorouting_config.json",
+            "JSON Files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            values = self._values()
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(values, handle, indent=2)
+            self.status_label.setText(f"Config exported: {path}")
+        except Exception as exc:
+            QMessageBox.warning(self, "NanoRouting", f"Failed to export config:\n{exc}")
+
+    def _import_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import NanoRouting Config",
+            "",
+            "JSON Files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                values = json.load(handle)
+            self._set_values(values)
+            self._refresh_preview()
+            self.status_label.setText(f"Config imported: {path}")
+        except Exception as exc:
+            QMessageBox.warning(self, "NanoRouting", f"Failed to import config:\n{exc}")
+
+    def _serialize_route_results(self, route_results):
+        serialized = []
+        for result in route_results or []:
+            serialized.append(
+                {
+                    "points": [[float(point[0]), float(point[1])] for point in result.points],
+                    "width": float(result.width),
+                    "begin_extension": float(result.begin_extension),
+                    "end_extension": float(result.end_extension),
+                }
+            )
+        return serialized
+
+    def _update_debug_payload(self, values, status, route_results=None, error=None):
+        payload = {
+            "values": values,
+            "status": status,
+            "routes": self._serialize_route_results(route_results),
+        }
+        if error is not None:
+            payload["error"] = error
+        self._last_debug_payload = payload
+
+    def _export_debug_json(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export NanoRouting Debug JSON",
+            "nanorouting_debug.json",
+            "JSON Files (*.json)",
+        )
+        if not path:
+            return
+        try:
+            if self._last_debug_payload is None:
+                try:
+                    values = self._values()
+                except Exception:
+                    values = {}
+                self._update_debug_payload(values, "idle", route_results=[], error=None)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(self._last_debug_payload, handle, indent=2)
+            self.status_label.setText(f"Debug JSON exported: {path}")
+        except Exception as exc:
+            QMessageBox.warning(self, "NanoRouting", f"Failed to export debug JSON:\n{exc}")
 
     def _validate_values(self, values):
         starts = values["starts"]
@@ -599,9 +935,30 @@ class NanoRoutingDialog(QDialog):
             if not values["starts"] and not values["ends"] and not values["waypoints"] and not values["obstacles"]:
                 self.preview.scene().clear()
                 self.status_label.setText("")
+                self._update_debug_payload(values, "idle", route_results=[])
                 return
             self.preview.draw_routes(results, values["starts"], values["ends"], values["obstacles"])
             self.status_label.setText(f"Preview ready: {len(results)} route(s)")
+            self._update_debug_payload(values, "ok", route_results=results)
+        except RouteOverlapError as exc:
+            try:
+                values = self._values()
+            except Exception:
+                values = {"starts": [], "ends": [], "waypoints": [], "obstacles": []}
+            self.preview.draw_error(
+                str(exc),
+                values.get("starts", []),
+                values.get("ends", []),
+                values.get("obstacles", []),
+                route_results=getattr(exc, "results", None),
+            )
+            self.status_label.setText(f"Preview blocked: {exc}")
+            self._update_debug_payload(
+                values,
+                "blocked",
+                route_results=getattr(exc, "results", None),
+                error={"type": exc.__class__.__name__, "message": str(exc)},
+            )
         except Exception as exc:
             try:
                 values = self._values()
@@ -610,9 +967,16 @@ class NanoRoutingDialog(QDialog):
             if not values.get("starts") and not values.get("ends") and not values.get("waypoints") and not values.get("obstacles"):
                 self.preview.scene().clear()
                 self.status_label.setText("")
+                self._update_debug_payload(values, "idle", route_results=[])
                 return
             self.preview.draw_error(str(exc), values.get("starts", []), values.get("ends", []), values.get("obstacles", []))
             self.status_label.setText(f"Preview blocked: {exc}")
+            self._update_debug_payload(
+                values,
+                "blocked",
+                route_results=[],
+                error={"type": exc.__class__.__name__, "message": str(exc)},
+            )
 
     def _current_layout_context(self):
         view = pya.LayoutView.current()

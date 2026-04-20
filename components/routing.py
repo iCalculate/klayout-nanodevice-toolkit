@@ -335,6 +335,64 @@ def main() -> None:
     row_overlap_area = row_total_area - row_region.merged().area()
     print(f"Row bundle validation overlap area: {row_overlap_area}")
 
+    routing.insert_note_text(top, "Mixed Row Bundle Validation", 720.0, 120.0)
+    mixed_starts = [(-110.0, 200.0), (-90.0, 200.0), (-70.0, 200.0), (-50.0, 200.0), (-30.0, 200.0), (30.0, 200.0), (50.0, 200.0), (70.0, 200.0), (90.0, 200.0), (110.0, 200.0)]
+    mixed_ends = [(-1105.0, -500.0), (-905.0, -500.0), (-705.0, -500.0), (-505.0, -500.0), (-305.0, -500.0), (305.0, -500.0), (505.0, -500.0), (705.0, -500.0), (905.0, -500.0), (1105.0, -500.0)]
+    mixed_starts = [(x + 820.0, y) for x, y in mixed_starts]
+    mixed_ends = [(x + 820.0, y) for x, y in mixed_ends]
+    for point in mixed_starts + mixed_ends:
+        routing.insert_box_marker(top, point, size=8.0)
+    mixed_results = routing.insert_parallel_routes(
+        top,
+        start_points=mixed_starts,
+        end_points=mixed_ends,
+        line_width=[8.1] * len(mixed_starts),
+        min_line_width=8.1,
+        bundle_spacing=17.1,
+        route_mode="manhattan",
+        extension_type="half_width",
+        clearance=0.0,
+    )
+
+    mixed_region = db.Region()
+    mixed_total_area = 0
+    for result in mixed_results:
+        for shape in result.shapes:
+            polygon = shape.polygon() if hasattr(shape, "polygon") else shape
+            mixed_region.insert(polygon)
+            mixed_total_area += polygon.area()
+    mixed_overlap_area = mixed_total_area - mixed_region.merged().area()
+    print(f"Mixed row bundle validation overlap area: {mixed_overlap_area}")
+
+    routing.insert_note_text(top, "Exact GUI Bundle Validation", 720.0, 320.0)
+    exact_starts = [(-90.0, 240.0), (10.0, 240.0), (110.0, 240.0), (210.0, 240.0)]
+    exact_ends = [(-540.0, 10.0), (-140.0, 10.0), (260.0, 10.0), (660.0, 10.0)]
+    exact_starts = [(x + 820.0, y + 200.0) for x, y in exact_starts]
+    exact_ends = [(x + 820.0, y + 200.0) for x, y in exact_ends]
+    for point in exact_starts + exact_ends:
+        routing.insert_box_marker(top, point, size=8.0)
+    exact_results = routing.insert_parallel_routes(
+        top,
+        start_points=exact_starts,
+        end_points=exact_ends,
+        line_width=[8.1] * len(exact_starts),
+        min_line_width=8.1,
+        bundle_spacing=17.1,
+        route_mode="manhattan",
+        extension_type="half_width",
+        clearance=0.0,
+    )
+
+    exact_region = db.Region()
+    exact_total_area = 0
+    for result in exact_results:
+        for shape in result.shapes:
+            polygon = shape.polygon() if hasattr(shape, "polygon") else shape
+            exact_region.insert(polygon)
+            exact_total_area += polygon.area()
+    exact_overlap_area = exact_total_area - exact_region.merged().area()
+    print(f"Exact GUI bundle validation overlap area: {exact_overlap_area}")
+
     output_file = get_gds_path("TEST_ROUTING.gds")
     routing.layout.write(output_file)
     print(f"Routing demo written to: {output_file}")

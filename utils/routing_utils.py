@@ -21,6 +21,15 @@ from utils.geometry import GeometryUtils
 Point2D = Tuple[float, float]
 
 
+class RouteOverlapError(ValueError):
+    """Raised when generated route shapes overlap."""
+
+    def __init__(self, area: int, results: Sequence["RouteResult"]):
+        super().__init__(f"Parallel routes overlap (area={area}).")
+        self.area = area
+        self.results = list(results)
+
+
 @dataclass
 class RouteResult:
     """Container for a routed path and its centerline."""
@@ -144,7 +153,7 @@ class RoutingUtils:
             pitch = max_width + max(clearance, 0.0)
 
         if not shared_waypoints and mode == "manhattan":
-            return RoutingUtils._build_parallel_manhattan_shortest_routes(
+            results = RoutingUtils._build_parallel_manhattan_shortest_routes(
                 start_points=start_points,
                 end_points=end_points,
                 widths=widths,
@@ -155,6 +164,10 @@ class RoutingUtils:
                 end_extension=end_extension,
                 extension_type=extension_type,
             )
+            overlap_area = RoutingUtils._route_results_overlap_area(results)
+            if overlap_area > 0:
+                raise RouteOverlapError(overlap_area, results)
+            return results
 
         base_points = [RoutingUtils._mean_point(start_points)]
         base_points.extend(RoutingUtils._to_point(pt) for pt in (shared_waypoints or []))
@@ -186,6 +199,9 @@ class RoutingUtils:
             )
             results.append(result)
 
+        overlap_area = RoutingUtils._route_results_overlap_area(results)
+        if overlap_area > 0:
+            raise RouteOverlapError(overlap_area, results)
         return results
 
     @staticmethod
@@ -676,6 +692,39 @@ class RoutingUtils:
         if not pairings:
             return []
 
+        start_x_span = max(point[0] for point in starts) - min(point[0] for point in starts)
+        start_y_span = max(point[1] for point in starts) - min(point[1] for point in starts)
+        end_x_span = max(point[0] for point in ends) - min(point[0] for point in ends)
+        end_y_span = max(point[1] for point in ends) - min(point[1] for point in ends)
+        starts_are_rows = start_x_span >= start_y_span
+        ends_are_rows = end_x_span >= end_y_span
+        direction_signs = []
+        for start_index, end_index in pairings:
+            dx = ends[end_index][0] - starts[start_index][0]
+            dy = ends[end_index][1] - starts[start_index][1]
+            if abs(dx) <= 1e-9 or abs(dy) <= 1e-9:
+                direction_signs.append(0)
+            elif dx * dy > 0:
+                direction_signs.append(1)
+            else:
+                direction_signs.append(-1)
+        has_positive_group = any(sign > 0 for sign in direction_signs)
+        has_negative_group = any(sign < 0 for sign in direction_signs)
+        use_grouped_fallback = starts_are_rows and ends_are_rows and has_positive_group and has_negative_group and not obstacles
+
+        if use_grouped_fallback:
+            return RoutingUtils._build_parallel_bundle_fallback_routes(
+                starts=starts,
+                ends=ends,
+                widths=widths,
+                pitch=pitch,
+                clearance=clearance,
+                pairings=pairings,
+                begin_extension=begin_extension,
+                end_extension=end_extension,
+                extension_type=extension_type,
+            )
+
         try:
             gf = RoutingUtils._get_gdsfactory()
             RoutingUtils._activate_gdsfactory_pdk(gf)
@@ -770,6 +819,18 @@ class RoutingUtils:
                     end_extension=fin_ext,
                 )
 
+            if RoutingUtils._route_results_overlap_area([result for result in results if result is not None]) > 0:
+                return RoutingUtils._build_parallel_bundle_fallback_routes(
+                    starts=starts,
+                    ends=ends,
+                    widths=widths,
+                    pitch=pitch,
+                    clearance=clearance,
+                    pairings=pairings,
+                    begin_extension=begin_extension,
+                    end_extension=end_extension,
+                    extension_type=extension_type,
+                )
             return [result for result in results if result is not None]
         except Exception:
             return RoutingUtils._build_parallel_bundle_fallback_routes(
@@ -800,6 +861,7 @@ class RoutingUtils:
             return []
 
         pitch_eff = max(pitch, max(widths) + clearance, 1.0)
+        side_step = max(max(widths) + clearance, 1.0)
         start_center = RoutingUtils._mean_point(starts)
         end_center = RoutingUtils._mean_point(ends)
         start_x_span = max(point[0] for point in starts) - min(point[0] for point in starts)
@@ -819,7 +881,246 @@ class RoutingUtils:
             horizontal = abs(end_center[0] - start_center[0]) >= abs(end_center[1] - start_center[1])
         results: List[Optional[RouteResult]] = [None] * len(starts)
 
-        if horizontal:
+        direction_signs = []
+        for start_index, end_index in pairings:
+            dx = ends[end_index][0] - starts[start_index][0]
+            dy = ends[end_index][1] - starts[start_index][1]
+            if abs(dx) <= 1e-9 or abs(dy) <= 1e-9:
+                direction_signs.append(0)
+            elif dx * dy > 0:
+                direction_signs.append(1)
+            else:
+                direction_signs.append(-1)
+
+        has_positive_group = any(sign > 0 for sign in direction_signs)
+        has_negative_group = any(sign < 0 for sign in direction_signs)
+
+        if starts_are_columns and ends_are_rows:
+            start_above = start_center[1] >= end_center[1]
+            start_left = start_center[0] <= end_center[0]
+            # Respect GUI list order as the authoritative bundle mapping.
+            ordered_pairs = list(pairings)
+            row_y = sum(point[1] for point in ends) / float(len(ends))
+            boundary_x = (
+                min(point[0] for point in ends) - side_step / 2.0
+                if start_left
+                else max(point[0] for point in ends) + side_step / 2.0
+            )
+
+            for lane_index, (start_index, end_index) in enumerate(ordered_pairs):
+                elbow_x = boundary_x - lane_index * side_step if start_left else boundary_x + lane_index * side_step
+                approach_rank = len(ordered_pairs) - lane_index
+                approach_y = row_y + approach_rank * pitch_eff if start_above else row_y - approach_rank * pitch_eff
+                points = [
+                    starts[start_index],
+                    (elbow_x, starts[start_index][1]),
+                    (elbow_x, approach_y),
+                    (ends[end_index][0], approach_y),
+                    ends[end_index],
+                ]
+                points = RoutingUtils._dedupe_points(points)
+                bgn_ext, fin_ext = RoutingUtils._resolve_extensions(
+                    line_width=widths[start_index],
+                    extension_type=extension_type,
+                    begin_extension=begin_extension,
+                    end_extension=end_extension,
+                    start_port=None,
+                    end_port=None,
+                )
+                results[start_index] = RouteResult(
+                    shapes=[RoutingUtils._polyline_to_path(points, widths[start_index], bgn_ext, fin_ext)],
+                    points=points,
+                    width=float(widths[start_index]),
+                    begin_extension=bgn_ext,
+                    end_extension=fin_ext,
+                )
+        elif not horizontal and has_positive_group and has_negative_group:
+            left_group = []
+            right_group = []
+            straight = []
+            for start_index, end_index in pairings:
+                dx = ends[end_index][0] - starts[start_index][0]
+                if dx < -1e-9:
+                    left_group.append((start_index, end_index))
+                elif dx > 1e-9:
+                    right_group.append((start_index, end_index))
+                else:
+                    straight.append((start_index, end_index))
+
+            center_rank = lambda item: abs((starts[item[0]][0] + ends[item[1]][0]) / 2.0)
+            left_group = sorted(left_group, key=center_rank)
+            right_group = sorted(right_group, key=center_rank)
+            straight = sorted(straight, key=lambda item: starts[item[0]][0])
+            top_row_y = max(point[1] for point in starts)
+            bottom_row_y = min(point[1] for point in ends)
+            band_count = max(len(left_group), len(right_group), len(straight), 1)
+
+            def make_simple_row_route(
+                start_index: int,
+                end_index: int,
+                elbow_y: float,
+            ) -> RouteResult:
+                points = [
+                    starts[start_index],
+                    (starts[start_index][0], elbow_y),
+                    (ends[end_index][0], elbow_y),
+                    ends[end_index],
+                ]
+                points = RoutingUtils._dedupe_points(points)
+                bgn_ext, fin_ext = RoutingUtils._resolve_extensions(
+                    line_width=widths[start_index],
+                    extension_type=extension_type,
+                    begin_extension=begin_extension,
+                    end_extension=end_extension,
+                    start_port=None,
+                    end_port=None,
+                )
+                return RouteResult(
+                    shapes=[RoutingUtils._polyline_to_path(points, widths[start_index], bgn_ext, fin_ext)],
+                    points=points,
+                    width=float(widths[start_index]),
+                    begin_extension=bgn_ext,
+                    end_extension=fin_ext,
+                )
+
+            simple_results: List[Optional[RouteResult]] = [None] * len(starts)
+            max_group_count = max(len(left_group), len(right_group), len(straight), 1)
+            mid_y = (top_row_y + bottom_row_y) / 2.0
+            lane_offsets = [
+                (lane_index - (max_group_count - 1) / 2.0) * pitch_eff
+                for lane_index in range(max_group_count)
+            ]
+
+            for lane_index, (start_index, end_index) in enumerate(left_group):
+                simple_results[start_index] = make_simple_row_route(
+                    start_index,
+                    end_index,
+                    mid_y + lane_offsets[lane_index],
+                )
+            for lane_index, (start_index, end_index) in enumerate(right_group):
+                simple_results[start_index] = make_simple_row_route(
+                    start_index,
+                    end_index,
+                    mid_y + lane_offsets[lane_index],
+                )
+            for lane_index, (start_index, end_index) in enumerate(straight):
+                simple_results[start_index] = make_simple_row_route(
+                    start_index,
+                    end_index,
+                    mid_y + (lane_index - (len(straight) - 1) / 2.0) * pitch_eff,
+                )
+
+            simple_compacted = [result for result in simple_results if result is not None]
+            if simple_compacted and RoutingUtils._route_results_overlap_area(simple_compacted) == 0:
+                return simple_compacted
+
+            def assign_banded_route(
+                start_index: int,
+                end_index: int,
+                top_y: float,
+                side_x: float,
+                bottom_y: float,
+            ) -> RouteResult:
+                points = [
+                    starts[start_index],
+                    (starts[start_index][0], top_y),
+                    (side_x, top_y),
+                    (side_x, bottom_y),
+                    (ends[end_index][0], bottom_y),
+                    ends[end_index],
+                ]
+                points = RoutingUtils._dedupe_points(points)
+                bgn_ext, fin_ext = RoutingUtils._resolve_extensions(
+                    line_width=widths[start_index],
+                    extension_type=extension_type,
+                    begin_extension=begin_extension,
+                    end_extension=end_extension,
+                    start_port=None,
+                    end_port=None,
+                )
+                return RouteResult(
+                    shapes=[RoutingUtils._polyline_to_path(points, widths[start_index], bgn_ext, fin_ext)],
+                    points=points,
+                    width=float(widths[start_index]),
+                    begin_extension=bgn_ext,
+                    end_extension=fin_ext,
+                )
+
+            def inner_left_column() -> float:
+                if not left_group:
+                    return min(point[0] for point in starts + ends) - side_step / 2.0
+                start_limit = min(starts[item[0]][0] for item in left_group)
+                end_limit = max(ends[item[1]][0] for item in left_group)
+                return min(start_limit - side_step / 2.0, end_limit + side_step / 2.0)
+
+            def inner_right_column() -> float:
+                if not right_group:
+                    return max(point[0] for point in starts + ends) + side_step / 2.0
+                start_limit = max(starts[item[0]][0] for item in right_group)
+                end_limit = min(ends[item[1]][0] for item in right_group)
+                return max(start_limit + side_step / 2.0, end_limit - side_step / 2.0)
+
+            best_results: Optional[List[Optional[RouteResult]]] = None
+            best_overlap_area: Optional[int] = None
+            left_inner_x = inner_left_column()
+            right_inner_x = inner_right_column()
+
+            for spread_multiplier in range(1, band_count + 24):
+                lane_pitch = spread_multiplier * pitch_eff
+                for side_margin_steps in range(0, band_count + 24):
+                    trial_results: List[Optional[RouteResult]] = [None] * len(starts)
+
+                    for lane_index, (start_index, end_index) in enumerate(left_group):
+                        top_y = top_row_y - (lane_index + 1) * lane_pitch
+                        bottom_y = bottom_row_y + (lane_index + 1) * lane_pitch
+                        side_x = left_inner_x - (lane_index + side_margin_steps) * side_step
+                        trial_results[start_index] = assign_banded_route(start_index, end_index, top_y, side_x, bottom_y)
+
+                    for lane_index, (start_index, end_index) in enumerate(right_group):
+                        top_y = top_row_y - (lane_index + 1) * lane_pitch
+                        bottom_y = bottom_row_y + (lane_index + 1) * lane_pitch
+                        side_x = right_inner_x + (lane_index + side_margin_steps) * side_step
+                        trial_results[start_index] = assign_banded_route(start_index, end_index, top_y, side_x, bottom_y)
+
+                    for lane_index, (start_index, end_index) in enumerate(straight):
+                        elbow_y = (top_row_y + bottom_row_y) / 2.0 + (lane_index - (len(straight) - 1) / 2.0) * lane_pitch
+                        points = [
+                            starts[start_index],
+                            (starts[start_index][0], elbow_y),
+                            (ends[end_index][0], elbow_y),
+                            ends[end_index],
+                        ]
+                        points = RoutingUtils._dedupe_points(points)
+                        bgn_ext, fin_ext = RoutingUtils._resolve_extensions(
+                            line_width=widths[start_index],
+                            extension_type=extension_type,
+                            begin_extension=begin_extension,
+                            end_extension=end_extension,
+                            start_port=None,
+                            end_port=None,
+                        )
+                        trial_results[start_index] = RouteResult(
+                            shapes=[RoutingUtils._polyline_to_path(points, widths[start_index], bgn_ext, fin_ext)],
+                            points=points,
+                            width=float(widths[start_index]),
+                            begin_extension=bgn_ext,
+                            end_extension=fin_ext,
+                        )
+
+                    trial_compacted = [result for result in trial_results if result is not None]
+                    overlap_area = RoutingUtils._route_results_overlap_area(trial_compacted)
+                    if overlap_area == 0:
+                        results = trial_results
+                        break
+                    if best_overlap_area is None or overlap_area < best_overlap_area:
+                        best_overlap_area = overlap_area
+                        best_results = trial_results
+                if any(result is not None for result in results):
+                    break
+
+            if all(result is None for result in results) and best_results is not None:
+                results = best_results
+        elif horizontal:
             ordered = sorted(pairings, key=lambda item: starts[item[0]][1], reverse=True)
             mid_x = (start_center[0] + end_center[0]) / 2.0
             for lane_index, (start_index, end_index) in enumerate(ordered):
@@ -877,6 +1178,17 @@ class RoutingUtils:
                 )
 
         return [result for result in results if result is not None]
+
+    @staticmethod
+    def _route_results_overlap_area(results: Sequence[RouteResult]) -> int:
+        region = db.Region()
+        total_area = 0
+        for result in results:
+            for shape in result.shapes:
+                polygon = shape.polygon() if hasattr(shape, "polygon") else shape
+                region.insert(polygon)
+                total_area += polygon.area()
+        return total_area - region.merged().area()
 
     @staticmethod
     def _build_obstacle_avoiding_bundle_routes(
@@ -1211,12 +1523,7 @@ class RoutingUtils:
     ) -> List[Tuple[int, int]]:
         if not starts or not ends:
             return []
-        x_span = max([p[0] for p in starts] + [p[0] for p in ends]) - min([p[0] for p in starts] + [p[0] for p in ends])
-        y_span = max([p[1] for p in starts] + [p[1] for p in ends]) - min([p[1] for p in starts] + [p[1] for p in ends])
-        key = (lambda item: item[1][1]) if y_span >= x_span else (lambda item: item[1][0])
-        starts_sorted = sorted(list(enumerate(starts)), key=key, reverse=True)
-        ends_sorted = sorted(list(enumerate(ends)), key=key, reverse=True)
-        return [(start_index, end_index) for (start_index, _), (end_index, _) in zip(starts_sorted, ends_sorted)]
+        return [(index, index) for index in range(min(len(starts), len(ends)))]
 
     @staticmethod
     def _gf_component_to_polygons(component) -> List[object]:
