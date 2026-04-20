@@ -25,6 +25,8 @@
 
 ```text
 Tools -> NanoDevice -> NanoDevice GUI
+Tools -> NanoDevice -> NanoRouting GUI
+Tools -> NanoMark -> NanoMark GUI
 ```
 
 ## 环境安装

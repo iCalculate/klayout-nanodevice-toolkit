@@ -117,6 +117,7 @@ call :bullet "NanoDeviceToolkitLib PCells"
 call :bullet "Unified NanoDevice Toolkit GUI"
 call :bullet "NanoRoutingLib PCells"
 call :bullet "NanoRouting GUI and toolbar button"
+call :bullet "NanoMark GUI for writefield marks and mark arrays"
 call :bullet "config.py, utils, components, and PDK runtime files"
 echo.
 call :headline "Next step"

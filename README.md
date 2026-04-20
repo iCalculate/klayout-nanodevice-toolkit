@@ -37,6 +37,8 @@ The older root-level Python launcher files were removed to avoid maintaining a s
 | --- | --- | --- |
 | KLayout install | `lymtoolkit/install_lymtoolkit.bat` | Installs the toolkit GUI, runtime modules, and bundled resources into KLayout |
 | KLayout GUI | `Tools -> NanoDevice -> NanoDevice GUI` | Opens the maintained interactive GUI after installation |
+| NanoRouting GUI | `Tools -> NanoDevice -> NanoRouting GUI` | Opens the routing-focused GUI for direct path / bundle generation |
+| NanoMark GUI | `Tools -> NanoMark -> NanoMark GUI` | Opens the mark toolkit for EBL writefield marks and general mark arrays |
 | PDK tooling | `lymtoolkit/PDK/` | Keeps technology files, layers, examples, and registration macros together |
 | Python modules | `components/`, `utils/` | Reuse generators and helpers in custom scripts or lab automation |
 | Grayscale patterns | `components/greyscale/` | Generates grayscale lithography assets and image-derived structures |
@@ -77,6 +79,8 @@ Then restart KLayout and open:
 
 ```text
 Tools -> NanoDevice -> NanoDevice GUI
+Tools -> NanoDevice -> NanoRouting GUI
+Tools -> NanoMark -> NanoMark GUI
 ```
 
 ## Python Example

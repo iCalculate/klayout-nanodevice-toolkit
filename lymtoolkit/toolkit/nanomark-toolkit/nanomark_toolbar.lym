@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <klayout-macro>
- <description>NanoRouting Toolbar Button</description>
+ <description>NanoMark Toolbar Button</description>
  <version>v0.1</version>
  <category>pymacros</category>
  <prolog/>
@@ -26,9 +26,9 @@ this_dir = os.path.dirname(__file__)
 if this_dir not in sys.path:
     sys.path.insert(0, this_dir)
 
-from nanorouting_toolkit import launch_nanorouting_dialog
+from nanomark_toolkit import launch_nanomark_dialog
 
-_toolbar_refs = globals().setdefault("_nanorouting_toolbar_refs", {})
+_toolbar_refs = globals().setdefault("_nanomark_toolbar_refs", {})
 
 
 def _find_main_window():
@@ -47,7 +47,7 @@ def _install_toolbar_button():
         return
 
     toolbar_name = "NanoDevice Toolkit"
-    action_name = "nanorouting_toolkit_action"
+    action_name = "nanomark_toolkit_action"
 
     existing_toolbar = main_window.findChild(QToolBar, toolbar_name)
     if existing_toolbar is None:
@@ -64,19 +64,21 @@ def _install_toolbar_button():
             return
 
     icon_candidates = [
-        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "NR.ico")),
-        os.path.abspath(os.path.join(this_dir, "..", "assets", "NR.ico")),
-        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "NR_icon.ico")),
-        os.path.abspath(os.path.join(this_dir, "..", "assets", "NR_icon.ico")),
-        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "NanoRoutingLogo.ico")),
-        os.path.abspath(os.path.join(this_dir, "..", "assets", "NanoRoutingLogo.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "NM.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "NM.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "NM_icon.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "NM_icon.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "ND_icon.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "ND_icon.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "logo.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "logo.ico")),
     ]
     icon_path = next((path for path in icon_candidates if os.path.exists(path)), "")
-    action = QAction(QIcon(icon_path) if icon_path else QIcon(), "NanoRouting", main_window)
+    action = QAction(QIcon(icon_path) if icon_path else QIcon(), "NanoMark", main_window)
     action.setObjectName(action_name)
-    action.setIconText("NanoRouting")
-    action.setToolTip("Open NanoRouting")
-    action.triggered.connect(launch_nanorouting_dialog)
+    action.setIconText("NanoMark")
+    action.setToolTip("Open NanoMark")
+    action.triggered.connect(launch_nanomark_dialog)
     existing_toolbar.addAction(action)
 
     _toolbar_refs["toolbar"] = existing_toolbar
