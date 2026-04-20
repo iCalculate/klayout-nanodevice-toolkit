@@ -65,6 +65,8 @@ def _install_toolbar_button():
             return
 
     icon_candidates = [
+        os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "ND_icon.ico")),
+        os.path.abspath(os.path.join(this_dir, "..", "assets", "ND_icon.ico")),
         os.path.abspath(os.path.join(this_dir, "..", "..", "assets", "logo.ico")),
         os.path.abspath(os.path.join(this_dir, "..", "assets", "logo.ico")),
     ]
