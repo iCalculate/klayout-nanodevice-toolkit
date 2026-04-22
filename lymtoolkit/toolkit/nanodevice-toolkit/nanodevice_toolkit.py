@@ -93,7 +93,7 @@ PREVIEW_LAYER_IDS = {
     "alignment_marks": [LAYER_DEFINITIONS["alignment_marks"]["id"], LAYER_DEFINITIONS["alignment_layer1"]["id"], LAYER_DEFINITIONS["alignment_layer2"]["id"]],
     "labels": [LAYER_DEFINITIONS["labels"]["id"]],
 }
-DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hall_component", "tlm_component"}
+DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hall_component", "tlm_component", "sense_latch_array", "write_read_array"}
 _FONT_FAMILY_CACHE = {}
 
 
@@ -375,6 +375,7 @@ class ToolkitDialog(QDialog):
 
     def _rebuild_param_form(self):
         self.controls = {}
+        self.control_labels = {}
         self._clear_layout(self.form_layout)
         tool = self._current_tool()
         self.preview._has_fitted_once = False
@@ -389,13 +390,17 @@ class ToolkitDialog(QDialog):
             for param in params:
                 control = self._make_control(param)
                 self.controls[param.key] = control
-                label = f"{param.label} [{param.symbol}]"
+                label = QLabel(f"{param.label} [{param.symbol}]")
+                if param.tooltip:
+                    label.setToolTip(param.tooltip)
+                self.control_labels[param.key] = label
                 form.addRow(label, control)
             box.setLayout(form)
             self.form_layout.addWidget(box)
 
         self.form_layout.addStretch(1)
         self._update_layer_controls(tool)
+        self._apply_dynamic_param_state()
         self._refresh_preview()
 
     def _make_control(self, param):
@@ -421,7 +426,7 @@ class ToolkitDialog(QDialog):
         if param.kind == "string":
             text = QLineEdit()
             text.setText(str(param.default))
-            text.textChanged.connect(self._refresh_preview)
+            text.textChanged.connect(self._on_param_control_changed)
             if param.tooltip:
                 text.setToolTip(param.tooltip)
             return text
@@ -436,7 +441,7 @@ class ToolkitDialog(QDialog):
                     default_index = idx
                     break
             combo.setCurrentIndex(default_index)
-            combo.currentIndexChanged.connect(self._refresh_preview)
+            combo.currentIndexChanged.connect(self._on_param_control_changed)
             if param.tooltip:
                 combo.setToolTip(param.tooltip)
             return combo
@@ -451,7 +456,7 @@ class ToolkitDialog(QDialog):
                     default_index = idx
                     break
             combo.setCurrentIndex(default_index)
-            combo.currentIndexChanged.connect(self._refresh_preview)
+            combo.currentIndexChanged.connect(self._on_param_control_changed)
             if param.tooltip:
                 combo.setToolTip(param.tooltip)
             return combo
@@ -464,8 +469,8 @@ class ToolkitDialog(QDialog):
             spin.setKeyboardTracking(False)
             if param.tooltip:
                 spin.setToolTip(param.tooltip)
-            spin.editingFinished.connect(self._refresh_preview)
-            spin.valueChanged.connect(self._refresh_preview)
+            spin.editingFinished.connect(self._on_param_control_changed)
+            spin.valueChanged.connect(self._on_param_control_changed)
             return spin
 
         spin = QDoubleSpinBox()
@@ -478,9 +483,13 @@ class ToolkitDialog(QDialog):
             spin.setSuffix(param.suffix)
         if param.tooltip:
             spin.setToolTip(param.tooltip)
-        spin.editingFinished.connect(self._refresh_preview)
-        spin.valueChanged.connect(self._refresh_preview)
+        spin.editingFinished.connect(self._on_param_control_changed)
+        spin.valueChanged.connect(self._on_param_control_changed)
         return spin
+
+    def _on_param_control_changed(self, *_args):
+        self._apply_dynamic_param_state()
+        self._refresh_preview()
 
     def _values(self):
         values = {}
@@ -496,7 +505,74 @@ class ToolkitDialog(QDialog):
                 values[param.key] = control.currentData()
             else:
                 values[param.key] = control.value()
+        return self._normalize_tool_values(self._current_tool(), values)
+
+    def _raw_values(self):
+        values = {}
+        for param in self._current_tool().params:
+            control = self.controls[param.key]
+            if param.kind == "font_path":
+                values[param.key] = control._line_edit.text()
+            elif param.kind == "string":
+                values[param.key] = control.text()
+            elif param.kind == "layer_choice":
+                values[param.key] = control.currentData()
+            elif param.kind == "choice":
+                values[param.key] = control.currentData()
+            else:
+                values[param.key] = control.value()
         return values
+
+    def _normalize_tool_values(self, tool, values):
+        normalized = dict(values)
+        if tool.key in ("sense_latch_array", "write_read_array"):
+            mode = str(normalized.get("array_shape_mode", "square") or "square").lower()
+            if mode == "square":
+                size = int(normalized.get("array_size", 1))
+                normalized["rows"] = size
+                normalized["cols"] = size
+            else:
+                normalized["array_size"] = int(max(normalized.get("rows", 1), normalized.get("cols", 1)))
+        return normalized
+
+    def _apply_dynamic_param_state(self):
+        tool = self._current_tool()
+        if tool.key not in ("sense_latch_array", "write_read_array"):
+            return
+
+        raw_values = self._raw_values()
+        mode = str(raw_values.get("array_shape_mode", "square") or "square").lower()
+        draw_top_dielectric = bool(raw_values.get("draw_top_dielectric", False))
+        sense_fet_structure = str(raw_values.get("sense_fet_structure", "plain") or "plain").lower()
+
+        array_size_control = self.controls.get("array_size")
+        rows_control = self.controls.get("rows")
+        cols_control = self.controls.get("cols")
+        dielectric_margin_control = self.controls.get("contact_overlap_margin")
+
+        if array_size_control is not None:
+            array_size_control.setEnabled(mode == "square")
+        if rows_control is not None:
+            rows_control.setEnabled(mode != "square")
+        if cols_control is not None:
+            cols_control.setEnabled(mode != "square")
+        if dielectric_margin_control is not None:
+            dielectric_margin_control.setEnabled(draw_top_dielectric)
+
+        if tool.key == "sense_latch_array":
+            interdigit_keys = (
+                "sense_interdigit_finger_width",
+                "sense_interdigit_finger_spacing",
+                "sense_interdigit_tip_gap",
+            )
+            show_interdigit = sense_fet_structure == "interdigitated"
+            for key in interdigit_keys:
+                control = self.controls.get(key)
+                label = self.control_labels.get(key)
+                if control is not None:
+                    control.setVisible(show_interdigit)
+                if label is not None:
+                    label.setVisible(show_interdigit)
 
     def _set_control_value(self, param, value):
         control = self.controls.get(param.key)
@@ -2489,6 +2565,27 @@ def _insert_meander_component(layout, top_cell, values):
     top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
 
 
+def _insert_sense_latch_array_component(layout, top_cell, values):
+    from components.sense_latch_array import SenseLatchArray
+
+    params = dict(values)
+    cell_name = params.pop("cell_name")
+    params.pop("array_type", None)
+    device = SenseLatchArray(layout=layout, **params)
+    cell = device.create_array_cell(_next_cell_name(layout, cell_name))
+    top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+
+def _insert_write_read_array_component(layout, top_cell, values):
+    from components.write_read_array import WriteReadArray
+
+    params = dict(values)
+    cell_name = params.pop("cell_name")
+    device = WriteReadArray(layout=layout, **params)
+    cell = device.create_array_cell(_next_cell_name(layout, cell_name))
+    top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+
 def _fet_preview_geometry(values):
     x = values["x"]
     y = values["y"]
@@ -2652,6 +2749,68 @@ def render_meander_component(scene, values, visible_layers=None):
         y_cursor = next_y
         direction *= -1
     _draw_path(scene, _boxes_to_path(boxes), QPen(QColor("#4cc9f0"), 0), QBrush(QColor(76, 201, 240, 85)))
+
+
+def render_sense_latch_array(scene, values, visible_layers=None):
+    from components.sense_latch_array import SenseLatchArray
+
+    visible_layers = visible_layers or {}
+    params = dict(values)
+    params.pop("cell_name", None)
+    params.pop("array_type", None)
+
+    layout = pya.Layout()
+    layout.dbu = DEFAULT_DBU
+    device = SenseLatchArray(layout=layout, **params)
+    cell = device.create_array_cell("__SENSE_LATCH_ARRAY_PREVIEW__")
+
+    layer_specs = [
+        ("channel", "channel", QPen(QColor("#7cb342"), 0), QBrush(QColor(124, 179, 66, 90))),
+        ("contact", "contact", QPen(QColor("#ef6c00"), 0), QBrush(QColor(239, 108, 0, 110))),
+        ("bottom_gate", "bottom_gate", QPen(QColor("#2196f3"), 0), QBrush(QColor(33, 150, 243, 95))),
+        ("top_dielectric", "top_dielectric", QPen(QColor("#ab47bc"), 0), QBrush(QColor(171, 71, 188, 55))),
+        ("pad", "pad", QPen(QColor("#ffb300"), 0), QBrush(QColor(255, 179, 0, 85))),
+        ("note", "note", QPen(QColor("#bdbdbd"), 0), QBrush(QColor(0, 0, 0, 0))),
+    ]
+
+    for layer_key, component_layer_key, pen, brush in layer_specs:
+        if not visible_layers.get(layer_key, True):
+            continue
+        layer_index = device.layers[component_layer_key]
+        for shape in cell.shapes(layer_index).each():
+            for path in _shape_to_paths(shape, layout.dbu):
+                _draw_path(scene, path, pen, brush)
+
+
+def render_write_read_array(scene, values, visible_layers=None):
+    from components.write_read_array import WriteReadArray
+
+    visible_layers = visible_layers or {}
+    params = dict(values)
+    params.pop("cell_name", None)
+
+    layout = pya.Layout()
+    layout.dbu = DEFAULT_DBU
+    device = WriteReadArray(layout=layout, **params)
+    cell = device.create_array_cell("__WRITE_READ_ARRAY_PREVIEW__")
+
+    layer_specs = [
+        ("channel", "channel", QPen(QColor("#7cb342"), 0), QBrush(QColor(124, 179, 66, 90))),
+        ("contact", "contact", QPen(QColor("#ef6c00"), 0), QBrush(QColor(239, 108, 0, 110))),
+        ("bottom_gate", "bottom_gate", QPen(QColor("#2196f3"), 0), QBrush(QColor(33, 150, 243, 95))),
+        ("bottom_dielectric", "bottom_dielectric", QPen(QColor("#8e24aa"), 0), QBrush(QColor(142, 36, 170, 70))),
+        ("top_dielectric", "top_dielectric", QPen(QColor("#ab47bc"), 0), QBrush(QColor(171, 71, 188, 55))),
+        ("pad", "pad", QPen(QColor("#ffb300"), 0), QBrush(QColor(255, 179, 0, 85))),
+        ("note", "note", QPen(QColor("#bdbdbd"), 0), QBrush(QColor(0, 0, 0, 0))),
+    ]
+
+    for layer_key, component_layer_key, pen, brush in layer_specs:
+        if not visible_layers.get(layer_key, True):
+            continue
+        layer_index = device.layers[component_layer_key]
+        for shape in cell.shapes(layer_index).each():
+            for path in _shape_to_paths(shape, layout.dbu):
+                _draw_path(scene, path, pen, brush)
 
 
 def render_mosfet_component(scene, values, visible_layers=None):
@@ -2935,6 +3094,152 @@ MEANDER_COMPONENT_TOOL = ToolSpec(
 )
 
 
+SENSE_LATCH_ARRAY_TOOL = ToolSpec(
+    key="sense_latch_array",
+    title="Sense / Latch Array",
+    library_name="",
+    pcell_name="",
+    preview_renderer=render_sense_latch_array,
+    preview_layers=[
+        ("channel", "Channel"),
+        ("contact", "N/P Contact"),
+        ("bottom_gate", "Bottom Gate"),
+        ("top_dielectric", "Top Dielectric"),
+        ("pad", "Breakout Pads"),
+        ("note", "Pixel Outline"),
+    ],
+    insert_handler=_insert_sense_latch_array_component,
+    params=[
+        ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "Sense_Latch_Array", kind="string"),
+        ParameterSpec("origin_mode", "Origin Mode", "Org", "Placement", "center", kind="choice", choices=[("center", "center"), ("lower_left", "lower_left")]),
+        ParameterSpec("offset_x", "Offset X", "Ox", "Placement", 0.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("offset_y", "Offset Y", "Oy", "Placement", 0.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("array_shape_mode", "Array Mode", "Am", "Array", "square", kind="choice", choices=[("square", "square"), ("rectangular", "rectangular")]),
+        ParameterSpec("array_size", "Array Size", "N", "Array", 3, kind="int", minimum=1, maximum=512),
+        ParameterSpec("rows", "Rows", "R", "Array", 3, kind="int", minimum=1, maximum=512),
+        ParameterSpec("cols", "Cols", "C", "Array", 3, kind="int", minimum=1, maximum=512),
+        ParameterSpec("pixel_size", "Pixel Size", "P", "Array", 50.0, minimum=2.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("stack_base", "Stack Base", "Stk", "Process", 11, kind="choice", choices=[("11", 11), ("21", 21)]),
+        ParameterSpec("channel_type", "Channel Type", "Type", "Process", "n", kind="choice", choices=[("n", "n"), ("p", "p")]),
+        ParameterSpec("edge_margin", "Edge Margin", "Em", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("trail_edge_margin", "Trail Edge Margin", "Tem", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("contact_tail_margin", "Trail End Margin", "Ttm", "Layout", 0.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("channel_margin", "Channel Margin", "Cm", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Shrinks channel height inside each FET window."),
+        ParameterSpec("channel_edge_gap", "Channel Edge Gap", "Ceg", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Keeps channel away from the pixel left/right edge so adjacent pixels do not short."),
+        ParameterSpec("contact_overlap_margin", "Dielectric Margin", "Dom", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Only affects the top dielectric outline when Top Dielectric is enabled."),
+        ParameterSpec("contact_spine_width", "Trail Width", "Tw", "Contacts", 4.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("fet_gap", "FET Gap", "Gap", "Contacts", 12.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("shared_contact_height", "Shared Contact Height", "Sch", "Contacts", 12.0, minimum=2.0, maximum=1000.0, suffix=" um", tooltip="Minimum vertical size of the shared middle contact between sens and latch."),
+        ParameterSpec("outer_contact_min_length", "Outer Contact Min", "Ocm", "Contacts", 2.0, minimum=2.0, maximum=1000.0, suffix=" um", tooltip="Minimum allowed left/right outer-contact length after centering the full two-FET assembly."),
+        ParameterSpec("sense_fet_structure", "Sense FET Structure", "Sfs", "Sens FET", "plain", kind="choice", choices=[("plain", "plain"), ("interdigitated", "interdigitated")], tooltip="Choose the sense transistor contact style: the current plain block or an interdigitated finger electrode."),
+        ParameterSpec("sens_width", "Sens Width", "Ws", "Sens FET", 30.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("sens_length", "Sens Length", "Ls", "Sens FET", 10.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("sens_channel_overlap", "Sens Channel Overlap", "Sco", "Sens FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("sens_pad_overhang", "Sens Pad Overhang", "Spo", "Sens FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("sense_interdigit_finger_width", "Inner Finger Width", "Wf", "Sens FET", 2.0, minimum=0.1, maximum=1000.0, suffix=" um", tooltip="Width of each interdigit inner electrode stripe."),
+        ParameterSpec("sense_interdigit_finger_spacing", "Inner Finger Spacing", "Sf", "Sens FET", 1.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Spacing between adjacent interdigit inner electrode stripes."),
+        ParameterSpec("sense_interdigit_tip_gap", "Tip Gap", "Tg", "Sens FET", 1.5, minimum=0.1, maximum=1000.0, suffix=" um", tooltip="Gap from one side's finger tip to the opposite main electrode body."),
+        ParameterSpec("latch_width", "Latch Width", "Wl", "Latch FET", 30.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("latch_length", "Latch Length", "Ll", "Latch FET", 5.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("latch_channel_overlap", "Latch Channel Overlap", "Lco", "Latch FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("latch_pad_overhang", "Latch Pad Overhang", "Lpo", "Latch FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_line_width", "Gate Trail Width", "Gtw", "Gate", 4.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_extension", "Gate Extension", "Gex", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_length_overhang", "Gate Length Overhang", "Glo", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_width_overhang", "Gate Width Overhang", "Gwo", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_gap", "Gate Gap", "Gg", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Minimum vertical separation budget between the upper and lower gate routing zones."),
+        ParameterSpec("draw_channel", "Draw Channel", "Ch", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("draw_top_dielectric", "Top Dielectric", "Td", "Options", 0, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("draw_array_pads", "Array Pads", "Pad", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("note_text_enabled", "Note Text", "Txt", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("array_pad_size", "Pad Size", "Ps", "Fanout", 20.0, minimum=2.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("array_pad_overlap", "Pad Overlap", "Po", "Fanout", 4.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_pad_offset", "Gate Pad Offset", "Gpo", "Fanout", 18.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("contact_pad_offset", "Contact Pad Offset", "Cpo", "Fanout", 18.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("gate_pad_pitch", "Gate Pad Pitch", "Gpp", "Fanout", 26.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("pad_connection_style", "Pad Connection", "Pcs", "Fanout", "line", kind="choice", choices=[("line", "line"), ("block", "block")]),
+        ParameterSpec("show_pixel_outline", "Show Pixel Outline", "Out", "Debug", 0, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("pixel_outline_layer", "Outline Layer", "Ol", "Debug", 6, kind="int", minimum=0, maximum=1000),
+    ],
+)
+
+
+WRITE_READ_ARRAY_TOOL = ToolSpec(
+    key="write_read_array",
+    title="Write / Read Array",
+    library_name="",
+    pcell_name="",
+    preview_renderer=render_write_read_array,
+    preview_layers=[
+        ("channel", "Channel"),
+        ("contact", "N/P Contact"),
+        ("bottom_gate", "Bottom Gate"),
+        ("bottom_dielectric", "Bottom Dielectric"),
+        ("top_dielectric", "Top Dielectric"),
+        ("pad", "Breakout Pads"),
+        ("note", "Notes"),
+    ],
+    insert_handler=_insert_write_read_array_component,
+    params=[
+        ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "Write_Read_Array", kind="string"),
+        ParameterSpec("origin_mode", "Origin Mode", "Org", "Placement", "center", kind="choice", choices=[("center", "center"), ("lower_left", "lower_left")]),
+        ParameterSpec("offset_x", "Offset X", "Ox", "Placement", 0.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("offset_y", "Offset Y", "Oy", "Placement", 0.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("array_shape_mode", "Array Mode", "Am", "Array", "square", kind="choice", choices=[("square", "square"), ("rectangular", "rectangular")]),
+        ParameterSpec("array_size", "Array Size", "N", "Array", 3, kind="int", minimum=1, maximum=512),
+        ParameterSpec("rows", "Rows", "R", "Array", 3, kind="int", minimum=1, maximum=512),
+        ParameterSpec("cols", "Cols", "C", "Array", 3, kind="int", minimum=1, maximum=512),
+        ParameterSpec("pixel_size", "Pixel Size", "P", "Array", 72.0, minimum=2.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("stack_base", "Stack Base", "Stk", "Process", 11, kind="choice", choices=[("11", 11), ("21", 21)]),
+        ParameterSpec("channel_type", "Channel Type", "Type", "Process", "n", kind="choice", choices=[("n", "n"), ("p", "p")]),
+        ParameterSpec("edge_margin", "Edge Margin", "Em", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("trail_edge_margin", "Trail Edge Margin", "Tem", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("contact_tail_margin", "Trail End Margin", "Ttm", "Layout", 0.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("channel_margin", "Channel Margin", "Cm", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Shrinks channel geometry where applicable."),
+        ParameterSpec("channel_edge_gap", "Channel Edge Gap", "Ceg", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Keeps channel away from pixel left/right edges."),
+        ParameterSpec("contact_overlap_margin", "Dielectric Margin", "Dom", "Layout", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Only affects dielectric outline when Top Dielectric is enabled."),
+        ParameterSpec("contact_spine_width", "Trail Width", "Tw", "Routing", 4.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_line_width", "Gate Trail Width", "Gtw", "Routing", 4.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("fet_gap", "FET Gap", "Gap", "Routing", 8.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("shared_contact_height", "Shared Height", "Sch", "Routing", 12.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("outer_contact_min_length", "Outer Contact Min", "Ocm", "Routing", 2.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("write_width", "Write Width", "Ww", "Write FET", 16.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("write_length", "Write Length", "Lw", "Write FET", 10.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("write_channel_overlap", "Write Channel Overlap", "Wco", "Write FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("write_pad_overhang", "Write Pad Overhang", "Wpo", "Write FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("write_left_contact_length", "Write Left Contact", "Wlc", "Write FET", 8.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("write_right_contact_length", "Write Right Contact", "Wrc", "Write FET", 8.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("read_width", "Read Width", "Wr", "Read FET", 14.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("read_length", "Read Length", "Lr", "Read FET", 18.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("read_channel_overlap", "Read Channel Overlap", "Rco", "Read FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("read_pad_overhang", "Read Pad Overhang", "Rpo", "Read FET", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("read_contact_length", "Read Contact Length", "Rcl", "Read FET", 10.0, minimum=2.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_extension", "Gate Extension", "Gex", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_length_overhang", "Gate Length Overhang", "Glo", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_width_overhang", "Gate Width Overhang", "Gwo", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_gap", "Gate Gap", "Gg", "Gate", 2.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("coupling_gate_pad_size", "Coupling Via Pad", "Cgp", "Coupling", 6.0, minimum=2.0, maximum=1000.0, suffix=" um", tooltip="Base size used for bottom-gate coupling features and the read bottom stub."),
+        ParameterSpec("coupling_via_size", "Dielectric Via Size", "Cvs", "Coupling", 4.0, minimum=1.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("read_gate_bridge_width", "Read Gate Bridge", "Rgb", "Coupling", 4.0, minimum=1.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("rwl_up_extension", "RWL Up Extension", "Rue", "Coupling", 6.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="How far the RWL bottom-gate trail rises upward into the pixel."),
+        ParameterSpec("read_bottom_overlap_height", "Read Bottom Overlap", "Rbo", "Coupling", 4.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Overlap height between the read bottom contact and the upward RWL gate stub."),
+        ParameterSpec("write_coupling_via_inset", "Write Via Inset", "Wvi", "Coupling", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Keeps the write-side coupling via inside the contact-only overlap region, away from the channel."),
+        ParameterSpec("draw_channel", "Draw Channel", "Ch", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("draw_top_dielectric", "Top Dielectric", "Td", "Options", 0, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("draw_array_pads", "Array Pads", "Pad", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("note_text_enabled", "Note Text", "Txt", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("array_pad_size", "Pad Size", "Ps", "Fanout", 20.0, minimum=2.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("array_pad_overlap", "Pad Overlap", "Po", "Fanout", 4.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_pad_offset", "Gate Pad Offset", "Gpo", "Fanout", 18.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("contact_pad_offset", "Contact Pad Offset", "Cpo", "Fanout", 18.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("gate_pad_pitch", "Gate Pad Pitch", "Gpp", "Fanout", 26.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("pad_connection_style", "Pad Connection", "Pcs", "Fanout", "line", kind="choice", choices=[("line", "line"), ("block", "block")]),
+        ParameterSpec("show_pixel_outline", "Show Pixel Outline", "Out", "Debug", 0, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("pixel_outline_layer", "Outline Layer", "Ol", "Debug", 6, kind="int", minimum=0, maximum=1000),
+    ],
+)
+
+
 def launch_toolkit_dialog():
     dlg = ToolkitDialog(
         [
@@ -2943,6 +3248,8 @@ def launch_toolkit_dialog():
             MOSFET_COMPONENT_TOOL,
             HALL_COMPONENT_TOOL,
             TLM_COMPONENT_TOOL,
+            SENSE_LATCH_ARRAY_TOOL,
+            WRITE_READ_ARRAY_TOOL,
         ]
     )
     dlg.exec_()

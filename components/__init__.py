@@ -20,6 +20,14 @@ except Exception:
     pass
 
 try:
+    from .sense_latch_array import SenseLatchArray
+    from .write_read_array import WriteReadArray
+
+    __all__.extend(['SenseLatchArray', 'WriteReadArray'])
+except Exception:
+    pass
+
+try:
     from .resolution import ResolutionTestPattern
 
     __all__.append('ResolutionTestPattern')
