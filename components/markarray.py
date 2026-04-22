@@ -22,6 +22,7 @@ except ImportError:
 
 from config import DEFAULT_DBU, DEFAULT_UNIT_SCALE
 from utils.geometry import GeometryUtils
+from utils.mark_utils import MarkUtils
 from utils.text_utils import TextUtils
 
 
@@ -201,6 +202,232 @@ class MarkArrayBuilder:
         except Exception:
             return [pya.Text(str(text), int(round(x * DEFAULT_UNIT_SCALE)), int(round(y * DEFAULT_UNIT_SCALE)))]
 
+    def _safe_label_text(self, pattern, context, fallback):
+        text = str(fallback)
+        if pattern is None:
+            return text
+        try:
+            rendered = str(pattern).format(**context).strip()
+            if rendered:
+                text = rendered
+        except Exception:
+            pass
+        return text
+
+    def _simple_mark_shapes(
+        self,
+        x,
+        y,
+        mark_style,
+        mark_size,
+        mark_width,
+        mark_rotation=0,
+        polygon_sides=6,
+        chamfer_ratio=0.25,
+    ):
+        style = str(mark_style).lower()
+
+        if style == "bonecross":
+            shapes = self._bonecross_shapes(x, y, mark_size, mark_width)
+        elif style == "chessboard":
+            shapes = self._mark_shapes(x, y, "chessboard", mark_size, mark_width)
+        elif style == "square":
+            shapes = MarkUtils.square(x, y, mark_size).get_shapes()
+        elif style == "circle":
+            shapes = MarkUtils.circle(x, y, mark_size).get_shapes()
+        elif style == "diamond":
+            shapes = MarkUtils.diamond(x, y, mark_size).get_shapes()
+        elif style == "triangle":
+            shapes = MarkUtils.triangle(x, y, mark_size).get_shapes()
+        elif style == "l_shape":
+            shapes = MarkUtils.l_shape(x, y, mark_size, ratio=max(mark_width / max(mark_size, self.layout.dbu), 0.01)).get_shapes()
+        elif style == "t_shape":
+            shapes = MarkUtils.t_shape(x, y, mark_size, ratio=max(mark_width / max(mark_size, self.layout.dbu), 0.01)).get_shapes()
+        elif style == "regular_polygon":
+            shapes = MarkUtils.regular_polygon(x, y, mark_size, n_sides=max(int(polygon_sides), 3)).get_shapes()
+        elif style == "chamfered_octagon":
+            shapes = MarkUtils.chamfered_octagon(x, y, mark_size, chamfer_ratio=max(float(chamfer_ratio), 0.01)).get_shapes()
+        else:
+            shapes = MarkUtils.cross(x, y, mark_size, mark_width).get_shapes()
+
+        if int(mark_rotation) % 360:
+            shapes = self._rotate_shapes(shapes, int(mark_rotation), x, y)
+        return shapes
+
+    def _guide_grid_shapes(self, center_x, center_y, span_x, span_y, line_width):
+        shapes = []
+        line_width = max(float(line_width), self.layout.dbu)
+        fallback_len = max(line_width * 8.0, self.layout.dbu)
+        if span_x > 0.0 and span_y > 0.0:
+            shapes.extend(self._outline_rectangles(center_x, center_y, 2.0 * span_x, 2.0 * span_y, line_width))
+        if span_x > 0.0:
+            shapes.append(GeometryUtils.create_rectangle(center_x - span_x / 2.0, center_y, line_width, 2.0 * span_y if span_y > 0.0 else fallback_len, center=True))
+            shapes.append(GeometryUtils.create_rectangle(center_x + span_x / 2.0, center_y, line_width, 2.0 * span_y if span_y > 0.0 else fallback_len, center=True))
+        if span_y > 0.0:
+            shapes.append(GeometryUtils.create_rectangle(center_x, center_y - span_y / 2.0, 2.0 * span_x if span_x > 0.0 else fallback_len, line_width, center=True))
+            shapes.append(GeometryUtils.create_rectangle(center_x, center_y + span_y / 2.0, 2.0 * span_x if span_x > 0.0 else fallback_len, line_width, center=True))
+        cross_len = max(min(span_x if span_x > 0.0 else line_width * 8.0, span_y if span_y > 0.0 else line_width * 8.0), line_width * 4.0)
+        shapes.extend(self._simple_cross_shapes(center_x, center_y, cross_len, line_width))
+        return shapes
+
+    def build_custom_global_mark_grid(
+        self,
+        chip_width=10000.0,
+        chip_height=10000.0,
+        active_width=8000.0,
+        active_height=8000.0,
+        center_x=0.0,
+        center_y=0.0,
+        span_x=2000.0,
+        span_y=2000.0,
+        enabled_positions=None,
+        guide_line_width=5.0,
+        mark_style="ebl_composite",
+        mark_size=120.0,
+        mark_width=10.0,
+        mark_rotation=0,
+        polygon_sides=6,
+        chamfer_ratio=0.25,
+        main_reference_slot="tl",
+        ebl_main_size=400.0,
+        ebl_main_width=10.0,
+        ebl_small_size=50.0,
+        ebl_small_width=4.0,
+        ebl_small_dist=175.0,
+        ebl_enable_frame=True,
+        ebl_enable_alignment_layers=True,
+        enable_coord_text=True,
+        coord_text_size=16.0,
+        enable_label=True,
+        label_pattern="{slot}",
+        label_size=24.0,
+        label_offset=(80.0, 80.0),
+        label_anchor="left_bottom",
+        layer_chip=(1, 0),
+        layer_active=(2, 0),
+        layer_mechanical=(6, 0),
+        layer_mark=(3, 0),
+        layer_mark_frame=(4, 0),
+        layer_auto_align=(61, 0),
+        layer_manual_align=(63, 0),
+        name="custom_global_mark_grid",
+    ):
+        cell = self.layout.create_cell(str(name))
+        self._insert_shapes(cell, layer_chip, self._outline_rectangles(center_x, center_y, chip_width, chip_height, guide_line_width))
+        self._insert_shapes(cell, layer_active, self._outline_rectangles(center_x, center_y, active_width, active_height, guide_line_width))
+        self._insert_shapes(cell, layer_mechanical, self._guide_grid_shapes(center_x, center_y, span_x, span_y, guide_line_width))
+
+        slot_defs = [
+            ("tl", "NW", 0, 0, -1.0, 1.0),
+            ("tc", "N", 0, 1, 0.0, 1.0),
+            ("tr", "NE", 0, 2, 1.0, 1.0),
+            ("cl", "W", 1, 0, -1.0, 0.0),
+            ("cc", "C", 1, 1, 0.0, 0.0),
+            ("cr", "E", 1, 2, 1.0, 0.0),
+            ("bl", "SW", 2, 0, -1.0, -1.0),
+            ("bc", "S", 2, 1, 0.0, -1.0),
+            ("br", "SE", 2, 2, 1.0, -1.0),
+        ]
+        enabled_positions = dict(enabled_positions or {})
+        label_dx, label_dy = label_offset
+        main_slot = str(main_reference_slot).lower()
+
+        for key, slot_name, row_idx, col_idx, mx, my in slot_defs:
+            if not enabled_positions.get(key, False):
+                continue
+
+            pos_x = center_x + mx * span_x
+            pos_y = center_y + my * span_y
+            context = {
+                "slot": slot_name,
+                "slot_key": key,
+                "row": row_idx + 1,
+                "col": col_idx + 1,
+                "row_index": row_idx,
+                "col_index": col_idx,
+                "x": pos_x,
+                "y": pos_y,
+            }
+
+            if str(mark_style).lower() == "ebl_composite":
+                mark_shapes, frame_shapes, auto_shapes, manual_shapes, text_shapes = self._composite_mark_shapes(
+                    pos_x,
+                    pos_y,
+                    ebl_main_size,
+                    ebl_main_width,
+                    ebl_small_size,
+                    ebl_small_width,
+                    ebl_small_dist,
+                    is_main_mark=(key == main_slot),
+                    enable_frame=ebl_enable_frame,
+                    frame_width=None,
+                    quadrant_indicator=None,
+                    center_coords=(pos_x, pos_y) if enable_coord_text else None,
+                    coord_text_size=coord_text_size if enable_coord_text else None,
+                    enable_alignment_layers=ebl_enable_alignment_layers,
+                )
+                self._insert_shapes(cell, layer_mark, mark_shapes + text_shapes)
+                self._insert_shapes(cell, layer_mark_frame, frame_shapes)
+                self._insert_shapes(cell, layer_auto_align, auto_shapes)
+                self._insert_shapes(cell, layer_manual_align, manual_shapes)
+            else:
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._simple_mark_shapes(
+                        pos_x,
+                        pos_y,
+                        mark_style,
+                        mark_size,
+                        mark_width,
+                        mark_rotation=mark_rotation,
+                        polygon_sides=polygon_sides,
+                        chamfer_ratio=chamfer_ratio,
+                    ),
+                )
+                if enable_coord_text:
+                    self._insert_shapes(
+                        cell,
+                        layer_mark,
+                        self._deplof_text(
+                            f"{pos_x:+.1f}",
+                            pos_x - max(mark_width * 1.5, 8.0),
+                            pos_y + max(mark_width * 1.5, 8.0),
+                            coord_text_size,
+                            anchor="right_bottom",
+                            justify="right",
+                        ),
+                    )
+                    self._insert_shapes(
+                        cell,
+                        layer_mark,
+                        self._deplof_text(
+                            f"{pos_y:+.1f}",
+                            pos_x + max(mark_width * 1.5, 8.0),
+                            pos_y - max(mark_width * 1.5, 8.0),
+                            coord_text_size,
+                            anchor="left_top",
+                            justify="left",
+                        ),
+                    )
+
+            if enable_label:
+                label_text = self._safe_label_text(label_pattern, context, slot_name)
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._deplof_text(
+                        label_text,
+                        pos_x + label_dx,
+                        pos_y + label_dy,
+                        label_size,
+                        anchor=label_anchor,
+                        justify="left" if "left" in label_anchor else ("right" if "right" in label_anchor else "center"),
+                    ),
+                )
+
+        return self.layout, cell
+
     def _composite_mark_shapes(
         self,
         x,
@@ -215,6 +442,7 @@ class MarkArrayBuilder:
         frame_width=None,
         quadrant_indicator=None,
         center_coords=None,
+        coord_text_size=None,
         enable_alignment_layers=True,
     ):
         layer_shapes = []
@@ -255,7 +483,7 @@ class MarkArrayBuilder:
 
         if center_coords is not None:
             cx_val, cy_val = center_coords
-            c_text_size = main_size / 25.0
+            c_text_size = float(coord_text_size) if coord_text_size is not None else (main_size / 25.0)
             offset = main_width * 1.5
             text_shapes.extend(self._deplof_text(f"{cx_val:+.1f}", x - offset, y + offset + main_width / 2.0, c_text_size, anchor="right_bottom", justify="right"))
             text_shapes.extend(self._deplof_text(f"{cy_val:+.1f}", x + offset, y - offset - main_width / 2.0, c_text_size, anchor="left_top", justify="left"))
@@ -532,3 +760,8 @@ def build_general_mark_array_layout(**kwargs):
 def build_writefield_mark_layout(**kwargs):
     builder = MarkArrayBuilder()
     return builder.build_writefield_array(**kwargs)
+
+
+def build_custom_global_mark_grid_layout(**kwargs):
+    builder = MarkArrayBuilder()
+    return builder.build_custom_global_mark_grid(**kwargs)

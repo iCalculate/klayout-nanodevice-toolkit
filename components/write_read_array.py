@@ -66,11 +66,11 @@ class WriteReadArray:
         GeometryUtils.UNIT_SCALE = int(round(1.0 / self.layout.dbu))
 
         # Array sizing. Prefer square array and square pixel.
-        self.array_size = int(kwargs.get("array_size", 8))
+        self.array_size = int(kwargs.get("array_size", 3))
         self.rows = int(kwargs.get("rows", self.array_size))
         self.cols = int(kwargs.get("cols", self.array_size))
 
-        self.pixel_size = float(kwargs.get("pixel_size", 120.0))
+        self.pixel_size = float(kwargs.get("pixel_size", 50.0))
         self.pixel_width = float(kwargs.get("pixel_width", self.pixel_size))
         self.pixel_height = float(kwargs.get("pixel_height", self.pixel_size))
         self.origin_mode = str(kwargs.get("origin_mode", "center")).lower()
@@ -82,33 +82,34 @@ class WriteReadArray:
         self.stack_base = int(kwargs.get("stack_base", 11))
         self.channel_type = str(kwargs.get("channel_type", "n")).lower()
         # Pixel geometry tuned toward the provided sketch
-        self.edge_margin = float(kwargs.get("edge_margin", 10.0))
+        self.edge_margin = float(kwargs.get("edge_margin", 2.0))
         self.trail_edge_margin = float(kwargs.get("trail_edge_margin", self.edge_margin))
-        self.contact_spine_width = float(kwargs.get("contact_spine_width", 8.0))
-        self.fet_gap = float(kwargs.get("fet_gap", 10.0))
-        self.shared_contact_height = float(kwargs.get("shared_contact_height", 52.0))
+        self.contact_spine_width = float(kwargs.get("contact_spine_width", 4.0))
+        self.fet_gap = float(kwargs.get("fet_gap", 4.0))
+        self.shared_contact_height = float(kwargs.get("shared_contact_height", 10.0))
         self.contact_tail_margin = float(kwargs.get("contact_tail_margin", 0.0))
-        self.outer_contact_min_length = float(kwargs.get("outer_contact_min_length", 2.0))
+        self.outer_contact_min_length = float(kwargs.get("outer_contact_min_length", 4.0))
 
         # User-facing tunable write/read transistor parameters
-        self.gate_line_width = float(kwargs.get("gate_line_width", kwargs.get("gate_rail_height", 8.0)))
-        self.write_width = float(kwargs.get("write_width", 56.0))
-        self.read_width = float(kwargs.get("read_width", 44.0))
-        self.write_length = float(kwargs.get("write_length", 18.0))
-        self.read_length = float(kwargs.get("read_length", 16.0))
+        self.gate_line_width = float(kwargs.get("gate_line_width", kwargs.get("gate_rail_height", 4.0)))
+        self.write_width = float(kwargs.get("write_width", 30.0))
+        self.read_width = float(kwargs.get("read_width", 13.0))
+        self.write_length = float(kwargs.get("write_length", 5.0))
+        self.read_length = float(kwargs.get("read_length", 13.5))
         self.write_channel_overlap = float(kwargs.get("write_channel_overlap", 2.0))
-        self.read_channel_overlap = float(kwargs.get("read_channel_overlap", 2.0))
-        self.write_pad_overhang = float(kwargs.get("write_pad_overhang", 4.0))
-        self.read_pad_overhang = float(kwargs.get("read_pad_overhang", 4.0))
-        self.write_left_contact_length = float(kwargs.get("write_left_contact_length", 8.0))
-        self.write_right_contact_length = float(kwargs.get("write_right_contact_length", 8.0))
-        self.read_contact_length = float(kwargs.get("read_contact_length", 8.0))
-        self.coupling_gate_pad_size = float(kwargs.get("coupling_gate_pad_size", 6.0))
-        self.coupling_via_size = float(kwargs.get("coupling_via_size", 4.0))
-        self.read_gate_bridge_width = float(kwargs.get("read_gate_bridge_width", self.gate_line_width))
+        self.read_channel_overlap = float(kwargs.get("read_channel_overlap", 5.0))
+        self.write_pad_overhang = float(kwargs.get("write_pad_overhang", 2.0))
+        self.read_pad_overhang = float(kwargs.get("read_pad_overhang", 1.0))
+        self.write_left_contact_length = float(kwargs.get("write_left_contact_length", 10.0))
+        self.write_right_contact_length = float(kwargs.get("write_right_contact_length", 6.0))
+        self.read_contact_length = float(kwargs.get("read_contact_length", 10.0))
+        self.coupling_gate_pad_size = float(kwargs.get("coupling_gate_pad_size", 15.0))
+        self.coupling_via_size = float(kwargs.get("coupling_via_size", 2.0))
+        self.read_gate_bridge_width = float(kwargs.get("read_gate_bridge_width", 12.0))
+        self.write_gate_x_offset = float(kwargs.get("write_gate_x_offset", -1.5))
         self.rwl_up_extension = float(kwargs.get("rwl_up_extension", 6.0))
-        self.read_bottom_overlap_height = float(kwargs.get("read_bottom_overlap_height", 4.0))
-        self.write_coupling_via_inset = float(kwargs.get("write_coupling_via_inset", 2.0))
+        self.read_bottom_overlap_height = float(kwargs.get("read_bottom_overlap_height", 10.0))
+        self.write_coupling_via_inset = float(kwargs.get("write_coupling_via_inset", 1.0))
         forbidden = sorted(
             {
                 "sens_width",
@@ -130,12 +131,12 @@ class WriteReadArray:
         # Derived/secondary gate geometry
         self.gate_rail_height = self.gate_line_width
         self.gate_extension = float(kwargs.get("gate_extension", 2.0))
-        self.gate_length_overhang = float(kwargs.get("gate_length_overhang", self.gate_extension))
-        self.gate_width_overhang = float(kwargs.get("gate_width_overhang", 4.0))
-        self.gate_gap = float(kwargs.get("gate_gap", 6.0))
+        self.gate_length_overhang = float(kwargs.get("gate_length_overhang", 4.0))
+        self.gate_width_overhang = float(kwargs.get("gate_width_overhang", 2.0))
+        self.gate_gap = float(kwargs.get("gate_gap", 3.0))
 
-        self.channel_margin = float(kwargs.get("channel_margin", 6.0))
-        self.channel_edge_gap = float(kwargs.get("channel_edge_gap", 4.0))
+        self.channel_margin = float(kwargs.get("channel_margin", 2.0))
+        self.channel_edge_gap = float(kwargs.get("channel_edge_gap", 2.0))
         self.contact_overlap_margin = float(kwargs.get("contact_overlap_margin", 2.0))
         self.draw_channel = bool(kwargs.get("draw_channel", True))
         self.draw_top_dielectric = bool(kwargs.get("draw_top_dielectric", False))
@@ -477,6 +478,7 @@ class WriteReadArray:
             (pixel["write_left_contact_cx"], cy + self.write_width / 2.0, pixel["write_left_contact_cx"], cy + pixel["write_contact_h"] / 2.0, "write_pad_overhang"),
             (pixel["read_channel_right"], pixel["read_top_contact_y"], pixel["right_spine_x"] + self.contact_spine_width / 2.0, pixel["read_top_contact_y"], "read_pad_overhang"),
             (pixel["write_gate_x"], pixel["write_gate_body_bottom_y"], pixel["write_gate_x"], pixel["write_gate_body_top_y"], "write_gate_height"),
+            ((pixel["write_channel_left"] + pixel["write_channel_right"]) / 2.0, pixel["cy"] + 8.0, pixel["write_gate_x"], pixel["cy"] + 8.0, "write_gate_x_offset"),
             (pixel["write_gate_pad_left"], pixel["coupling_y"], pixel["write_gate_pad_right"], pixel["coupling_y"], "write_gate_pad_size"),
             (pixel["coupling_x"], pixel["coupling_y"] - 3.0, pixel["coupling_x"] + self.coupling_via_size, pixel["coupling_y"] - 3.0, "coupling_via_size"),
             (pixel["write_channel_right"], pixel["coupling_y"] + 3.0, pixel["coupling_x"] - self.coupling_via_size / 2.0, pixel["coupling_y"] + 3.0, "write_coupling_via_inset"),
@@ -592,7 +594,11 @@ class WriteReadArray:
         if not (read_channel_bottom < read_gate_y < read_channel_top):
             read_gate_y = (read_channel_bottom + read_channel_top) / 2.0
 
-        write_gate_x = (write_channel_left + write_channel_right) / 2.0
+        write_gate_x = (write_channel_left + write_channel_right) / 2.0 + self.write_gate_x_offset
+        write_gate_min_x = write_channel_left - self.gate_length_overhang
+        write_gate_max_x = write_channel_right + self.gate_length_overhang
+        if not (write_gate_min_x <= write_gate_x <= write_gate_max_x):
+            raise ValueError("write_gate_x_offset moves the write gate outside its allowed channel window")
         write_gate_body_bottom_y = cy - write_gate_h / 2.0
         write_gate_body_top_y = cy + write_gate_h / 2.0
         read_gate_left = read_channel_left - self.gate_width_overhang
@@ -616,6 +622,10 @@ class WriteReadArray:
             raise ValueError("write_coupling_via_inset leaves no non-channel overlap area under the write-right contact")
         write_coupling_via_x = (write_coupling_via_left + write_coupling_via_right) / 2.0
         write_coupling_via_y = cy
+        read_gate_bridge_left = write_coupling_via_x + self.coupling_via_size / 2.0
+        read_gate_bridge_right = read_gate_left
+        if read_gate_bridge_right <= read_gate_bridge_left:
+            raise ValueError("write/read geometry leaves no horizontal span for the write-to-read gate bridge")
 
         overlap_bottom = max(read_bottom_contact_bottom, read_bottom_gate_stub_bottom)
         overlap_top = min(read_bottom_contact_top, read_bottom_gate_stub_top)
@@ -669,6 +679,8 @@ class WriteReadArray:
             "write_gate_pad_top": write_gate_pad_top,
             "coupling_x": write_coupling_via_x,
             "coupling_y": write_coupling_via_y,
+            "read_gate_bridge_left": read_gate_bridge_left,
+            "read_gate_bridge_right": read_gate_bridge_right,
             "read_gate_y": read_gate_y,
             "read_gate_left": read_gate_left,
             "read_gate_right": read_gate_right,
@@ -788,9 +800,9 @@ class WriteReadArray:
         )
         # Coupling bridge from the write-right contact via node into the read gate.
         gate_region += self._region_from_box(
-            (pixel["coupling_x"] + pixel["read_gate_left"]) / 2.0,
+            (pixel["read_gate_bridge_left"] + pixel["read_gate_bridge_right"]) / 2.0,
             pixel["coupling_y"],
-            abs(pixel["read_gate_left"] - pixel["coupling_x"]) + self.read_gate_bridge_width,
+            pixel["read_gate_bridge_right"] - pixel["read_gate_bridge_left"],
             self.read_gate_bridge_width,
         )
         # RWL rail and the bottom-contact gate stub are on bottom_gate and connect only through their own via.
@@ -994,7 +1006,7 @@ def main() -> None:
             array_size=3,
 
             # Pixel placement and overall pitch.
-            pixel_size=72.0,
+            pixel_size=50.0,
             # 'center': array center at (0, 0)
             # 'lower_left': array lower-left corner at (0, 0)
             origin_mode="center",
@@ -1018,10 +1030,10 @@ def main() -> None:
             contact_spine_width=4.0,
             # Shared middle region: used as S/D shared node in sense-latch, and S-to-G
             # coupling region in write-read.
-            fet_gap=8.0,
-            shared_contact_height=12.0,
+            fet_gap=4.0,
+            shared_contact_height=10.0,
             # Minimum allowed outer-contact length after centering the full two-device assembly.
-            outer_contact_min_length=2.0,
+            outer_contact_min_length=4.0,
 
             # Gate rail width for row buses and breakout necks.
             gate_rail_height=4.0,
@@ -1072,22 +1084,26 @@ def main() -> None:
             # - four external ports are WWL / WBL / RBL / RWL
             # length = spacing between the two contact edges of one transistor
             # width  = channel material width of that transistor
-            write_width=16.0,
-            read_width=14.0,
-            write_length=10.0,
-            read_length=18.0,
+            write_width=30.0,
+            read_width=13.0,
+            write_length=5.0,
+            read_length=13.5,
             write_channel_overlap=2.0,
-            read_channel_overlap=2.0,
+            read_channel_overlap=5.0,
 
             # Contact pad overhang beyond the channel width for write/read devices.
             write_pad_overhang=2.0,
-            read_pad_overhang=2.0,
-            write_left_contact_length=8.0,
-            write_right_contact_length=8.0,
+            read_pad_overhang=1.0,
+            write_left_contact_length=10.0,
+            write_right_contact_length=6.0,
             read_contact_length=10.0,
-            coupling_gate_pad_size=6.0,
-            coupling_via_size=4.0,
-            read_gate_bridge_width=4.0,
+            coupling_gate_pad_size=15.0,
+            coupling_via_size=2.0,
+            read_gate_bridge_width=12.0,
+            write_gate_x_offset=-1.5,
+            rwl_up_extension=6.0,
+            read_bottom_overlap_height=10.0,
+            write_coupling_via_inset=1.0,
         )
 
         component = WriteReadArray(**common_kwargs, **write_read_kwargs)

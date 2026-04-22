@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 
 import pya
-from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer
+from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGraphicsScene,
     QGraphicsView,
     QGroupBox,
@@ -51,7 +52,11 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from config import DEFAULT_DBU
-from components.markarray import build_general_mark_array_layout, build_writefield_mark_layout
+from components.markarray import (
+    build_custom_global_mark_grid_layout,
+    build_general_mark_array_layout,
+    build_writefield_mark_layout,
+)
 
 
 def _discover_layer_map_path():
@@ -146,6 +151,7 @@ def _load_layer_styles():
 
 LAYER_STYLES = _load_layer_styles()
 FALLBACK_LAYER_COLORS = {
+    "chip": QColor("#9aa5b1"),
     "mechanical": QColor("#6c7a89"),
     "active": QColor("#4ea8de"),
     "mark": QColor("#f7b32b"),
@@ -360,6 +366,54 @@ def _generate_writefield_array(values):
     return build_writefield_mark_layout(**_writefield_values(values))
 
 
+def _custom_global_grid_values(values):
+    return {
+        "chip_width": values["chip_width"],
+        "chip_height": values["chip_height"],
+        "active_width": values["active_width"],
+        "active_height": values["active_height"],
+        "center_x": values["center_x"],
+        "center_y": values["center_y"],
+        "span_x": values["span_x"],
+        "span_y": values["span_y"],
+        "enabled_positions": values["enabled_positions"],
+        "guide_line_width": values["guide_line_width"],
+        "mark_style": values["mark_style"],
+        "mark_size": values["mark_size"],
+        "mark_width": values["mark_width"],
+        "mark_rotation": values["mark_rotation"],
+        "polygon_sides": values["polygon_sides"],
+        "chamfer_ratio": values["chamfer_ratio"],
+        "main_reference_slot": values["main_reference_slot"],
+        "ebl_main_size": values["ebl_main_size"],
+        "ebl_main_width": values["ebl_main_width"],
+        "ebl_small_size": values["ebl_small_size"],
+        "ebl_small_width": values["ebl_small_width"],
+        "ebl_small_dist": values["ebl_small_dist"],
+        "ebl_enable_frame": values["ebl_enable_frame"],
+        "ebl_enable_alignment_layers": values["ebl_enable_alignment_layers"],
+        "enable_coord_text": values["enable_coord_text"],
+        "coord_text_size": values["coord_text_size"],
+        "enable_label": values["enable_label"],
+        "label_pattern": values["label_pattern"],
+        "label_size": values["label_size"],
+        "label_offset": (values["label_offset_x"], values["label_offset_y"]),
+        "label_anchor": values["label_anchor"],
+        "layer_chip": values["layer_chip"],
+        "layer_active": values["layer_active"],
+        "layer_mechanical": values["layer_mechanical"],
+        "layer_mark": values["layer_mark"],
+        "layer_mark_frame": values["layer_mark_frame"],
+        "layer_auto_align": values["layer_auto_align"],
+        "layer_manual_align": values["layer_manual_align"],
+        "name": values["name"],
+    }
+
+
+def _generate_custom_global_grid(values):
+    return build_custom_global_mark_grid_layout(**_custom_global_grid_values(values))
+
+
 class PreviewView(QGraphicsView):
     def __init__(self):
         scene = QGraphicsScene()
@@ -384,6 +438,7 @@ class PreviewView(QGraphicsView):
         step = self._grid_step()
         minor_pen = QPen(QColor(255, 255, 255, 18), 0)
         major_pen = QPen(QColor(255, 255, 255, 38), 0)
+        axis_pen = QPen(QColor(210, 210, 210, 110), 0)
         left = int(rect.left() // step) - 1
         right = int(rect.right() // step) + 1
         top = int(rect.top() // step) - 1
@@ -396,6 +451,9 @@ class PreviewView(QGraphicsView):
             painter.setPen(major_pen if iy % 5 == 0 else minor_pen)
             y = iy * step
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+        painter.setPen(axis_pen)
+        painter.drawLine(QPointF(0.0, rect.top()), QPointF(0.0, rect.bottom()))
+        painter.drawLine(QPointF(rect.left(), 0.0), QPointF(rect.right(), 0.0))
 
     def drawForeground(self, painter, rect):
         del rect
@@ -473,6 +531,45 @@ class PreviewView(QGraphicsView):
         detail = scene.addText(message[:260])
         detail.setDefaultTextColor(QColor("#d9d9d9"))
         detail.setPos(-120.0, 18.0)
+
+
+class Grid9Selector(QWidget):
+    valueChanged = pyqtSignal()
+
+    SLOT_KEYS = (
+        ("tl", "NW", 0, 0),
+        ("tc", "N", 0, 1),
+        ("tr", "NE", 0, 2),
+        ("cl", "W", 1, 0),
+        ("cc", "C", 1, 1),
+        ("cr", "E", 1, 2),
+        ("bl", "SW", 2, 0),
+        ("bc", "S", 2, 1),
+        ("br", "SE", 2, 2),
+    )
+
+    def __init__(self, default_value=None, parent=None):
+        super().__init__(parent)
+        self._boxes = {}
+        layout = QGridLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(4)
+        layout.setVerticalSpacing(4)
+        for key, label, row, col in self.SLOT_KEYS:
+            box = QCheckBox(label)
+            box.toggled.connect(self.valueChanged.emit)
+            layout.addWidget(box, row, col)
+            self._boxes[key] = box
+        self.setLayout(layout)
+        self.setValue(default_value or {})
+
+    def value(self):
+        return {key: box.isChecked() for key, box in self._boxes.items()}
+
+    def setValue(self, values):
+        values = dict(values or {})
+        for key, box in self._boxes.items():
+            box.setChecked(bool(values.get(key, False)))
 
 
 class NanoMarkDialog(QDialog):
@@ -620,6 +717,13 @@ class NanoMarkDialog(QDialog):
                 control.setToolTip(param.tooltip)
             return control
 
+        if param.kind == "grid9":
+            control = Grid9Selector(param.default)
+            control.valueChanged.connect(self._refresh_preview)
+            if param.tooltip:
+                control.setToolTip(param.tooltip)
+            return control
+
         if param.kind == "layer_choice":
             control = QComboBox()
             for title, value in self._available_layers(param.default):
@@ -694,9 +798,74 @@ class NanoMarkDialog(QDialog):
                 values[param.key] = control.currentData()
             elif param.kind == "bool":
                 values[param.key] = control.isChecked()
+            elif param.kind == "grid9":
+                values[param.key] = control.value()
             else:
                 values[param.key] = control.value()
         return values
+
+    def _set_param_enabled(self, key, enabled):
+        control = self.controls.get(key)
+        if control is None:
+            return
+        control.setEnabled(bool(enabled))
+        parent = control.parentWidget()
+        if parent is not None and isinstance(parent.layout(), QFormLayout):
+            label = parent.layout().labelForField(control)
+            if label is not None:
+                label.setEnabled(bool(enabled))
+
+    def _apply_dynamic_param_states(self):
+        tool = self._current_tool()
+        for param in tool.params:
+            self._set_param_enabled(param.key, True)
+
+        if tool.key != "custom_global_mark":
+            return
+
+        values = self._values()
+        style = str(values.get("mark_style", "ebl_composite")).lower()
+        is_ebl = style == "ebl_composite"
+        is_regular_polygon = style == "regular_polygon"
+        is_chamfered_octagon = style == "chamfered_octagon"
+        show_coord_text = bool(values.get("enable_coord_text", True))
+        show_label = bool(values.get("enable_label", True))
+        enable_frame = bool(values.get("ebl_enable_frame", True))
+        enable_align_layers = bool(values.get("ebl_enable_alignment_layers", True))
+
+        simple_param_keys = [
+            "mark_size",
+            "mark_width",
+            "mark_rotation",
+            "polygon_sides",
+            "chamfer_ratio",
+        ]
+        ebl_param_keys = [
+            "main_reference_slot",
+            "ebl_main_size",
+            "ebl_main_width",
+            "ebl_small_size",
+            "ebl_small_width",
+            "ebl_small_dist",
+            "ebl_enable_frame",
+            "ebl_enable_alignment_layers",
+        ]
+
+        for key in simple_param_keys:
+            self._set_param_enabled(key, not is_ebl)
+        for key in ebl_param_keys:
+            self._set_param_enabled(key, is_ebl)
+
+        self._set_param_enabled("polygon_sides", (not is_ebl) and is_regular_polygon)
+        self._set_param_enabled("chamfer_ratio", (not is_ebl) and is_chamfered_octagon)
+
+        self._set_param_enabled("coord_text_size", show_coord_text)
+        for key in ("label_pattern", "label_size", "label_offset_x", "label_offset_y", "label_anchor"):
+            self._set_param_enabled(key, show_label)
+
+        self._set_param_enabled("layer_mark_frame", is_ebl and enable_frame)
+        self._set_param_enabled("layer_auto_align", is_ebl and enable_align_layers)
+        self._set_param_enabled("layer_manual_align", is_ebl and enable_align_layers)
 
     def _set_control_value(self, param, value):
         control = self.controls.get(param.key)
@@ -713,6 +882,9 @@ class NanoMarkDialog(QDialog):
             return
         if param.kind == "bool":
             control.setChecked(bool(value))
+            return
+        if param.kind == "grid9":
+            control.setValue(value)
             return
         if param.kind == "int":
             control.setValue(int(value))
@@ -817,6 +989,7 @@ class NanoMarkDialog(QDialog):
     def _refresh_preview(self):
         tool = self._current_tool()
         try:
+            self._apply_dynamic_param_states()
             self.preview.draw_mark_preview(tool, self._values(), self._layer_visibility(), preserve_view=True)
             self.status_label.setText("Preview updated")
         except Exception as exc:
@@ -849,6 +1022,137 @@ class NanoMarkDialog(QDialog):
             self.status_label.setText(f"{tool.title} inserted into active cell")
         except Exception as exc:
             QMessageBox.critical(self, "Insert Failed", str(exc))
+
+
+CUSTOM_GLOBAL_MARK_TOOL = ToolSpec(
+    key="custom_global_mark",
+    title="Custom Global Mark Grid",
+    generator=_generate_custom_global_grid,
+    preview_layers=[
+        ("chip", "Chip"),
+        ("active", "Active"),
+        ("mechanical", "Guide"),
+        ("mark", "Mark / Text"),
+        ("mark_frame", "Frame"),
+        ("auto_align", "Auto Align"),
+        ("manual_align", "Manual Align"),
+    ],
+    layer_mapping={
+        "chip": "layer_chip",
+        "active": "layer_active",
+        "mechanical": "layer_mechanical",
+        "mark": "layer_mark",
+        "mark_frame": "layer_mark_frame",
+        "auto_align": "layer_auto_align",
+        "manual_align": "layer_manual_align",
+    },
+    params=[
+        ParameterSpec("chip_width", "Chip Width", "Layout", 10000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("chip_height", "Chip Height", "Layout", 10000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("active_width", "Active Width", "Layout", 8000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("active_height", "Active Height", "Layout", 8000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("center_x", "Center X", "Layout", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("center_y", "Center Y", "Layout", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("span_x", "Half Span X", "Layout", 2000.0, minimum=0.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("span_y", "Half Span Y", "Layout", 2000.0, minimum=0.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("guide_line_width", "Guide Line Width", "Layout", 5.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec(
+            "enabled_positions",
+            "Enabled Slots",
+            "Positions",
+            {"tl": True, "tc": True, "tr": True, "cl": True, "cc": True, "cr": True, "bl": True, "bc": True, "br": True},
+            kind="grid9",
+            tooltip="Enable the 3x3 positions that should place marks.",
+        ),
+        ParameterSpec(
+            "mark_style",
+            "Mark Style",
+            "Style",
+            "ebl_composite",
+            kind="choice",
+            choices=[
+                ("EBL Composite", "ebl_composite"),
+                ("Cross", "cross"),
+                ("Bonecross", "bonecross"),
+                ("Chessboard", "chessboard"),
+                ("Square", "square"),
+                ("Circle", "circle"),
+                ("Diamond", "diamond"),
+                ("Triangle", "triangle"),
+                ("L Shape", "l_shape"),
+                ("T Shape", "t_shape"),
+                ("Regular Polygon", "regular_polygon"),
+                ("Chamfered Octagon", "chamfered_octagon"),
+            ],
+        ),
+        ParameterSpec("mark_size", "Simple Mark Size", "Style", 120.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_width", "Simple Mark Width", "Style", 10.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec(
+            "mark_rotation",
+            "Simple Rotation",
+            "Style",
+            0,
+            kind="choice",
+            choices=[("0 deg", 0), ("90 deg", 90), ("180 deg", 180), ("270 deg", 270)],
+        ),
+        ParameterSpec("polygon_sides", "Polygon Sides", "Style", 6, kind="int", minimum=3, maximum=16),
+        ParameterSpec("chamfer_ratio", "Chamfer Ratio", "Style", 0.25, minimum=0.01, maximum=0.49),
+        ParameterSpec(
+            "main_reference_slot",
+            "EBL Main Slot",
+            "EBL Style",
+            "tl",
+            kind="choice",
+            choices=[
+                ("NW", "tl"),
+                ("N", "tc"),
+                ("NE", "tr"),
+                ("W", "cl"),
+                ("C", "cc"),
+                ("E", "cr"),
+                ("SW", "bl"),
+                ("S", "bc"),
+                ("SE", "br"),
+            ],
+        ),
+        ParameterSpec("ebl_main_size", "EBL Main Size", "EBL Style", 400.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_main_width", "EBL Main Width", "EBL Style", 10.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_small_size", "EBL Small Size", "EBL Style", 50.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_small_width", "EBL Small Width", "EBL Style", 4.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_small_dist", "EBL Small Distance", "EBL Style", 175.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_enable_frame", "Enable EBL Frame", "EBL Style", True, kind="bool"),
+        ParameterSpec("ebl_enable_alignment_layers", "Enable Align Layers", "EBL Style", True, kind="bool"),
+        ParameterSpec("enable_coord_text", "Show XY Text", "Text", True, kind="bool"),
+        ParameterSpec("coord_text_size", "XY Text Size", "Text", 16.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("enable_label", "Show Label", "Label", True, kind="bool"),
+        ParameterSpec("label_pattern", "Label Pattern", "Label", "{slot}", kind="string", tooltip="Use placeholders like {slot}, {slot_key}, {row}, {col}, {row_index}, {col_index}, {x:.0f}, {y:.0f}."),
+        ParameterSpec("label_size", "Label Size", "Label", 24.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("label_offset_x", "Label Offset X", "Label", 80.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("label_offset_y", "Label Offset Y", "Label", 80.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec(
+            "label_anchor",
+            "Label Anchor",
+            "Label",
+            "left_bottom",
+            kind="choice",
+            choices=[
+                ("Left Bottom", "left_bottom"),
+                ("Left Top", "left_top"),
+                ("Center", "center"),
+                ("Right Bottom", "right_bottom"),
+                ("Right Top", "right_top"),
+            ],
+        ),
+        ParameterSpec("name", "Cell Name", "Output", "custom_global_mark_grid", kind="string"),
+        ParameterSpec("layer_chip", "Chip Layer", "Layers", (1, 0), kind="layer_choice"),
+        ParameterSpec("layer_active", "Active Layer", "Layers", (2, 0), kind="layer_choice"),
+        ParameterSpec("layer_mechanical", "Guide Layer", "Layers", (6, 0), kind="layer_choice"),
+        ParameterSpec("layer_mark", "Mark Layer", "Layers", (3, 0), kind="layer_choice"),
+        ParameterSpec("layer_mark_frame", "Frame Layer", "Layers", (4, 0), kind="layer_choice"),
+        ParameterSpec("layer_auto_align", "Auto Align Layer", "Layers", (61, 0), kind="layer_choice"),
+        ParameterSpec("layer_manual_align", "Manual Align Layer", "Layers", (63, 0), kind="layer_choice"),
+    ],
+)
 
 
 MARK_ARRAY_TOOL = ToolSpec(
@@ -973,7 +1277,7 @@ _dialog_ref = None
 def launch_nanomark_dialog():
     global _dialog_ref
     if _dialog_ref is None:
-        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, MARK_ARRAY_TOOL])
+        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, MARK_ARRAY_TOOL])
     _dialog_ref.show()
     _dialog_ref.raise_()
     _dialog_ref.activateWindow()
