@@ -3,7 +3,7 @@ import os
 import sys
 
 import pya
-from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtCore import QEvent, QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QBrush, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -20,8 +20,10 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QSizePolicy,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -452,6 +454,14 @@ class NanoRoutingDialog(QDialog):
         self._last_debug_payload = None
         self._build_ui()
 
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if isinstance(watched, (QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox)):
+                watched.clearFocus()
+                event.accept()
+                return True
+        return super().eventFilter(watched, event)
+
     def _build_ui(self):
         root = QHBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -475,14 +485,30 @@ class NanoRoutingDialog(QDialog):
         self.route_mode_combo.addItems(["manhattan", "diagonal"])
         self.extension_combo = QComboBox()
         self.extension_combo.addItems(["flush", "half_width"])
+        self.turn_pattern_combo = QComboBox()
+        self.turn_pattern_combo.addItems([
+            "auto",
+            "hv",
+            "vh",
+            "hvh",
+            "vhv",
+            "diag-h",
+            "h-diag",
+            "diag-v",
+            "v-diag",
+            "h-diag-h",
+            "v-diag-v",
+        ])
         self.layer_combo = QComboBox()
         self.layer_combo.addItems(sorted(LAYER_DEFINITIONS.keys()))
         self.layer_combo.setCurrentText("routing")
-        for widget in (self.mode_combo, self.route_mode_combo, self.extension_combo, self.layer_combo):
+        for widget in (self.mode_combo, self.route_mode_combo, self.extension_combo, self.turn_pattern_combo, self.layer_combo):
+            widget.installEventFilter(self)
             widget.currentIndexChanged.connect(self._refresh_preview)
         mode_form.addRow("Mode", self.mode_combo)
         mode_form.addRow("Route mode", self.route_mode_combo)
         mode_form.addRow("Extension", self.extension_combo)
+        mode_form.addRow("Turn pattern", self.turn_pattern_combo)
         mode_form.addRow("Layer", self.layer_combo)
         left_panel.addWidget(mode_box)
 
@@ -493,12 +519,14 @@ class NanoRoutingDialog(QDialog):
         self.min_line_width_spin = self._double_spin(2.0, 0.1, 1000.0, 3)
         self.bundle_spacing_spin = self._double_spin(6.0, 0.1, 1000.0, 3)
         self.clearance_spin = self._double_spin(2.0, 0.0, 1000.0, 3)
-        for widget in (self.line_width_spin, self.min_line_width_spin, self.bundle_spacing_spin, self.clearance_spin):
+        self.turn_offset_spin = self._double_spin(0.0, -10000.0, 10000.0, 3)
+        for widget in (self.line_width_spin, self.min_line_width_spin, self.bundle_spacing_spin, self.clearance_spin, self.turn_offset_spin):
             widget.valueChanged.connect(self._refresh_preview)
         param_form.addRow("Line width", self.line_width_spin)
         param_form.addRow("Min line width", self.min_line_width_spin)
         param_form.addRow("Bundle spacing", self.bundle_spacing_spin)
         param_form.addRow("Clearance", self.clearance_spin)
+        param_form.addRow("Turn offset", self.turn_offset_spin)
         left_panel.addWidget(param_box)
 
         self.starts_table = PointTableWidget("Start points", ["", ""])
@@ -578,6 +606,19 @@ class NanoRoutingDialog(QDialog):
         self.preview_layout_btn.clicked.connect(self._preview_in_layout)
         self.clear_preview_btn.clicked.connect(self._clear_layout_preview)
         self.insert_btn.clicked.connect(self._insert_routes)
+        for button in (
+            self.distribute_x_btn,
+            self.distribute_y_btn,
+            self.import_btn,
+            self.export_btn,
+            self.export_debug_btn,
+            self.preview_btn,
+            self.preview_layout_btn,
+            self.clear_preview_btn,
+            self.insert_btn,
+        ):
+            button.setAutoDefault(False)
+            button.setDefault(False)
         action_row.addWidget(self.import_btn)
         action_row.addWidget(self.export_btn)
         action_row.addWidget(self.export_debug_btn)
@@ -592,6 +633,7 @@ class NanoRoutingDialog(QDialog):
         spin.setDecimals(decimals)
         spin.setRange(minimum, maximum)
         spin.setValue(value)
+        spin.installEventFilter(self)
         return spin
 
     def resizeEvent(self, event):
@@ -753,11 +795,13 @@ class NanoRoutingDialog(QDialog):
             "mode": self.mode_combo.currentText(),
             "route_mode": self.route_mode_combo.currentText(),
             "extension_type": self.extension_combo.currentText(),
+            "turn_pattern": self.turn_pattern_combo.currentText(),
             "layer_name": self.layer_combo.currentText(),
             "line_width": self.line_width_spin.value(),
             "min_line_width": self.min_line_width_spin.value(),
             "bundle_spacing": self.bundle_spacing_spin.value(),
             "clearance": self.clearance_spin.value(),
+            "turn_offset": self.turn_offset_spin.value(),
             "starts": self.starts_table.points(),
             "ends": self.ends_table.points(),
             "waypoints": self.waypoints_table.points(),
@@ -768,11 +812,13 @@ class NanoRoutingDialog(QDialog):
         self.mode_combo.setCurrentText(values.get("mode", self.mode_combo.currentText()))
         self.route_mode_combo.setCurrentText(values.get("route_mode", self.route_mode_combo.currentText()))
         self.extension_combo.setCurrentText(values.get("extension_type", self.extension_combo.currentText()))
+        self.turn_pattern_combo.setCurrentText(values.get("turn_pattern", self.turn_pattern_combo.currentText()))
         self.layer_combo.setCurrentText(values.get("layer_name", self.layer_combo.currentText()))
         self.line_width_spin.setValue(float(values.get("line_width", self.line_width_spin.value())))
         self.min_line_width_spin.setValue(float(values.get("min_line_width", self.min_line_width_spin.value())))
         self.bundle_spacing_spin.setValue(float(values.get("bundle_spacing", self.bundle_spacing_spin.value())))
         self.clearance_spin.setValue(float(values.get("clearance", self.clearance_spin.value())))
+        self.turn_offset_spin.setValue(float(values.get("turn_offset", self.turn_offset_spin.value())))
         self.starts_table.set_points(values.get("starts", []))
         self.ends_table.set_points(values.get("ends", []))
         self.waypoints_table.set_points(values.get("waypoints", []))
@@ -911,6 +957,8 @@ class NanoRoutingDialog(QDialog):
                 avoid_regions=values["obstacles"],
                 clearance=values["clearance"],
                 extension_type=values["extension_type"],
+                turn_offset=values["turn_offset"],
+                turn_pattern=values["turn_pattern"],
             )
             return [result], values
 
@@ -926,6 +974,8 @@ class NanoRoutingDialog(QDialog):
             avoid_regions=values["obstacles"],
             clearance=values["clearance"],
             extension_type=values["extension_type"],
+            turn_offset=values["turn_offset"],
+            turn_pattern=values["turn_pattern"],
         )
         return list(results), values
 
@@ -1053,6 +1103,8 @@ class NanoRoutingDialog(QDialog):
                     avoid_regions=values["obstacles"],
                     clearance=values["clearance"],
                     extension_type=values["extension_type"],
+                    turn_offset=values["turn_offset"],
+                    turn_pattern=values["turn_pattern"],
                 )
             else:
                 widths = [values["line_width"] for _ in values["starts"]]
@@ -1068,6 +1120,8 @@ class NanoRoutingDialog(QDialog):
                     avoid_regions=values["obstacles"],
                     clearance=values["clearance"],
                     extension_type=values["extension_type"],
+                    turn_offset=values["turn_offset"],
+                    turn_pattern=values["turn_pattern"],
                 )
             view.add_missing_layers()
             view.zoom_fit()
@@ -1106,6 +1160,8 @@ class NanoRoutingDialog(QDialog):
                     avoid_regions=values["obstacles"],
                     clearance=values["clearance"],
                     extension_type=values["extension_type"],
+                    turn_offset=values["turn_offset"],
+                    turn_pattern=values["turn_pattern"],
                 )
             else:
                 widths = [values["line_width"] for _ in values["starts"]]
@@ -1121,6 +1177,8 @@ class NanoRoutingDialog(QDialog):
                     avoid_regions=values["obstacles"],
                     clearance=values["clearance"],
                     extension_type=values["extension_type"],
+                    turn_offset=values["turn_offset"],
+                    turn_pattern=values["turn_pattern"],
                 )
             view.add_missing_layers()
             self.status_label.setText("Routes inserted into active cell")

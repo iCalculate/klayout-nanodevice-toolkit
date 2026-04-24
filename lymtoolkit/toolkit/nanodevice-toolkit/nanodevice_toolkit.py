@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import pya
-from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtCore import QEvent, QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QBrush, QFont, QFontDatabase, QFontMetricsF, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -322,9 +322,20 @@ class ToolkitDialog(QDialog):
         self.symbol_btn.clicked.connect(self._show_symbols)
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.reject)
+        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.close_btn):
+            button.setAutoDefault(False)
+            button.setDefault(False)
 
         self._build_ui()
         self._rebuild_param_form()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if isinstance(watched, (QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox)):
+                watched.clearFocus()
+                event.accept()
+                return True
+        return super().eventFilter(watched, event)
 
     def _build_ui(self):
         main = QVBoxLayout()
@@ -412,9 +423,12 @@ class ToolkitDialog(QDialog):
             text = QLineEdit()
             text.setText(str(param.default))
             text.textChanged.connect(self._refresh_preview)
+            text.installEventFilter(self)
             if param.tooltip:
                 text.setToolTip(param.tooltip)
             button = QPushButton("Open")
+            button.setAutoDefault(False)
+            button.setDefault(False)
             button.setFixedWidth(58)
             button.clicked.connect(lambda _=False, field=text: self._browse_font_path(field))
             layout.addWidget(text, 1)
@@ -427,6 +441,7 @@ class ToolkitDialog(QDialog):
             text = QLineEdit()
             text.setText(str(param.default))
             text.textChanged.connect(self._on_param_control_changed)
+            text.installEventFilter(self)
             if param.tooltip:
                 text.setToolTip(param.tooltip)
             return text
@@ -442,6 +457,7 @@ class ToolkitDialog(QDialog):
                     break
             combo.setCurrentIndex(default_index)
             combo.currentIndexChanged.connect(self._on_param_control_changed)
+            combo.installEventFilter(self)
             if param.tooltip:
                 combo.setToolTip(param.tooltip)
             return combo
@@ -457,6 +473,7 @@ class ToolkitDialog(QDialog):
                     break
             combo.setCurrentIndex(default_index)
             combo.currentIndexChanged.connect(self._on_param_control_changed)
+            combo.installEventFilter(self)
             if param.tooltip:
                 combo.setToolTip(param.tooltip)
             return combo
@@ -469,6 +486,7 @@ class ToolkitDialog(QDialog):
             spin.setKeyboardTracking(False)
             if param.tooltip:
                 spin.setToolTip(param.tooltip)
+            spin.installEventFilter(self)
             spin.editingFinished.connect(self._on_param_control_changed)
             spin.valueChanged.connect(self._on_param_control_changed)
             return spin
@@ -483,6 +501,7 @@ class ToolkitDialog(QDialog):
             spin.setSuffix(param.suffix)
         if param.tooltip:
             spin.setToolTip(param.tooltip)
+        spin.installEventFilter(self)
         spin.editingFinished.connect(self._on_param_control_changed)
         spin.valueChanged.connect(self._on_param_control_changed)
         return spin

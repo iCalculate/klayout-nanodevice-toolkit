@@ -63,6 +63,8 @@ class RoutingUtils:
         begin_extension: Optional[float] = None,
         end_extension: Optional[float] = None,
         extension_type: str = "flush",
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
     ) -> RouteResult:
         """
         Create a single routed path.
@@ -81,7 +83,7 @@ class RoutingUtils:
         control_points.append(RoutingUtils._to_point(end))
 
         control_points = RoutingUtils._apply_ports(control_points, start_port, end_port)
-        points = RoutingUtils._build_mode_polyline(control_points, mode)
+        points = RoutingUtils._build_mode_polyline(control_points, mode, turn_offset=turn_offset, turn_pattern=turn_pattern)
         points = RoutingUtils._dedupe_points(points)
 
         if avoid_regions:
@@ -131,6 +133,8 @@ class RoutingUtils:
         begin_extension: Optional[float] = None,
         end_extension: Optional[float] = None,
         extension_type: str = "flush",
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
     ) -> List[RouteResult]:
         """Create a parallel route bundle using shared intermediate waypoints."""
         del end_width, corner_size, smoothing_points
@@ -152,7 +156,7 @@ class RoutingUtils:
             max_width = max(widths)
             pitch = max_width + max(clearance, 0.0)
 
-        if not shared_waypoints and mode == "manhattan":
+        if not shared_waypoints and mode == "manhattan" and abs(turn_offset) < 1e-9 and (turn_pattern or "auto") == "auto":
             results = RoutingUtils._build_parallel_manhattan_shortest_routes(
                 start_points=start_points,
                 end_points=end_points,
@@ -172,7 +176,12 @@ class RoutingUtils:
         base_points = [RoutingUtils._mean_point(start_points)]
         base_points.extend(RoutingUtils._to_point(pt) for pt in (shared_waypoints or []))
         base_points.append(RoutingUtils._mean_point(end_points))
-        base_points = RoutingUtils._build_mode_polyline(base_points, mode)
+        base_points = RoutingUtils._build_mode_polyline(
+            base_points,
+            mode,
+            turn_offset=turn_offset,
+            turn_pattern=turn_pattern,
+        )
         base_points = RoutingUtils._dedupe_points(base_points)
 
         results: List[RouteResult] = []
@@ -196,6 +205,8 @@ class RoutingUtils:
                 begin_extension=begin_extension,
                 end_extension=end_extension,
                 extension_type=extension_type,
+                turn_offset=turn_offset,
+                turn_pattern=turn_pattern,
             )
             results.append(result)
 
@@ -301,17 +312,33 @@ class RoutingUtils:
         return (vector[0] / norm, vector[1] / norm)
 
     @staticmethod
-    def _expand_route_mode(points: Sequence[Point2D], route_mode: str) -> List[Point2D]:
-        return RoutingUtils._build_mode_polyline(points, route_mode)
+    def _expand_route_mode(
+        points: Sequence[Point2D],
+        route_mode: str,
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
+    ) -> List[Point2D]:
+        return RoutingUtils._build_mode_polyline(points, route_mode, turn_offset=turn_offset, turn_pattern=turn_pattern)
 
     @staticmethod
-    def _build_mode_polyline(points: Sequence[Point2D], route_mode: str) -> List[Point2D]:
+    def _build_mode_polyline(
+        points: Sequence[Point2D],
+        route_mode: str,
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
+    ) -> List[Point2D]:
         if len(points) <= 1:
             return list(points)
 
         polyline: List[Point2D] = [points[0]]
         for target in points[1:]:
-            segment_points = RoutingUtils._best_segment_expansion(polyline, target, route_mode)
+            segment_points = RoutingUtils._best_segment_expansion(
+                polyline,
+                target,
+                route_mode,
+                turn_offset=turn_offset,
+                turn_pattern=turn_pattern,
+            )
             polyline.extend(segment_points[1:])
         return RoutingUtils._dedupe_points(polyline)
 
@@ -320,9 +347,17 @@ class RoutingUtils:
         existing_points: Sequence[Point2D],
         target: Point2D,
         route_mode: str,
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
     ) -> List[Point2D]:
         start = existing_points[-1]
-        candidates = RoutingUtils._segment_candidates(start, target, route_mode)
+        candidates = RoutingUtils._segment_candidates(
+            start,
+            target,
+            route_mode,
+            turn_offset=turn_offset,
+            turn_pattern=turn_pattern,
+        )
         if not candidates:
             return [start, target]
 
@@ -338,11 +373,18 @@ class RoutingUtils:
         return best_candidate
 
     @staticmethod
-    def _segment_candidates(start: Point2D, end: Point2D, route_mode: str) -> List[List[Point2D]]:
+    def _segment_candidates(
+        start: Point2D,
+        end: Point2D,
+        route_mode: str,
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
+    ) -> List[List[Point2D]]:
         ax, ay = start
         bx, by = end
         dx = bx - ax
         dy = by - ay
+        pattern = (turn_pattern or "auto").lower()
         if abs(dx) < 1e-9 and abs(dy) < 1e-9:
             return [[start]]
 
@@ -351,8 +393,16 @@ class RoutingUtils:
             if abs(dx) < 1e-9 or abs(dy) < 1e-9:
                 candidates.append([start, end])
             else:
-                candidates.append([start, (bx, ay), end])
-                candidates.append([start, (ax, by), end])
+                if pattern in {"auto", "hv"}:
+                    candidates.append([start, (bx, ay), end])
+                if pattern in {"auto", "vh"}:
+                    candidates.append([start, (ax, by), end])
+                if pattern in {"auto", "hvh"}:
+                    mid_x = (ax + bx) / 2.0 + turn_offset
+                    candidates.append([start, (mid_x, ay), (mid_x, by), end])
+                if pattern in {"auto", "vhv"}:
+                    mid_y = (ay + by) / 2.0 + turn_offset
+                    candidates.append([start, (ax, mid_y), (bx, mid_y), end])
             return [RoutingUtils._dedupe_points(candidate) for candidate in candidates]
 
         candidates: List[List[Point2D]] = []
@@ -361,26 +411,30 @@ class RoutingUtils:
         sx = 1.0 if dx >= 0 else -1.0
         sy = 1.0 if dy >= 0 else -1.0
 
-        if abs(adx - ady) < 1e-9:
+        if abs(adx - ady) < 1e-9 and pattern in {"auto", "diag", "direct"}:
             candidates.append([start, end])
             return candidates
 
         d = min(adx, ady)
         diag_end_from_start = (ax + sx * d, ay + sy * d)
-        if adx > ady:
+        if pattern in {"auto", "diag", "diag-h"}:
+            candidates.append([start, (ax + sx * ady, by), end])
+        if pattern in {"auto", "diag", "h-diag"}:
+            candidates.append([start, (bx - sx * ady, ay), end])
+        if pattern in {"auto", "diag", "diag-v"}:
+            candidates.append([start, (bx, ay + sy * adx), end])
+        if pattern in {"auto", "diag", "v-diag"}:
+            candidates.append([start, (ax, by - sy * adx), end])
+        if pattern in {"auto", "h-diag-h"}:
+            diag_start_x = (bx - sx * ady) + turn_offset
+            diag_end_x = diag_start_x + sx * ady
+            candidates.append([start, (diag_start_x, ay), (diag_end_x, by), end])
+        if pattern in {"auto", "v-diag-v"}:
+            diag_start_y = (by - sy * adx) + turn_offset
+            diag_end_y = diag_start_y + sy * adx
+            candidates.append([start, (ax, diag_start_y), (bx, diag_end_y), end])
+        if pattern in {"auto", "diag", "direct"}:
             candidates.append([start, diag_end_from_start, end])
-            axis_first = (bx - sx * d, ay)
-            candidates.append([start, axis_first, end])
-        else:
-            candidates.append([start, diag_end_from_start, end])
-            axis_first = (ax, by - sy * d)
-            candidates.append([start, axis_first, end])
-
-        if abs(dx) > 1e-9 and abs(dy) > 1e-9:
-            if adx > ady:
-                candidates.append([start, (ax + dx - sx * d, ay), end])
-            elif ady > adx:
-                candidates.append([start, (ax, ay + dy - sy * d), end])
         return [RoutingUtils._dedupe_points(candidate) for candidate in candidates]
 
     @staticmethod

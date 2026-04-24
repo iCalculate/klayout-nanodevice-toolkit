@@ -10,6 +10,7 @@ possible while avoiding any gdsfactory dependency.
 import os
 import sys
 import math
+import re
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -27,6 +28,8 @@ from utils.text_utils import TextUtils
 
 
 class MarkArrayBuilder:
+    _INDEX_EXPR_PATTERN = re.compile(r"\{([ij])(?:\s*([+-])\s*(\d+))?\}")
+
     def __init__(self, layout=None):
         self.layout = layout or db.Layout()
         self.layout.dbu = DEFAULT_DBU
@@ -269,6 +272,110 @@ class MarkArrayBuilder:
         cross_len = max(min(span_x if span_x > 0.0 else line_width * 8.0, span_y if span_y > 0.0 else line_width * 8.0), line_width * 4.0)
         shapes.extend(self._simple_cross_shapes(center_x, center_y, cross_len, line_width))
         return shapes
+
+    def _evaluate_index_expr(self, axis_name, sign, magnitude, row_index, col_index):
+        base_value = int(row_index) + 1 if axis_name == "i" else int(col_index)
+        if sign and magnitude:
+            offset = int(magnitude)
+            if sign == "-":
+                base_value -= offset
+            else:
+                base_value += offset
+        return base_value
+
+    def _index_to_letters_zero_based(self, idx):
+        idx = int(idx)
+        if idx < 0:
+            return str(idx)
+        return self._index_to_letters(idx)
+
+    def _render_incremental_text(self, text_content, row_index=0, col_index=0, array_mode="2d"):
+        text_content = str(text_content or "")
+        if not text_content:
+            return ""
+        mode = str(array_mode).lower()
+        axes_used = {match.group(1) for match in self._INDEX_EXPR_PATTERN.finditer(text_content)}
+        if mode == "1d" and len(axes_used) > 1:
+            raise ValueError("1D text pattern only supports one increment placeholder: use either {i} or {j}.")
+
+        def replace_match(match):
+            axis_name, sign, magnitude = match.groups()
+            value = self._evaluate_index_expr(axis_name, sign, magnitude, row_index, col_index)
+            if axis_name == "i":
+                return str(value)
+            return self._index_to_letters_zero_based(value)
+
+        return self._INDEX_EXPR_PATTERN.sub(replace_match, text_content)
+
+    def build_text_pattern_array(
+        self,
+        origin_x=0.0,
+        origin_y=0.0,
+        array_mode="2d",
+        count_1d=5,
+        step_1d_x=200.0,
+        step_1d_y=0.0,
+        row_count=5,
+        col_count=5,
+        row_vec_x=0.0,
+        row_vec_y=200.0,
+        col_vec_x=200.0,
+        col_vec_y=0.0,
+        text_content="WWL{i}{j}",
+        text_size=80.0,
+        text_anchor="center",
+        text_justify="center",
+        layer_text=(3, 0),
+        name="text_pattern_array",
+    ):
+        cell = self.layout.create_cell(str(name))
+
+        mode = str(array_mode).lower()
+        if mode == "1d":
+            total = max(int(count_1d), 1)
+            for idx in range(total):
+                pos_x = float(origin_x) + idx * float(step_1d_x)
+                pos_y = float(origin_y) + idx * float(step_1d_y)
+                item_text = self._render_incremental_text(text_content, row_index=idx, col_index=idx, array_mode="1d")
+                if not item_text:
+                    continue
+                self._insert_shapes(
+                    cell,
+                    layer_text,
+                    self._deplof_text(
+                        item_text,
+                        pos_x,
+                        pos_y,
+                        text_size,
+                        anchor=text_anchor,
+                        justify=text_justify,
+                    ),
+                )
+            return self.layout, cell
+
+        n_rows = max(int(row_count), 1)
+        n_cols = max(int(col_count), 1)
+        for row_idx in range(n_rows):
+            for col_idx in range(n_cols):
+                pos_x = float(origin_x) + row_idx * float(row_vec_x) + col_idx * float(col_vec_x)
+                pos_y = float(origin_y) + row_idx * float(row_vec_y) + col_idx * float(col_vec_y)
+                item_text = self._render_incremental_text(text_content, row_index=row_idx, col_index=col_idx, array_mode="2d")
+                if not item_text:
+                    continue
+                self._insert_shapes(
+                    cell,
+                    layer_text,
+                    self._deplof_text(
+                        item_text,
+                        pos_x,
+                        pos_y,
+                        text_size,
+                        anchor=text_anchor,
+                        justify=text_justify,
+                    ),
+                )
+
+        return self.layout, cell
 
     def build_custom_global_mark_grid(
         self,
@@ -765,3 +872,8 @@ def build_writefield_mark_layout(**kwargs):
 def build_custom_global_mark_grid_layout(**kwargs):
     builder = MarkArrayBuilder()
     return builder.build_custom_global_mark_grid(**kwargs)
+
+
+def build_text_pattern_array_layout(**kwargs):
+    builder = MarkArrayBuilder()
+    return builder.build_text_pattern_array(**kwargs)

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 
 import pya
-from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -55,6 +55,7 @@ from config import DEFAULT_DBU
 from components.markarray import (
     build_custom_global_mark_grid_layout,
     build_general_mark_array_layout,
+    build_text_pattern_array_layout,
     build_writefield_mark_layout,
 )
 
@@ -414,6 +415,33 @@ def _generate_custom_global_grid(values):
     return build_custom_global_mark_grid_layout(**_custom_global_grid_values(values))
 
 
+def _text_pattern_array_values(values):
+    return {
+        "origin_x": values["origin_x"],
+        "origin_y": values["origin_y"],
+        "array_mode": values["array_mode"],
+        "count_1d": values["count_1d"],
+        "step_1d_x": values["step_1d_x"],
+        "step_1d_y": values["step_1d_y"],
+        "row_count": values["row_count"],
+        "col_count": values["col_count"],
+        "row_vec_x": values["row_vec_x"],
+        "row_vec_y": values["row_vec_y"],
+        "col_vec_x": values["col_vec_x"],
+        "col_vec_y": values["col_vec_y"],
+        "text_content": values["text_content"],
+        "text_size": values["text_size"],
+        "text_anchor": values["text_anchor"],
+        "text_justify": values["text_justify"],
+        "layer_text": values["layer_text"],
+        "name": values["name"],
+    }
+
+
+def _generate_text_pattern_array(values):
+    return build_text_pattern_array_layout(**_text_pattern_array_values(values))
+
+
 class PreviewView(QGraphicsView):
     def __init__(self):
         scene = QGraphicsScene()
@@ -612,9 +640,20 @@ class NanoMarkDialog(QDialog):
         self.export_btn.clicked.connect(self._export_config)
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.reject)
+        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.close_btn):
+            button.setAutoDefault(False)
+            button.setDefault(False)
 
         self._build_ui()
         self._rebuild_form()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if isinstance(watched, (QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox)):
+                watched.clearFocus()
+                event.accept()
+                return True
+        return super().eventFilter(watched, event)
 
     def _build_ui(self):
         main = QVBoxLayout()
@@ -690,6 +729,7 @@ class NanoMarkDialog(QDialog):
             control = QLineEdit()
             control.setText(str(param.default))
             control.textChanged.connect(self._refresh_preview)
+            control.installEventFilter(self)
             if param.tooltip:
                 control.setToolTip(param.tooltip)
             return control
@@ -705,6 +745,7 @@ class NanoMarkDialog(QDialog):
                     break
             control.setCurrentIndex(default_index)
             control.currentIndexChanged.connect(self._refresh_preview)
+            control.installEventFilter(self)
             if param.tooltip:
                 control.setToolTip(param.tooltip)
             return control
@@ -735,6 +776,7 @@ class NanoMarkDialog(QDialog):
                     break
             control.setCurrentIndex(default_index)
             control.currentIndexChanged.connect(self._refresh_preview)
+            control.installEventFilter(self)
             if param.tooltip:
                 control.setToolTip(param.tooltip)
             return control
@@ -745,6 +787,7 @@ class NanoMarkDialog(QDialog):
             control.setValue(int(param.default))
             control.setKeyboardTracking(False)
             control.valueChanged.connect(self._refresh_preview)
+            control.installEventFilter(self)
             if param.tooltip:
                 control.setToolTip(param.tooltip)
             return control
@@ -757,6 +800,7 @@ class NanoMarkDialog(QDialog):
         if param.suffix:
             control.setSuffix(param.suffix)
         control.valueChanged.connect(self._refresh_preview)
+        control.installEventFilter(self)
         if param.tooltip:
             control.setToolTip(param.tooltip)
         return control
@@ -821,6 +865,14 @@ class NanoMarkDialog(QDialog):
             self._set_param_enabled(param.key, True)
 
         if tool.key != "custom_global_mark":
+            if tool.key == "text_pattern_array":
+                values = self._values()
+                array_mode = str(values.get("array_mode", "2d")).lower()
+                is_1d = array_mode == "1d"
+                for key in ("count_1d", "step_1d_x", "step_1d_y"):
+                    self._set_param_enabled(key, is_1d)
+                for key in ("row_count", "col_count", "row_vec_x", "row_vec_y", "col_vec_x", "col_vec_y"):
+                    self._set_param_enabled(key, not is_1d)
             return
 
         values = self._values()
@@ -1155,6 +1207,66 @@ CUSTOM_GLOBAL_MARK_TOOL = ToolSpec(
 )
 
 
+TEXT_PATTERN_ARRAY_TOOL = ToolSpec(
+    key="text_pattern_array",
+    title="Text Pattern Array",
+    generator=_generate_text_pattern_array,
+    preview_layers=[
+        ("mark", "Text"),
+    ],
+    layer_mapping={
+        "mark": "layer_text",
+    },
+    params=[
+        ParameterSpec("origin_x", "Origin X", "Layout", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("origin_y", "Origin Y", "Layout", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec(
+            "array_mode",
+            "Array Mode",
+            "Array",
+            "2d",
+            kind="choice",
+            choices=[("2D", "2d"), ("1D", "1d")],
+        ),
+        ParameterSpec("count_1d", "1D Count", "1D Array", 8, kind="int", minimum=1, maximum=10000),
+        ParameterSpec("step_1d_x", "1D Step X", "1D Array", 200.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("step_1d_y", "1D Step Y", "1D Array", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("row_count", "Row Count", "2D Array", 5, kind="int", minimum=1, maximum=10000),
+        ParameterSpec("col_count", "Col Count", "2D Array", 5, kind="int", minimum=1, maximum=10000),
+        ParameterSpec("row_vec_x", "Row Vec X", "2D Array", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("row_vec_y", "Row Vec Y", "2D Array", 200.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("col_vec_x", "Col Vec X", "2D Array", 200.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("col_vec_y", "Col Vec Y", "2D Array", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("text_content", "Text Template", "Text", "WWL{i}{j}", kind="string", tooltip="Fixed text is allowed. Use {i} / {i-1} / {i+2} for numeric increment and {j} / {j-1} / {j+2} for alphabet increment."),
+        ParameterSpec("text_size", "Text Size", "Text", 80.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec(
+            "text_anchor",
+            "Text Anchor",
+            "Text",
+            "center",
+            kind="choice",
+            choices=[
+                ("Center", "center"),
+                ("Left Bottom", "left_bottom"),
+                ("Left Top", "left_top"),
+                ("Right Bottom", "right_bottom"),
+                ("Right Top", "right_top"),
+            ],
+        ),
+        ParameterSpec(
+            "text_justify",
+            "Text Justify",
+            "Text",
+            "center",
+            kind="choice",
+            choices=[("Center", "center"), ("Left", "left"), ("Right", "right")],
+        ),
+        ParameterSpec("name", "Cell Name", "Output", "text_pattern_array", kind="string"),
+        ParameterSpec("layer_text", "Text Layer", "Layers", (3, 0), kind="layer_choice"),
+    ],
+)
+
+
 MARK_ARRAY_TOOL = ToolSpec(
     key="mark_array",
     title="General Mark Array",
@@ -1277,7 +1389,7 @@ _dialog_ref = None
 def launch_nanomark_dialog():
     global _dialog_ref
     if _dialog_ref is None:
-        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, MARK_ARRAY_TOOL])
+        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, TEXT_PATTERN_ARRAY_TOOL, MARK_ARRAY_TOOL])
     _dialog_ref.show()
     _dialog_ref.raise_()
     _dialog_ref.activateWindow()

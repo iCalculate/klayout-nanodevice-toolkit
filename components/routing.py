@@ -58,6 +58,8 @@ class Routing:
         begin_extension: Optional[float] = None,
         end_extension: Optional[float] = None,
         extension_type: str = "flush",
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
     ) -> RouteResult:
         return RoutingUtils.build_route(
             start=start,
@@ -77,6 +79,8 @@ class Routing:
             begin_extension=begin_extension,
             end_extension=end_extension,
             extension_type=extension_type,
+            turn_offset=turn_offset,
+            turn_pattern=turn_pattern,
         )
 
     def route_parallel(
@@ -99,6 +103,8 @@ class Routing:
         begin_extension: Optional[float] = None,
         end_extension: Optional[float] = None,
         extension_type: str = "flush",
+        turn_offset: float = 0.0,
+        turn_pattern: str = "auto",
     ) -> Sequence[RouteResult]:
         return RoutingUtils.build_parallel_routes(
             start_points=start_points,
@@ -119,6 +125,8 @@ class Routing:
             begin_extension=begin_extension,
             end_extension=end_extension,
             extension_type=extension_type,
+            turn_offset=turn_offset,
+            turn_pattern=turn_pattern,
         )
 
     def insert_route(self, cell: db.Cell, **kwargs) -> RouteResult:
