@@ -6,6 +6,8 @@ from mark_utils import MarkUtils
 from utils.geometry import GeometryUtils
 
 class MarkPCell(pya.PCellDeclarationHelper):
+    """PCell facade for the reusable MarkUtils alignment-mark primitives."""
+
     def __init__(self):
         super(MarkPCell, self).__init__()
         self.param("shape", self.TypeString, "Mark shape", default="cross",
@@ -45,6 +47,8 @@ class MarkPCell(pya.PCellDeclarationHelper):
         return f"MarkPCell: {self.shape}"
 
     def produce_impl(self):
+        # MarkUtils uses micron coordinates directly, while GeometryUtils
+        # converts polygon points to KLayout integer database units.
         MarkUtils.set_unit_scale(1)
         GeometryUtils.UNIT_SCALE = 1000
         ly = self.layout
@@ -65,12 +69,16 @@ class MarkPCell(pya.PCellDeclarationHelper):
         elif shape == "triangle_down":
             shape = "triangle"
             kwargs["direction"] = "down"
-        # 处理 missing 参数
+        # Some square-missing variants accept a comma-separated list of missing
+        # quadrants through parameter3. Invalid input falls back to a useful
+        # asymmetric default for visual identification.
         try:
             missing = tuple(int(i) for i in str(p3).split(",") if i.strip())
         except Exception:
             missing = (2,4)
-        # 分发到不同 mark 类型
+        # Dispatch to the matching MarkUtils primitive. Parameter1/2/3 are
+        # intentionally generic because different mark families use them
+        # differently.
         if shape in ["cross", "square", "circle", "diamond", "triangle"]:
             mark = MarkUtils.create_mark(shape, x, y, size, width, **kwargs)
         elif shape == "L":
@@ -106,7 +114,8 @@ class MarkPCell(pya.PCellDeclarationHelper):
         if hasattr(mark, 'rotate'):
             mark = mark.rotate(self.rotation)
         shapes = mark.get_shapes() if hasattr(mark, 'get_shapes') else mark
-        # 插入
+        # Most mark helpers return a list of pya shapes. Keep the single-shape
+        # branch as debug-only until those helpers provide a stable object form.
         if isinstance(shapes, list):
             # print(f"[DEBUG] shapes count: {len(shapes)}")
             for s in shapes:

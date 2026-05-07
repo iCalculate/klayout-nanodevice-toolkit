@@ -5,6 +5,7 @@ import sys
 
 
 def _ensure_user_site():
+    """Add likely dependency locations when KLayout launches an isolated Python."""
     candidates = []
     this_dir = os.path.abspath(os.path.dirname(__file__))
     candidates.append(os.path.join(this_dir, "pydeps"))
@@ -27,6 +28,7 @@ def _ensure_user_site():
 
 
 def _extract_polygons(component):
+    """Support both old and new gdsfactory polygon extraction APIs."""
     if hasattr(component, "get_polygons_points"):
         polygons = component.get_polygons_points()
         if isinstance(polygons, dict):
@@ -48,6 +50,8 @@ def main():
     _ensure_user_site()
     import gdsfactory as gf
 
+    # This helper is launched as a subprocess by the toolkit so optional
+    # gdsfactory imports do not slow down or break the main KLayout dialog.
     component = gf.components.text(
         text=text,
         size=size_um,

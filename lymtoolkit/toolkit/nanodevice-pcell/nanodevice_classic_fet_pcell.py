@@ -3,6 +3,8 @@ import pya
 
 
 class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
+    """Classic interdigitated source/drain FET PCell with a separate gate layer."""
+
     def __init__(self):
         super(NanoDeviceClassicFETPCell, self).__init__()
 
@@ -54,6 +56,8 @@ class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
         return "InterdigitatedFETOriginalNanoDevice"
 
     def coerce_parameters_impl(self):
+        # Coerce user parameters to non-degenerate dimensions before KLayout
+        # asks produce_impl to materialize the PCell.
         self.active_width = max(self.active_width, 2.0)
         self.active_height = max(self.active_height, 2.0)
         self.channel_gap = max(self.channel_gap, 0.2)
@@ -81,6 +85,7 @@ class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
         dbu = self.layout.dbu
 
         def to_iu(value_um):
+            # Convert user-facing micrometers to layout integer units.
             return int(round(value_um / dbu))
 
         cx = self.device_cx
@@ -111,6 +116,7 @@ class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
         pitch = self.finger_width + self.finger_spacing
         max_fit = max(1, int(math.floor((self.active_height + self.finger_spacing) / max(pitch, 1e-9))))
         finger_count = min(self.finger_count, max_fit)
+        # Center only the fingers that physically fit in the active region.
         used_height = finger_count * self.finger_width + max(0, finger_count - 1) * self.finger_spacing
         y0 = cy - used_height / 2.0
 
@@ -119,6 +125,8 @@ class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
         drain_head_length = min(self.finger_head_length, max(0.0, drain_finger_x2 - drain_finger_x1))
 
         for index in range(finger_count):
+            # Alternate fingers between source and drain buses to create the
+            # interdigitated channel gap pattern.
             finger_y1 = y0 + index * pitch
             finger_y2 = finger_y1 + self.finger_width
 
@@ -186,6 +194,8 @@ class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
         return self._make_box(gate_center[0], gate_center[1], gate_size[0], gate_size[1], to_iu)
 
     def _gate_geometry(self):
+        # Global mode covers the whole active region; channel_only narrows the
+        # gate to the source/drain gap while preserving the same vertical span.
         cx = self.device_cx + self.gate_x_offset
         cy = self.device_cy + self.gate_y_offset
         if self.gate_mode == 0:
@@ -212,6 +222,7 @@ class NanoDeviceClassicFETPCell(pya.PCellDeclarationHelper):
         shapes.insert(lead)
 
     def _anchor_on_box_towards(self, box_center, box_size, target):
+        """Return the point where a ray from box center to target exits the box."""
         cx, cy = box_center
         half_w = max(box_size[0] / 2.0, 1e-6)
         half_h = max(box_size[1] / 2.0, 1e-6)

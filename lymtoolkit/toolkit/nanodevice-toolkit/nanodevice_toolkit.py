@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
 )
 
 def _discover_root_dir():
+    """Locate the repository root from KLayout's macro execution directory."""
     current = os.path.abspath(os.path.dirname(__file__))
     candidates = [
         current,
@@ -62,6 +63,7 @@ TEXT_POLYGON_SCRIPT = os.path.join(
 from config import DEFAULT_DBU, LAYER_DEFINITIONS
 from utils.deplof_font import _glyph as DEPLOF_GLYPH, _indent as DEPLOF_INDENT, _width as DEPLOF_WIDTH
 def _discover_layer_map_path():
+    """Find the KLayout layer map used for preview colors."""
     candidates = [
         os.path.join(ROOT_DIR, "lymtoolkit", "pdk", "layers", "layer_map.lyp"),
         os.path.join(ROOT_DIR, "pdk", "layers", "layer_map.lyp"),
@@ -99,6 +101,8 @@ _FONT_FAMILY_CACHE = {}
 
 @dataclass
 class ParameterSpec:
+    """UI/control metadata for one NanoDevice toolkit parameter."""
+
     key: str
     label: str
     symbol: str
@@ -115,6 +119,8 @@ class ParameterSpec:
 
 @dataclass
 class ToolSpec:
+    """Connect one tool entry to its PCell, preview renderer, and insert path."""
+
     key: str
     title: str
     library_name: str
@@ -127,6 +133,8 @@ class ToolSpec:
 
 
 class PreviewView(QGraphicsView):
+    """Qt canvas used by the NanoDevice toolkit preview pane."""
+
     def __init__(self):
         scene = QGraphicsScene()
         super().__init__(scene)
@@ -185,6 +193,8 @@ class PreviewView(QGraphicsView):
         self._draw_scale_bar(painter)
 
     def draw_tool_preview(self, tool_spec, values, preserve_view=True):
+        # Direct preview tools draw into the scene themselves. PCell-backed
+        # tools are generated through a temporary layout and then rendered.
         scene = self.scene()
         saved_transform = self.transform()
         saved_center = self.mapToScene(self.viewport().rect().center())
@@ -280,6 +290,8 @@ class SymbolDialog(QDialog):
 
 
 class ToolkitDialog(QDialog):
+    """Main NanoDevice dialog: parameter form, preview, config I/O, and insert."""
+
     def __init__(self, tool_specs, parent=None):
         super().__init__(parent)
         self.tool_specs = {spec.key: spec for spec in tool_specs}
@@ -385,6 +397,8 @@ class ToolkitDialog(QDialog):
                 self._clear_layout(child_layout)
 
     def _rebuild_param_form(self):
+        # ParameterSpec.group controls the visible sectioning of the left form.
+        # Rebuilding keeps the UI aligned with the currently selected tool.
         self.controls = {}
         self.control_labels = {}
         self._clear_layout(self.form_layout)
@@ -511,6 +525,8 @@ class ToolkitDialog(QDialog):
         self._refresh_preview()
 
     def _values(self):
+        # Read widget values and normalize them before preview/insert so all
+        # downstream functions share one canonical parameter dictionary.
         values = {}
         for param in self._current_tool().params:
             control = self.controls[param.key]
@@ -3261,6 +3277,7 @@ WRITE_READ_ARRAY_TOOL = ToolSpec(
 
 
 def launch_toolkit_dialog():
+    # KLayout invokes this function from the .lym macro entry point.
     dlg = ToolkitDialog(
         [
             NANODEVICE_FET_TOOL,

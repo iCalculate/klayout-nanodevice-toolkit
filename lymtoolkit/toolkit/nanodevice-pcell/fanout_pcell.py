@@ -6,6 +6,8 @@ from fanout_utils import draw_pad, draw_trapezoidal_fanout, draw_lead_fanout
 from utils.geometry import GeometryUtils
 
 class FanoutPCell(pya.PCellDeclarationHelper):
+    """Create an inner pad, outer pad, and selectable fanout connection."""
+
     def __init__(self):
         super(FanoutPCell, self).__init__()
         self.param("inner_center_x", self.TypeDouble, "Inner pad center X (um)", default=0.0)
@@ -34,12 +36,15 @@ class FanoutPCell(pya.PCellDeclarationHelper):
         return f"FanoutPCell(inner=({self.inner_center_x},{self.inner_center_y}), outer=({self.outer_center_x},{self.outer_center_y}))"
 
     def produce_impl(self):
+        # Utility geometry is built in user-facing micrometers and converted by
+        # GeometryUtils when pya polygons are created.
         GeometryUtils.UNIT_SCALE = 1000
         ly = self.layout
         cell = self.cell
         layer = self.layer
 
-        # 参数缩小10倍
+        # Normalize PCell attributes into local variables before passing them
+        # to the geometry helpers. This keeps the helper calls readable.
         inner_center = (self.inner_center_x, self.inner_center_y)
         outer_center = (self.outer_center_x, self.outer_center_y )
         inner_length = self.inner_length
@@ -65,11 +70,13 @@ class FanoutPCell(pya.PCellDeclarationHelper):
         chamfer_map = {0: 'none', 1: 'straight', 2: 'round'}
         lead_corner_type_map = {0: 'right_angle', 1: 'straight_chamfer', 2: 'round_chamfer'}
 
-        # 生成 inner/outer pad
+        # Build the two endpoint pads first because the fanout helper uses
+        # their edges/metadata to decide where the connection should attach.
         inner_pad = draw_pad(inner_center, inner_length, inner_width, chamfer_size=inner_chamfer_size, chamfer_type=chamfer_map.get(inner_chamfer_type, 'none'), corner_pts=inner_corner_pts)
         outer_pad = draw_pad(outer_center, outer_length, outer_width, chamfer_size=outer_chamfer_size, chamfer_type=chamfer_map.get(outer_chamfer_type, 'straight'), corner_pts=outer_corner_pts)
 
-        # 生成 fanout
+        # Fanout type 0 is a direct trapezoid. Other modes route a lead with
+        # different corner styles between selected pad edges.
         if fanout_type == 0:
             # Trapezoidal
             fanout = draw_trapezoidal_fanout(inner_pad, outer_pad, inner_edge=inner_edge, outer_edge=outer_edge)
@@ -81,21 +88,20 @@ class FanoutPCell(pya.PCellDeclarationHelper):
                 chamfer_size=lead_chamfer_size
             )
 
-        # 插入 inner pad
+        # Helpers may return either wrapper objects with a .polygon attribute
+        # or raw polygon lists, so handle both forms consistently.
         if hasattr(inner_pad, 'polygon'):
             cell.shapes(layer).insert(inner_pad.polygon)
         elif isinstance(inner_pad, list):
             for poly in inner_pad:
                 cell.shapes(layer).insert(poly)
 
-        # 插入 outer pad
         if hasattr(outer_pad, 'polygon'):
             cell.shapes(layer).insert(outer_pad.polygon)
         elif isinstance(outer_pad, list):
             for poly in outer_pad:
                 cell.shapes(layer).insert(poly)
 
-        # 插入 fanout
         if isinstance(fanout, list):
             for poly in fanout:
                 cell.shapes(layer).insert(poly)

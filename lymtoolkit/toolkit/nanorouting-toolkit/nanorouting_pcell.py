@@ -5,6 +5,7 @@ import pya
 
 
 def _discover_root_dir():
+    """Find the project root when KLayout runs this file from a macro folder."""
     current = os.path.abspath(os.path.dirname(__file__))
     candidates = [
         current,
@@ -31,6 +32,7 @@ from components.routing import Routing
 
 
 def _parse_points(value):
+    """Parse KLayout string parameters in the compact ``x,y;x,y`` format."""
     points = []
     for item in (value or "").split(";"):
         item = item.strip()
@@ -42,6 +44,7 @@ def _parse_points(value):
 
 
 def _parse_rects(value):
+    """Parse obstacle rectangles stored as ``x1,y1,x2,y2;x1,y1,x2,y2``."""
     rects = []
     for item in (value or "").split(";"):
         item = item.strip()
@@ -54,6 +57,8 @@ def _parse_rects(value):
 
 class _BaseRoutingPCell(pya.PCellDeclarationHelper):
     def _coerce_layer_name(self, layer_name):
+        # PCells can be instantiated from saved layouts with stale layer names.
+        # Falling back keeps layout generation usable instead of failing hard.
         if layer_name in LAYER_DEFINITIONS:
             return layer_name
         return "routing"
@@ -82,6 +87,9 @@ class NanoRoutingPathPCell(_BaseRoutingPCell):
             self.line_width = 0.1
 
     def produce_impl(self):
+        # produce_impl is called by KLayout whenever the PCell geometry is
+        # materialized. Keep all parameter parsing here so the stored PCell
+        # parameters remain simple strings/numbers.
         routing = Routing(layout=self.layout, layer_name=self._coerce_layer_name(self.layer_name))
         routing.insert_route(
             self.cell,
@@ -125,6 +133,8 @@ class NanoRoutingBundlePCell(_BaseRoutingPCell):
         routing = Routing(layout=self.layout, layer_name=self._coerce_layer_name(self.layer_name))
         start_points = _parse_points(self.start_points)
         end_points = _parse_points(self.end_points)
+        # Routing accepts per-route widths. The PCell exposes one width for the
+        # whole bundle, so expand it to match the number of start points.
         widths = [self.line_width for _ in start_points]
         routing.insert_parallel_routes(
             self.cell,

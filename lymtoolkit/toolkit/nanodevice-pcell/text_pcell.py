@@ -6,6 +6,8 @@ from text_utils import TextUtils
 from utils.geometry import GeometryUtils
 
 class TextPCell(pya.PCellDeclarationHelper):
+    """Convert TrueType/OpenType text into polygon geometry for lithography."""
+
     def __init__(self):
         super(TextPCell, self).__init__()
         self.param("text", self.TypeString, "Text", default="Hello KLayout")
@@ -32,6 +34,9 @@ class TextPCell(pya.PCellDeclarationHelper):
         return f"TextPCell: {self.text}"
 
     def produce_impl(self):
+        # TextUtils emits pya polygons from font outlines. Keep font selection,
+        # anchoring, and spacing as PCell parameters so saved cells are
+        # reproducible without reopening the toolkit dialog.
         GeometryUtils.UNIT_SCALE = 1000
         ly = self.layout
         cell = self.cell

@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
 
 
 def _discover_root_dir():
+    """Locate the toolkit root regardless of the KLayout macro load path."""
     current = os.path.abspath(os.path.dirname(__file__))
     candidates = [
         current,
@@ -61,10 +62,12 @@ from utils.routing_utils import RouteOverlapError
 
 
 def _point_key(point):
+    """Rounded key used for duplicate point validation."""
     return (round(float(point[0]), 6), round(float(point[1]), 6))
 
 
 def _nice_length(value):
+    """Choose a human-friendly scale-bar length near the requested value."""
     if value <= 0:
         return 1.0
     decade = 1.0
@@ -90,6 +93,8 @@ def _format_length(value_um):
 
 
 class PointTableWidget(QWidget):
+    """Compact editable table for start/end/waypoint coordinate lists."""
+
     def __init__(self, title, columns):
         super().__init__()
         self._change_handler = None
@@ -220,6 +225,8 @@ class PointTableWidget(QWidget):
         return self._row_height_hint * 2 + 6
 
     def points(self):
+        # Convert table text only when the dialog needs values. This keeps the
+        # UI permissive during editing but validates before preview/insert.
         points = []
         for row in range(self.table.rowCount()):
             values = []
@@ -245,6 +252,8 @@ class PointTableWidget(QWidget):
 
 
 class RectTableWidget(PointTableWidget):
+    """PointTableWidget specialization for obstacle rectangles."""
+
     def rects(self):
         rects = []
         for x1, y1, x2, y2 in self.points():
@@ -260,6 +269,8 @@ class RectTableWidget(PointTableWidget):
 
 
 class RoutingPreviewView(QGraphicsView):
+    """Qt preview canvas for routes, endpoints, and obstacle regions."""
+
     def __init__(self):
         scene = QGraphicsScene()
         super().__init__(scene)
@@ -333,6 +344,7 @@ class RoutingPreviewView(QGraphicsView):
         painter.drawText(QRectF(x1, y - 18, bar_px + 8.0, 14.0), Qt.AlignLeft | Qt.AlignVCenter, _format_length(bar_um))
 
     def _scene_point(self, point):
+        # Qt's scene Y axis points down; layout coordinates use positive-up Y.
         return QPointF(float(point[0]), -float(point[1]))
 
     def _scene_rect(self, rect):
@@ -343,6 +355,8 @@ class RoutingPreviewView(QGraphicsView):
         return QRectF(x1, -y2, x2 - x1, y2 - y1)
 
     def _polygon_from_shape(self, shape):
+        # Route results may contain KLayout paths or polygons. Convert the hull
+        # into scene coordinates for fast preview rendering.
         polygon = shape.polygon() if hasattr(shape, "polygon") else shape
         points = []
         if hasattr(polygon, "each_point_hull"):
@@ -444,6 +458,8 @@ class RoutingPreviewView(QGraphicsView):
 
 
 class NanoRoutingDialog(QDialog):
+    """Interactive NanoRouting editor with preview, JSON import/export, and insert."""
+
     PREVIEW_CELL_NAME = "__NANOROUTING_PREVIEW__"
 
     def __init__(self):
@@ -944,6 +960,8 @@ class NanoRoutingDialog(QDialog):
                 raise ValueError(f"Obstacle #{index} has zero width or height.")
 
     def _build_results(self):
+        # Build route geometry in memory first. The same result path is used by
+        # the preview, debug export, and final insertion into the active cell.
         values = self._values()
         self._validate_values(values)
         routing = Routing(layer_name=values["layer_name"])
@@ -1038,6 +1056,8 @@ class NanoRoutingDialog(QDialog):
         return view, cv.layout(), cv.cell
 
     def _ensure_preview_cell(self, layout, top_cell):
+        # Keep layout previews isolated in a known child cell so repeated
+        # previews can be cleared without touching user-created geometry.
         preview_cell = layout.create_cell(self.PREVIEW_CELL_NAME)
         try:
             preview_cell.clear()
@@ -1196,6 +1216,7 @@ _dialog_ref = None
 
 
 def launch_nanorouting_dialog():
+    # Keep a module-level reference so Qt does not garbage-collect the dialog.
     global _dialog_ref
     if _dialog_ref is None:
         _dialog_ref = NanoRoutingDialog()

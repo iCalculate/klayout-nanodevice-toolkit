@@ -2,6 +2,8 @@ import pya
 
 
 class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
+    """Interdigitated FET PCell with selectable vertical/horizontal fingers."""
+
     def __init__(self):
         super(NanoDeviceFETPCell, self).__init__()
 
@@ -54,6 +56,9 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         )
 
     def coerce_parameters_impl(self):
+        # KLayout calls this before geometry generation and when parameters are
+        # edited in the UI. Keep constraints here so produce_impl can assume a
+        # physically meaningful layout envelope.
         self.device_cx = min(max(self.device_cx, -1000.0), 1000.0)
         self.device_cy = min(max(self.device_cy, -1000.0), 1000.0)
         self.channel_width = min(max(self.channel_width, 0.1), 1000.0)
@@ -89,6 +94,7 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         channel_shapes = self.cell.shapes(layout.layer(self.channel_layer))
 
         def to_iu(value_um):
+            # Convert micrometers to KLayout integer database units.
             return int(round(value_um / dbu))
 
         cx = self.device_cx
@@ -102,6 +108,8 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         else:
             geometry = self._build_horizontal_geometry(cx, cy)
 
+        # Build source/drain geometry as a Region so overlapping rectangles are
+        # merged before insertion, avoiding redundant edges in the final GDS.
         sd_region = pya.Region()
         for box in geometry["sd_boxes"] + geometry["lead_boxes"]:
             sd_region.insert(self._to_box(box, to_iu))
@@ -114,6 +122,7 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         gate_shapes.insert(gate_region.merged())
 
     def _build_vertical_geometry(self, cx, cy):
+        """Return all rectangles needed for the vertical-finger variant."""
         left = cx - self.channel_width / 2.0
         right = cx + self.channel_width / 2.0
         bottom = cy - self.channel_height / 2.0
@@ -197,6 +206,7 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         }
 
     def _build_horizontal_geometry(self, cx, cy):
+        """Return all rectangles needed for the horizontal-finger variant."""
         left = cx - self.channel_width / 2.0
         right = cx + self.channel_width / 2.0
         bottom = cy - self.channel_height / 2.0
@@ -280,6 +290,8 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         }
 
     def _gate_geometry(self, geometry, to_iu):
+        # Global mode covers the whole channel box. Channel-only mode fills the
+        # exposed channel gaps between interdigitated source/drain fingers.
         if self.gate_mode == 0:
             target_box = geometry["channel_box"]
             grown = self._grow_box(target_box, self.gate_margin_x, self.gate_margin_y)
@@ -296,6 +308,7 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         return region, route_start
 
     def _build_channel_only_gate_region(self, geometry, to_iu):
+        """Build a connected gate region that avoids the source/drain fingers."""
         channel_box = geometry["channel_box"]
         fingers = [self._intersect_boxes(finger_box, channel_box) for finger_box in geometry["finger_boxes"]]
         fingers = [box for box in fingers if box is not None]
@@ -342,6 +355,8 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         return region.merged(), route_start
 
     def _build_gate_route_boxes(self, geometry, route_start):
+        # Route the gate lead outside the active source/drain envelope before
+        # turning toward the gate pad.
         pad_box = geometry["gate_pad_box"]
         pad_center = geometry["gate_pad_center"]
         active_box = geometry["active_box"]
@@ -365,6 +380,8 @@ class NanoDeviceFETPCell(pya.PCellDeclarationHelper):
         return self._xy_box(x_mid - width_um / 2.0, start_y, x_mid + width_um / 2.0, end_y)
 
     def _route_polyline_boxes(self, points, width):
+        # Convert an orthogonal polyline into rectangular metal segments plus
+        # square joins at bends.
         boxes = []
         for idx in range(len(points) - 1):
             if points[idx] == points[idx + 1]:

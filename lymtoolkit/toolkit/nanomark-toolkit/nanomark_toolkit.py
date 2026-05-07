@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (
 
 
 def _discover_root_dir():
+    """Locate the repository root when this file is executed as a KLayout macro."""
     current = os.path.abspath(os.path.dirname(__file__))
     candidates = [
         current,
@@ -77,6 +78,8 @@ LAYER_MAP_PATH = _discover_layer_map_path()
 
 @dataclass
 class ParameterSpec:
+    """UI/control metadata for one NanoMark toolkit parameter."""
+
     key: str
     label: str
     group: str
@@ -92,6 +95,8 @@ class ParameterSpec:
 
 @dataclass
 class ToolSpec:
+    """Bundle a mark generator, its UI parameters, and preview layer mapping."""
+
     key: str
     title: str
     params: list
@@ -126,6 +131,7 @@ def _format_length(value_um):
 
 
 def _load_layer_styles():
+    """Read KLayout layer colors so the Qt preview matches the layer map."""
     styles = {}
     if not os.path.exists(LAYER_MAP_PATH):
         return styles
@@ -176,6 +182,8 @@ def _preview_style(layer_tuple, fallback_key=None):
 
 
 def _append_points_to_path(path, points, dbu):
+    # Qt preview coordinates are in micrometers with the Y axis flipped, while
+    # KLayout polygon points are integer database units.
     first = points[0]
     path.moveTo(first.x * dbu, -first.y * dbu)
     for point in points[1:]:
@@ -197,6 +205,7 @@ def _polygon_to_paths(polygon, dbu):
 
 
 def _shape_to_paths(shape, dbu):
+    """Convert KLayout shapes from a generated layout into Qt preview paths."""
     if shape.is_box():
         box = shape.box
         path = QPainterPath()
@@ -273,6 +282,7 @@ def _draw_layout_preview(scene, layout, top_cell, visible_layer_keys, tool_spec)
 
 
 def _insert_layout_into_active_cell(target_layout, target_cell, source_layout, source_top):
+    """Copy generated preview layout geometry into the user's active cell."""
     for layer_index in source_layout.layer_indices():
         info = source_layout.get_info(layer_index)
         dest_layer = target_layout.layer(int(info.layer), int(info.datatype))
@@ -443,6 +453,8 @@ def _generate_text_pattern_array(values):
 
 
 class PreviewView(QGraphicsView):
+    """Shared NanoMark preview canvas with pan/zoom and scale bar support."""
+
     def __init__(self):
         scene = QGraphicsScene()
         super().__init__(scene)
@@ -526,6 +538,8 @@ class PreviewView(QGraphicsView):
         )
 
     def draw_mark_preview(self, tool_spec, values, visible_layers, preserve_view=True):
+        # Generators return a temporary KLayout layout. Rendering that layout
+        # keeps preview behavior close to the final insertion path.
         scene = self.scene()
         saved_transform = self.transform()
         saved_center = self.mapToScene(self.viewport().rect().center())
@@ -1387,6 +1401,7 @@ _dialog_ref = None
 
 
 def launch_nanomark_dialog():
+    # Keep a module-level reference so the Qt dialog remains alive after launch.
     global _dialog_ref
     if _dialog_ref is None:
         _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, TEXT_PATTERN_ARRAY_TOOL, MARK_ARRAY_TOOL])

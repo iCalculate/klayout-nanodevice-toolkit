@@ -2,6 +2,8 @@ import pya
 
 
 class GdsfactoryTextPCell(pya.PCellDeclarationHelper):
+    """Small PCell that renders KLayout text polygons with gdsfactory-like sizing."""
+
     def __init__(self):
         super(GdsfactoryTextPCell, self).__init__()
         self.param("text", self.TypeString, "Text", default="ABC123")
@@ -14,6 +16,8 @@ class GdsfactoryTextPCell(pya.PCellDeclarationHelper):
         return f"GdsfactoryTextPCell({self.text})"
 
     def coerce_parameters_impl(self):
+        # Clamp user-editable parameters to practical ranges so malformed PCell
+        # instances do not create enormous or empty geometry.
         self.text = self.text or "ABC123"
         self.x = min(max(self.x, -1000.0), 1000.0)
         self.y = min(max(self.y, -1000.0), 1000.0)
@@ -25,12 +29,15 @@ class GdsfactoryTextPCell(pya.PCellDeclarationHelper):
         layer_id = layout.layer(self.layer)
         text_region = _text_region(self.text, self.size_um, dbu)
         bbox = text_region.bbox()
+        # TextGenerator positions by lower-left origin; move the merged text
+        # region so the user-facing x/y parameters represent the text center.
         dx = int(round(self.x / dbu - (bbox.left + bbox.right) / 2.0))
         dy = int(round(self.y / dbu - (bbox.bottom + bbox.top) / 2.0))
         self.cell.shapes(layer_id).insert(text_region.moved(dx, dy))
 
 
 def _text_region(text, size_um, target_dbu):
+    """Return a merged Region for text scaled to the requested micron height."""
     generator = pya.TextGenerator.default_generator()
     mag = float(size_um) / max(generator.dheight(), 1e-9)
     return generator.text(text, target_dbu, mag, False, 0.0, 0.0, 0.0).merged()

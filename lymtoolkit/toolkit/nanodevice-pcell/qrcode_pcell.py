@@ -6,6 +6,8 @@ from QRcode_utils import QRCodeUtils
 from utils.geometry import GeometryUtils
 
 class QRCodePCell(pya.PCellDeclarationHelper):
+    """Generate a QR code as layout polygons on the selected layer."""
+
     def __init__(self):
         super(QRCodePCell, self).__init__()
         self.param("text", self.TypeString, "QR Content", default="https://github.com/iCalculate/klayout-nanodevice-toolkit")
@@ -18,6 +20,8 @@ class QRCodePCell(pya.PCellDeclarationHelper):
         return f"QRCodePCell: {self.text}"
 
     def produce_impl(self):
+        # QRCodeUtils returns one polygon per dark QR module. KLayout handles
+        # the final database-unit conversion through GeometryUtils.
         GeometryUtils.UNIT_SCALE = 1000
         ly = self.layout
         cell = self.cell
