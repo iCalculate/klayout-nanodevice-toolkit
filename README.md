@@ -22,7 +22,7 @@
 
 ## Why This Repo
 
-This repository now focuses on the maintained KLayout toolkit and the reusable device-building modules underneath it.
+This repository focuses on the maintained KLayout toolkit and the reusable device-building modules underneath it.
 
 - Parametric device generation for MOSFET, FET, Hall bar, TLM, meander, and electrode structures
 - Maintained KLayout GUI, macro, and library workflow under `lymtoolkit/`
@@ -39,7 +39,7 @@ The older root-level Python launcher files were removed to avoid maintaining a s
 | KLayout GUI | `Tools -> NanoDevice -> NanoDevice GUI` | Opens the maintained interactive GUI after installation |
 | NanoRouting GUI | `Tools -> NanoDevice -> NanoRouting GUI` | Opens the routing-focused GUI for direct path / bundle generation |
 | NanoMark GUI | `Tools -> NanoMark -> NanoMark GUI` | Opens the mark toolkit for EBL writefield marks and general mark arrays |
-| PDK tooling | `lymtoolkit/PDK/` | Keeps technology files, layers, examples, and registration macros together |
+| PDK tooling | `lymtoolkit/pdk/` | Keeps technology files, layers, examples, and registration macros together |
 | Python modules | `components/`, `utils/` | Reuse generators and helpers in custom scripts or lab automation |
 | Grayscale patterns | `components/greyscale/` | Generates grayscale lithography assets and image-derived structures |
 
@@ -53,7 +53,7 @@ The older root-level Python launcher files were removed to avoid maintaining a s
 
 ## Quick Start
 
-### 1. Create the environment
+### 1. Create the Python environment
 
 ```bash
 conda env create -f environment.yml
@@ -61,7 +61,7 @@ conda activate klayout-nanodevice-toolkit
 pip install -r requirements.txt
 ```
 
-### 2. Sanity-check the install
+### 2. Sanity-check the environment
 
 ```bash
 python --version
@@ -69,13 +69,13 @@ python -c "import klayout.db as kdb; print('klayout python api ready')"
 python -c "from components.fet import FET; print('component import ready')"
 ```
 
-### 3. Install the KLayout toolkit
+### 3. Install the KLayout toolkit into KLayout
 
 ```bash
 .\lymtoolkit\install_lymtoolkit.bat
 ```
 
-Then restart KLayout and open:
+Restart KLayout, then open:
 
 ```text
 Tools -> NanoDevice -> NanoDevice GUI
@@ -99,7 +99,7 @@ fet = FET(
 fet.generate()
 ```
 
-Generated GDS files are written to `output/`, and grayscale image outputs are written to `output/grayscaleImg/`.
+Generated GDS files are written to `output/`. Grayscale image outputs are written to `output/grayscaleImg/`.
 
 ## Repository Map
 
@@ -140,7 +140,7 @@ KLayout_Nanodevice_Toolkit/
 
 - `lymtoolkit/toolkit/nanodevice-toolkit/`: toolkit-facing KLayout macros and library registration
 - `lymtoolkit/toolkit/nanodevice-pcell/`: PCell-oriented macro modules
-- `lymtoolkit/PDK/`: technology definition, layer map, examples, and registration macro
+- `lymtoolkit/pdk/`: technology definition, layer map, examples, and registration macro
 
 ## Recommended Reading
 
