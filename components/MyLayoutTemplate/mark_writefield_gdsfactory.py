@@ -354,7 +354,11 @@ def create_composite_mark(
     center_coords: tuple = None,
     layer_auto_align: tuple = LAYER.ALIGN_LINESCAN,
     layer_manual_align: tuple = LAYER.ALIGN_MANUAL,
-    enable_alignment_layers: bool = True
+    enable_alignment_layers: bool = True,
+    auto_align_length: float = 50.0,
+    auto_align_width: float = 5.0,
+    auto_align_offset: float = 0.0,
+    manual_align_size: float = 0.0
 ) -> gf.Component:
     """
     Create a composite mark:
@@ -372,6 +376,10 @@ def create_composite_mark(
         layer_auto_align: Layer for L61 auto alignment marks.
         layer_manual_align: Layer for L63 manual alignment marks.
         enable_alignment_layers: If True, adds L61 and L63 features.
+        auto_align_length: L61 path length.
+        auto_align_width: L61 path width.
+        auto_align_offset: L61 path offset from mark center. Set 0 for automatic wide-part center.
+        manual_align_size: L63 square size. Set 0 to match main_size.
     """
     layer = _layer_tuple(layer)
     layer_frame = _layer_tuple(layer_frame)
@@ -382,7 +390,10 @@ def create_composite_mark(
     q_suffix = f"_Q{quadrant_indicator}" if quadrant_indicator else ""
     coords_suffix = f"_XY{int(center_coords[0])}_{int(center_coords[1])}" if center_coords else ""
     align_suffix = "_Align" if enable_alignment_layers else ""
-    name = f"CompositeMark_{suffix}{f_suffix}{q_suffix}{coords_suffix}{align_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
+    align_param_suffix = ""
+    if enable_alignment_layers:
+        align_param_suffix = f"_A{auto_align_length}_{auto_align_width}_{auto_align_offset}_{manual_align_size}"
+    name = f"CompositeMark_{suffix}{f_suffix}{q_suffix}{coords_suffix}{align_suffix}{align_param_suffix}_M{main_size}_S{small_size}_L{layer[0]}_{layer[1]}"
     
     if name in _component_cache:
         return _component_cache[name]
@@ -482,7 +493,8 @@ def create_composite_mark(
     # 7. Alignment Layers (L61 and L63)
     if enable_alignment_layers:
         # L63 Manual Alignment: Square framing the center bonecross tips
-        manual_box = get_rect_component(width=main_size, height=main_size, layer=layer_manual_align)
+        manual_size = manual_align_size if manual_align_size > 0 else main_size
+        manual_box = get_rect_component(width=manual_size, height=manual_size, layer=layer_manual_align)
         c.add_ref(manual_box)
         
         # Calculate wide part center offsets (synced with create_bonecross)
@@ -492,12 +504,13 @@ def create_composite_mark(
         # Wide part center position: center of the external wide rectangle
         # Left arm (horizontal): wide part center at x = -(internal_length + end_length) / 2.0, y = 0
         # Top arm (vertical): wide part center at x = 0, y = (internal_length + end_length) / 2.0
-        wide_part_center_x = -(internal_length + end_length) / 2.0  # Left arm wide part center
-        wide_part_center_y = (internal_length + end_length) / 2.0   # Top arm wide part center
+        align_offset = auto_align_offset if auto_align_offset > 0 else (internal_length + end_length) / 2.0
+        wide_part_center_x = -align_offset  # Left arm wide part center
+        wide_part_center_y = align_offset   # Top arm wide part center
         
         # L61 Auto Alignment: Paths perpendicular to arms, centered in the external wide parts
-        path_width = 5.0  # Default line width
-        path_length = 50.0  # Default line length
+        path_width = auto_align_width
+        path_length = auto_align_length
         
         # Left arm (horizontal) -> Vertical path, centered at wide part center, aligned with arm center (y=0)
         auto_left = get_path_component(length=path_length, width=path_width, layer=layer_auto_align, orientation="vertical")
@@ -850,6 +863,10 @@ def generate_writefield_array(
     layer_caliper: tuple = LAYER.CALIPER,
     layer_auto_align: tuple = LAYER.ALIGN_LINESCAN,
     layer_manual_align: tuple = LAYER.ALIGN_MANUAL,
+    auto_align_length: float = 50.0,
+    auto_align_width: float = 5.0,
+    auto_align_offset: float = 0.0,
+    manual_align_size: float = 0.0,
     
     # L4 frame parameters
     frame_width: float = None,  # Line width of the L-shape arms. Defaults to mark_width difference if None.
@@ -901,7 +918,11 @@ def generate_writefield_array(
         quadrant_indicator=1,
         layer_auto_align=layer_auto_align,
         layer_manual_align=layer_manual_align,
-        enable_alignment_layers=enable_alignment_layers
+        enable_alignment_layers=enable_alignment_layers,
+        auto_align_length=auto_align_length,
+        auto_align_width=auto_align_width,
+        auto_align_offset=auto_align_offset,
+        manual_align_size=manual_align_size
     )
     
     # Q2: Top-Left (Main Mark + Circle Q2)
@@ -919,7 +940,11 @@ def generate_writefield_array(
         quadrant_indicator=2,
         layer_auto_align=layer_auto_align,
         layer_manual_align=layer_manual_align,
-        enable_alignment_layers=enable_alignment_layers
+        enable_alignment_layers=enable_alignment_layers,
+        auto_align_length=auto_align_length,
+        auto_align_width=auto_align_width,
+        auto_align_offset=auto_align_offset,
+        manual_align_size=manual_align_size
     )
     
     # Q3: Bottom-Left (Standard + Circle Q3)
@@ -937,7 +962,11 @@ def generate_writefield_array(
         quadrant_indicator=3,
         layer_auto_align=layer_auto_align,
         layer_manual_align=layer_manual_align,
-        enable_alignment_layers=enable_alignment_layers
+        enable_alignment_layers=enable_alignment_layers,
+        auto_align_length=auto_align_length,
+        auto_align_width=auto_align_width,
+        auto_align_offset=auto_align_offset,
+        manual_align_size=manual_align_size
     )
     
     # Q4: Bottom-Right (Standard + Circle Q4)
@@ -955,7 +984,11 @@ def generate_writefield_array(
         quadrant_indicator=4,
         layer_auto_align=layer_auto_align,
         layer_manual_align=layer_manual_align,
-        enable_alignment_layers=enable_alignment_layers
+        enable_alignment_layers=enable_alignment_layers,
+        auto_align_length=auto_align_length,
+        auto_align_width=auto_align_width,
+        auto_align_offset=auto_align_offset,
+        manual_align_size=manual_align_size
     )
     
     # Create L-Marker (L3)
@@ -988,7 +1021,11 @@ def generate_writefield_array(
             center_coords=pos,
             layer_auto_align=layer_auto_align,
             layer_manual_align=layer_manual_align,
-            enable_alignment_layers=enable_alignment_layers
+            enable_alignment_layers=enable_alignment_layers,
+            auto_align_length=auto_align_length,
+            auto_align_width=auto_align_width,
+            auto_align_offset=auto_align_offset,
+            manual_align_size=manual_align_size
         )
         return c.add_ref(mark).move(pos)
 

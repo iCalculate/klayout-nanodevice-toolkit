@@ -186,6 +186,18 @@ class MarkArrayBuilder:
         add_rect_corners(x + root_length, y, x + length, y + width)
         return shapes
 
+    def _path_shape(self, x, y, length, width, orientation="horizontal"):
+        half_length = max(float(length), self.layout.dbu) / 2.0
+        dbu_width = max(int(round(float(width) * DEFAULT_UNIT_SCALE)), 1)
+        x_dbu = int(round(float(x) * DEFAULT_UNIT_SCALE))
+        y_dbu = int(round(float(y) * DEFAULT_UNIT_SCALE))
+        delta = int(round(half_length * DEFAULT_UNIT_SCALE))
+        if str(orientation).lower() == "vertical":
+            points = [pya.Point(x_dbu, y_dbu - delta), pya.Point(x_dbu, y_dbu + delta)]
+        else:
+            points = [pya.Point(x_dbu - delta, y_dbu), pya.Point(x_dbu + delta, y_dbu)]
+        return pya.Path(points, dbu_width, 0, 0, False)
+
     def _mark_shapes(self, x, y, mark_type, mark_size, mark_width):
         mark_type = str(mark_type).lower()
         if mark_type == "bonecross":
@@ -403,6 +415,10 @@ class MarkArrayBuilder:
         ebl_small_dist=175.0,
         ebl_enable_frame=True,
         ebl_enable_alignment_layers=True,
+        ebl_auto_align_length=50.0,
+        ebl_auto_align_width=5.0,
+        ebl_auto_align_offset=0.0,
+        ebl_manual_align_size=0.0,
         enable_coord_text=True,
         coord_text_size=16.0,
         enable_label=True,
@@ -472,6 +488,10 @@ class MarkArrayBuilder:
                     center_coords=(pos_x, pos_y) if enable_coord_text else None,
                     coord_text_size=coord_text_size if enable_coord_text else None,
                     enable_alignment_layers=ebl_enable_alignment_layers,
+                    auto_align_length=ebl_auto_align_length,
+                    auto_align_width=ebl_auto_align_width,
+                    auto_align_offset=ebl_auto_align_offset,
+                    manual_align_size=ebl_manual_align_size,
                 )
                 self._insert_shapes(cell, layer_mark, mark_shapes + text_shapes)
                 self._insert_shapes(cell, layer_mark_frame, frame_shapes)
@@ -551,6 +571,10 @@ class MarkArrayBuilder:
         center_coords=None,
         coord_text_size=None,
         enable_alignment_layers=True,
+        auto_align_length=50.0,
+        auto_align_width=5.0,
+        auto_align_offset=0.0,
+        manual_align_size=0.0,
     ):
         layer_shapes = []
         frame_shapes = []
@@ -596,15 +620,17 @@ class MarkArrayBuilder:
             text_shapes.extend(self._deplof_text(f"{cy_val:+.1f}", x + offset, y - offset - main_width / 2.0, c_text_size, anchor="left_top", justify="left"))
 
         if enable_alignment_layers:
-            manual_shapes.append(GeometryUtils.create_rectangle(x, y, main_size, main_size, center=True))
+            manual_size = float(manual_align_size) if float(manual_align_size or 0.0) > 0.0 else float(main_size)
+            manual_shapes.append(GeometryUtils.create_rectangle(x, y, manual_size, manual_size, center=True))
             internal_length = min(1.5 * main_width, 20.0)
             end_length = (main_size - internal_length) / 2.0
-            wide_part_center_x = -(internal_length + end_length) / 2.0
-            wide_part_center_y = (internal_length + end_length) / 2.0
+            auto_offset = float(auto_align_offset) if float(auto_align_offset or 0.0) > 0.0 else (internal_length + end_length) / 2.0
+            wide_part_center_x = -auto_offset
+            wide_part_center_y = auto_offset
             auto_shapes.extend(
                 [
-                    GeometryUtils.create_rectangle(x + wide_part_center_x, y, 5.0, 50.0, center=True),
-                    GeometryUtils.create_rectangle(x, y + wide_part_center_y, 50.0, 5.0, center=True),
+                    self._path_shape(x + wide_part_center_x, y, auto_align_length, auto_align_width, orientation="vertical"),
+                    self._path_shape(x, y + wide_part_center_y, auto_align_length, auto_align_width, orientation="horizontal"),
                 ]
             )
 
@@ -758,6 +784,10 @@ class MarkArrayBuilder:
         layer_caliper=(5, 0),
         layer_auto_align=(61, 0),
         layer_manual_align=(63, 0),
+        auto_align_length=50.0,
+        auto_align_width=5.0,
+        auto_align_offset=0.0,
+        manual_align_size=0.0,
         frame_width=None,
         user_name="Xinchuan",
         info_text_size=50.0,
@@ -787,10 +817,17 @@ class MarkArrayBuilder:
                 pos_tl = (wf_center_x - writefield_size / 2.0 + mark_offset_from_corner[0], wf_center_y + writefield_size / 2.0 - mark_offset_from_corner[1])
                 pos_tr = (wf_center_x + writefield_size / 2.0 - mark_offset_from_corner[0], wf_center_y + writefield_size / 2.0 - mark_offset_from_corner[1])
 
-                q3_shapes, q3_frame, q3_auto, q3_manual, _ = self._composite_mark_shapes(*pos_bl, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, False, True, frame_width, 3, None, enable_alignment_layers)
-                q4_shapes, q4_frame, q4_auto, q4_manual, _ = self._composite_mark_shapes(*pos_br, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, False, True, frame_width, 4, None, enable_alignment_layers)
-                q2_shapes, q2_frame, q2_auto, q2_manual, _ = self._composite_mark_shapes(*pos_tl, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, True, True, frame_width, 2, None, enable_alignment_layers)
-                q1_shapes, q1_frame, q1_auto, q1_manual, _ = self._composite_mark_shapes(*pos_tr, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, False, True, frame_width, 1, None, enable_alignment_layers)
+                align_kwargs = {
+                    "enable_alignment_layers": enable_alignment_layers,
+                    "auto_align_length": auto_align_length,
+                    "auto_align_width": auto_align_width,
+                    "auto_align_offset": auto_align_offset,
+                    "manual_align_size": manual_align_size,
+                }
+                q3_shapes, q3_frame, q3_auto, q3_manual, _ = self._composite_mark_shapes(*pos_bl, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, False, True, frame_width, 3, **align_kwargs)
+                q4_shapes, q4_frame, q4_auto, q4_manual, _ = self._composite_mark_shapes(*pos_br, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, False, True, frame_width, 4, **align_kwargs)
+                q2_shapes, q2_frame, q2_auto, q2_manual, _ = self._composite_mark_shapes(*pos_tl, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, True, True, frame_width, 2, **align_kwargs)
+                q1_shapes, q1_frame, q1_auto, q1_manual, _ = self._composite_mark_shapes(*pos_tr, mark_main_size, mark_main_width, mark_small_size, mark_small_width, mark_small_dist, False, True, frame_width, 1, **align_kwargs)
 
                 self._insert_shapes(cell, layer_mark, q3_shapes + q4_shapes + q2_shapes + q1_shapes)
                 self._insert_shapes(cell, layer_mark_frame, q3_frame + q4_frame + q2_frame + q1_frame)
@@ -838,6 +875,8 @@ class MarkArrayBuilder:
                 global_mark_small_size, global_mark_small_width, global_mark_small_dist,
                 is_main_mark=(idx == 0), enable_frame=True, frame_width=frame_width,
                 quadrant_indicator=None, center_coords=pos, enable_alignment_layers=enable_alignment_layers,
+                auto_align_length=auto_align_length, auto_align_width=auto_align_width,
+                auto_align_offset=auto_align_offset, manual_align_size=manual_align_size,
             )
             self._insert_shapes(cell, layer_mark, layer_shapes + text_shapes)
             self._insert_shapes(cell, layer_mark_frame, frame_shapes)

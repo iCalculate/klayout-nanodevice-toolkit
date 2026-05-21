@@ -360,6 +360,10 @@ def _writefield_values(values):
         "layer_caliper": values["layer_caliper"],
         "layer_auto_align": values["layer_auto_align"],
         "layer_manual_align": values["layer_manual_align"],
+        "auto_align_length": values["auto_align_length"],
+        "auto_align_width": values["auto_align_width"],
+        "auto_align_offset": values["auto_align_offset"],
+        "manual_align_size": values["manual_align_size"],
         "frame_width": frame_width,
         "user_name": values["user_name"],
         "info_text_size": values["info_text_size"],
@@ -403,6 +407,10 @@ def _custom_global_grid_values(values):
         "ebl_small_dist": values["ebl_small_dist"],
         "ebl_enable_frame": values["ebl_enable_frame"],
         "ebl_enable_alignment_layers": values["ebl_enable_alignment_layers"],
+        "ebl_auto_align_length": values["ebl_auto_align_length"],
+        "ebl_auto_align_width": values["ebl_auto_align_width"],
+        "ebl_auto_align_offset": values["ebl_auto_align_offset"],
+        "ebl_manual_align_size": values["ebl_manual_align_size"],
         "enable_coord_text": values["enable_coord_text"],
         "coord_text_size": values["coord_text_size"],
         "enable_label": values["enable_label"],
@@ -915,6 +923,10 @@ class NanoMarkDialog(QDialog):
             "ebl_small_dist",
             "ebl_enable_frame",
             "ebl_enable_alignment_layers",
+            "ebl_auto_align_length",
+            "ebl_auto_align_width",
+            "ebl_auto_align_offset",
+            "ebl_manual_align_size",
         ]
 
         for key in simple_param_keys:
@@ -932,6 +944,8 @@ class NanoMarkDialog(QDialog):
         self._set_param_enabled("layer_mark_frame", is_ebl and enable_frame)
         self._set_param_enabled("layer_auto_align", is_ebl and enable_align_layers)
         self._set_param_enabled("layer_manual_align", is_ebl and enable_align_layers)
+        for key in ("ebl_auto_align_length", "ebl_auto_align_width", "ebl_auto_align_offset", "ebl_manual_align_size"):
+            self._set_param_enabled(key, is_ebl and enable_align_layers)
 
     def _set_control_value(self, param, value):
         control = self.controls.get(param.key)
@@ -1188,6 +1202,10 @@ CUSTOM_GLOBAL_MARK_TOOL = ToolSpec(
         ParameterSpec("ebl_small_dist", "EBL Small Distance", "EBL Style", 175.0, minimum=0.01, maximum=10000.0, suffix=" um"),
         ParameterSpec("ebl_enable_frame", "Enable EBL Frame", "EBL Style", True, kind="bool"),
         ParameterSpec("ebl_enable_alignment_layers", "Enable Align Layers", "EBL Style", True, kind="bool"),
+        ParameterSpec("ebl_auto_align_length", "L61 Path Length", "Alignment", 50.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_auto_align_width", "L61 Path Width", "Alignment", 5.0, minimum=0.001, maximum=10000.0, suffix=" um"),
+        ParameterSpec("ebl_auto_align_offset", "L61 Path Offset", "Alignment", 0.0, minimum=0.0, maximum=10000.0, suffix=" um", tooltip="Set 0 to center L61 paths on the wide parts of the main mark."),
+        ParameterSpec("ebl_manual_align_size", "L63 Box Size", "Alignment", 0.0, minimum=0.0, maximum=10000.0, suffix=" um", tooltip="Set 0 to match the EBL main mark size."),
         ParameterSpec("enable_coord_text", "Show XY Text", "Text", True, kind="bool"),
         ParameterSpec("coord_text_size", "XY Text Size", "Text", 16.0, minimum=0.01, maximum=10000.0, suffix=" um"),
         ParameterSpec("enable_label", "Show Label", "Label", True, kind="bool"),
@@ -1386,6 +1404,10 @@ WRITEFIELD_TOOL = ToolSpec(
         ParameterSpec("caliper_bottom_left_tick_length", "Bottom/Left Tick Length", "Bottom/Left Caliper", 10.0, minimum=0.01, maximum=1000.0, suffix=" um"),
         ParameterSpec("caliper_bottom_left_center_length", "Bottom/Left Center Length", "Bottom/Left Caliper", 20.0, minimum=0.01, maximum=1000.0, suffix=" um"),
         ParameterSpec("enable_alignment_layers", "Enable Alignment Layers", "Alignment", True, kind="bool"),
+        ParameterSpec("auto_align_length", "L61 Path Length", "Alignment", 50.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("auto_align_width", "L61 Path Width", "Alignment", 5.0, minimum=0.001, maximum=10000.0, suffix=" um"),
+        ParameterSpec("auto_align_offset", "L61 Path Offset", "Alignment", 0.0, minimum=0.0, maximum=10000.0, suffix=" um", tooltip="Set 0 to center L61 paths on the wide parts of the main mark."),
+        ParameterSpec("manual_align_size", "L63 Box Size", "Alignment", 0.0, minimum=0.0, maximum=10000.0, suffix=" um", tooltip="Set 0 to match the main mark size."),
         ParameterSpec("layer_mechanical", "Mechanical Layer", "Layers", (1, 0), kind="layer_choice"),
         ParameterSpec("layer_active", "Active Layer", "Layers", (2, 0), kind="layer_choice"),
         ParameterSpec("layer_mark", "Mark Layer", "Layers", (3, 0), kind="layer_choice"),
