@@ -55,6 +55,7 @@ if ROOT_DIR not in sys.path:
 from config import DEFAULT_DBU
 from components.markarray import (
     build_custom_global_mark_grid_layout,
+    build_cv_mark_array_layout,
     build_general_mark_array_layout,
     build_text_pattern_array_layout,
     build_writefield_mark_layout,
@@ -375,6 +376,42 @@ def _writefield_values(values):
 
 def _generate_mark_array(values):
     return build_general_mark_array_layout(**_mark_array_values(values))
+
+
+def _cv_mark_array_values(values):
+    return {
+        "sample_width": values["sample_width"],
+        "sample_height": values["sample_height"],
+        "active_width": values["active_width"],
+        "active_height": values["active_height"],
+        "mark_width": values["mark_width"],
+        "mark_fine_width": values["mark_fine_width"],
+        "mark_fine_ratio": values["mark_fine_ratio"],
+        "mark_size": values["mark_size"],
+        "mark_pitch_x": values["mark_pitch_x"],
+        "mark_pitch_y": values["mark_pitch_y"],
+        "mark_type": values["mark_type"],
+        "boundary_line_width": values["boundary_line_width"],
+        "cv_size": values["cv_size"],
+        "cv_module_border": values["cv_module_border"],
+        "quad_gap": values["quad_gap"],
+        "text_size": values["text_size"],
+        "index_base": values["index_base"],
+        "cv_family": values["cv_family"],
+        "cv_depth": values["cv_depth"],
+        "aruco_id_mode": values["aruco_id_mode"],
+        "layer_mechanical": values["layer_mechanical"],
+        "layer_active": values["layer_active"],
+        "layer_mark": values["layer_mark"],
+        "user_name": values["user_name"],
+        "info_text_size": values["info_text_size"],
+        "info_text_offset": (values["info_text_offset_x"], values["info_text_offset_y"]),
+        "name": values["name"],
+    }
+
+
+def _generate_cv_mark_array(values):
+    return build_cv_mark_array_layout(**_cv_mark_array_values(values))
 
 
 def _generate_writefield_array(values):
@@ -887,6 +924,11 @@ class NanoMarkDialog(QDialog):
             self._set_param_enabled(param.key, True)
 
         if tool.key != "custom_global_mark":
+            if tool.key == "cv_mark_array":
+                values = self._values()
+                is_bonecross = str(values.get("mark_type", "bonecross")).lower() == "bonecross"
+                for key in ("mark_fine_width", "mark_fine_ratio"):
+                    self._set_param_enabled(key, is_bonecross)
             if tool.key == "text_pattern_array":
                 values = self._values()
                 array_mode = str(values.get("array_mode", "2d")).lower()
@@ -1010,6 +1052,17 @@ class NanoMarkDialog(QDialog):
                 deserialized[key] = (int(value[0]), int(value[1]))
             else:
                 deserialized[key] = value
+        if tool.key == "cv_mark_array" and "cv_encoding" in values:
+            try:
+                from utils.cv_mark_utils import CVMarkUtils
+
+                family, depth = CVMarkUtils.split_encoding(values["cv_encoding"])
+                if "cv_family" in params_by_key:
+                    deserialized.setdefault("cv_family", family)
+                if "cv_depth" in params_by_key:
+                    deserialized.setdefault("cv_depth", depth if family != "aruco_original" else "auto")
+            except Exception:
+                pass
         return deserialized
 
     def _export_config(self):
@@ -1340,6 +1393,88 @@ MARK_ARRAY_TOOL = ToolSpec(
 )
 
 
+CV_MARK_ARRAY_TOOL = ToolSpec(
+    key="cv_mark_array",
+    title="CV-MarkArray",
+    generator=_generate_cv_mark_array,
+    preview_layers=[
+        ("mechanical", "Mechanical"),
+        ("active", "Active"),
+        ("mark", "Mark / CV / Text"),
+    ],
+    layer_mapping={
+        "mechanical": "layer_mechanical",
+        "active": "layer_active",
+        "mark": "layer_mark",
+    },
+    params=[
+        ParameterSpec("sample_width", "Sample Width", "Layout", 10000.0, minimum=1.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("sample_height", "Sample Height", "Layout", 10000.0, minimum=1.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("active_width", "Active Width", "Layout", 8000.0, minimum=1.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("active_height", "Active Height", "Layout", 8000.0, minimum=1.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("boundary_line_width", "Boundary Line Width", "Layout", 10.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_type", "Mark Type", "Mark", "bonecross", kind="choice", choices=[("cross", "cross"), ("bonecross", "bonecross"), ("chessboard", "chessboard")]),
+        ParameterSpec("mark_size", "Mark Size", "Mark", 80.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_width", "Mark Wide Width", "Mark", 10.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_fine_width", "Mark Fine Width", "Mark", 6.0, minimum=0.001, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_fine_ratio", "Fine Length Ratio", "Mark", 0.20, minimum=0.01, maximum=0.95, decimals=3, tooltip="Fraction of Mark Size occupied by the thin center split-bonecross section."),
+        ParameterSpec("mark_pitch_x", "Pitch X", "Array", 500.0, minimum=0.01, maximum=100000.0, suffix=" um"),
+        ParameterSpec("mark_pitch_y", "Pitch Y", "Array", 500.0, minimum=0.01, maximum=100000.0, suffix=" um"),
+        ParameterSpec("cv_size", "CV Mark Size", "CV Mark", 24.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec(
+            "cv_family",
+            "CV Family",
+            "CV Mark",
+            "aruco4x4",
+            kind="choice",
+            choices=[
+                ("DICT_4X4", "aruco4x4"),
+                ("DICT_5X5", "aruco5x5"),
+                ("DICT_6X6", "aruco6x6"),
+                ("DICT_ARUCO_ORIGINAL", "aruco_original"),
+            ],
+            tooltip="OpenCV ArUco dictionary family used for CV markers.",
+        ),
+        ParameterSpec(
+            "cv_depth",
+            "Dictionary Depth",
+            "CV Mark",
+            "auto",
+            kind="choice",
+            choices=[
+                ("Auto", "auto"),
+                ("50", "50"),
+                ("100", "100"),
+                ("250", "250"),
+                ("1000", "1000"),
+            ],
+            tooltip="Auto selects the smallest dictionary depth in the selected family that can contain the row/column count. Original ignores depth.",
+        ),
+        ParameterSpec("cv_module_border", "CV Border Bits", "CV Mark", 1, kind="int", minimum=1, maximum=4, tooltip="Dark module border around the encoded payload."),
+        ParameterSpec("quad_gap", "Quadrant Gap", "CV Mark", 15.0, minimum=0.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("text_size", "Text Size", "Text", 24.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("index_base", "Display Index Base", "Text", 1, kind="int", minimum=0, maximum=100000),
+        ParameterSpec(
+            "aruco_id_mode",
+            "ID Wrap Mode",
+            "CV Mark",
+            "strict",
+            kind="choice",
+            choices=[("Strict", "strict"), ("Modulo Capacity", "modulo")],
+            tooltip="Strict raises an error when a forced encoding cannot contain the row or column index.",
+        ),
+        ParameterSpec("user_name", "User Name", "Info", "GEMsLab UserName", kind="string"),
+        ParameterSpec("info_text_size", "Info Text Size", "Info", 60.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("info_text_offset_x", "Info Offset X", "Info", 20.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("info_text_offset_y", "Info Offset Y", "Info", 250.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("name", "Cell Name", "Output", "cv_mark_array_sample", kind="string"),
+        ParameterSpec("layer_mechanical", "Mechanical Layer", "Layers", (1, 0), kind="layer_choice"),
+        ParameterSpec("layer_active", "Active Layer", "Layers", (2, 0), kind="layer_choice"),
+        ParameterSpec("layer_mark", "Mark / CV / Text Layer", "Layers", (3, 0), kind="layer_choice"),
+    ],
+)
+
+
 WRITEFIELD_TOOL = ToolSpec(
     key="writefield_mark",
     title="EBL Writefield Mark",
@@ -1426,7 +1561,7 @@ def launch_nanomark_dialog():
     # Keep a module-level reference so the Qt dialog remains alive after launch.
     global _dialog_ref
     if _dialog_ref is None:
-        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, TEXT_PATTERN_ARRAY_TOOL, MARK_ARRAY_TOOL])
+        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, TEXT_PATTERN_ARRAY_TOOL, MARK_ARRAY_TOOL, CV_MARK_ARRAY_TOOL])
     _dialog_ref.show()
     _dialog_ref.raise_()
     _dialog_ref.activateWindow()

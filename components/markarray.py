@@ -25,6 +25,7 @@ from config import DEFAULT_DBU, DEFAULT_UNIT_SCALE
 from utils.geometry import GeometryUtils
 from utils.mark_utils import MarkUtils
 from utils.text_utils import TextUtils
+from utils.cv_mark_utils import CVMarkUtils
 
 
 class MarkArrayBuilder:
@@ -58,6 +59,18 @@ class MarkArrayBuilder:
                 self._insert_shape(cell, layer_spec, shape)
             return
         self._insert_shape(cell, layer_spec, shapes)
+
+    def _merge_shapes(self, shapes):
+        if not shapes:
+            return []
+        region = pya.Region()
+        if isinstance(shapes, pya.Region):
+            region.insert(shapes)
+        else:
+            for shape in shapes:
+                region.insert(shape)
+        region = region.merged()
+        return [polygon for polygon in region.each()]
 
     def _transform_shape(self, shape, trans):
         if isinstance(shape, pya.Region):
@@ -142,11 +155,14 @@ class MarkArrayBuilder:
             GeometryUtils.create_rectangle(x, y + (internal_length + end_length) / 2.0, external_width, end_length, center=True),
         ]
 
-    def _split_bonecross_shapes(self, x, y, size, width, mode="main"):
+    def _split_bonecross_shapes(self, x, y, size, width, mode="main", narrow_width=None, fine_ratio=None):
         total_length = float(size)
         external_width = float(width)
-        internal_width = 2.0 * float(width) / 5.0
-        internal_length = min(1.5 * float(width), 20.0)
+        internal_width = float(narrow_width) if narrow_width is not None else 2.0 * float(width) / 5.0
+        if fine_ratio is None:
+            internal_length = min(1.5 * float(width), 20.0)
+        else:
+            internal_length = total_length * max(min(float(fine_ratio), 0.95), 0.01)
         end_length = (total_length - internal_length) / 2.0
         shapes = []
 
@@ -210,6 +226,38 @@ class MarkArrayBuilder:
                 self._rect_polygon_with_hole(x + square_size / 2.0, y - square_size / 2.0, square_size, square_size, hollow_size, hollow_size),
             ]
         return self._simple_cross_shapes(x, y, mark_size, mark_width)
+
+    def _cv_marker_id(self, index, cv_encoding="aruco4x4_50", mode="strict"):
+        marker_id = int(index)
+        if marker_id < 0:
+            raise ValueError("CV marker index must be non-negative.")
+        mode = str(mode or "strict").lower()
+        capacity = CVMarkUtils.capacity(cv_encoding)
+        if mode == "modulo":
+            return marker_id % capacity
+        if marker_id >= capacity:
+            raise ValueError(
+                f"{CVMarkUtils.label(cv_encoding)} cannot contain marker ID {marker_id}. "
+                "Select Auto, choose a larger CV Family/Depth, reduce row/column count, or set ID Mode to modulo."
+            )
+        return marker_id
+
+    def _cv_marker_shapes(self, marker_id, cv_encoding, x, y, size_um, anchor="left_top", border_bits=1):
+        matrix = CVMarkUtils.marker_matrix(marker_id, cv_encoding, border_bits=border_bits)
+        return CVMarkUtils.matrix_to_polygons(matrix, x, y, size_um, anchor=anchor)
+
+    def _cv_main_mark_shapes(self, x, y, mark_type, mark_size, mark_width, mark_fine_width, mark_fine_ratio):
+        if str(mark_type).lower() == "bonecross":
+            return self._merge_shapes(self._split_bonecross_shapes(
+                x,
+                y,
+                mark_size,
+                mark_width,
+                mode="main",
+                narrow_width=mark_fine_width,
+                fine_ratio=mark_fine_ratio,
+            ))
+        return self._mark_shapes(x, y, mark_type, mark_size, mark_width)
 
     def _deplof_text(self, text, x, y, size_um, anchor="left_bottom", justify="left"):
         try:
@@ -743,6 +791,123 @@ class MarkArrayBuilder:
         )
         return self.layout, cell
 
+    def build_cv_mark_array(
+        self,
+        sample_width=10000.0,
+        sample_height=10000.0,
+        active_width=8000.0,
+        active_height=8000.0,
+        mark_width=10.0,
+        mark_fine_width=6.0,
+        mark_fine_ratio=0.2,
+        mark_size=80.0,
+        mark_pitch_x=500.0,
+        mark_pitch_y=500.0,
+        mark_type="bonecross",
+        boundary_line_width=10.0,
+        cv_size=24.0,
+        cv_module_border=1,
+        quad_gap=15.0,
+        text_size=24.0,
+        index_base=1,
+        cv_family="aruco4x4",
+        cv_depth="auto",
+        cv_encoding="auto",
+        aruco_id_mode="strict",
+        layer_mechanical=(1, 0),
+        layer_active=(2, 0),
+        layer_mark=(3, 0),
+        user_name="GEMsLab UserName",
+        info_text_size=60.0,
+        info_text_offset=(20.0, 250.0),
+        name="cv_mark_array_sample",
+    ):
+        cell = self.layout.create_cell(str(name))
+        self._insert_shapes(cell, layer_mechanical, self._outline_rectangles(0.0, 0.0, sample_width, sample_height, boundary_line_width))
+        self._insert_shapes(cell, layer_active, self._outline_rectangles(0.0, 0.0, active_width, active_height, boundary_line_width))
+
+        nx = max(int(active_width // max(mark_pitch_x, self.layout.dbu)), 1)
+        ny = max(int(active_height // max(mark_pitch_y, self.layout.dbu)), 1)
+        if cv_encoding and str(cv_encoding).lower() != "auto" and cv_family == "aruco4x4" and cv_depth == "auto":
+            resolved_encoding = CVMarkUtils.resolve_encoding(cv_encoding, max(nx, ny))
+        else:
+            resolved_encoding = CVMarkUtils.resolve_encoding(required_count=max(nx, ny), family=cv_family, depth=cv_depth)
+        if str(aruco_id_mode or "strict").lower() != "modulo":
+            self._cv_marker_id(max(nx - 1, ny - 1), resolved_encoding, aruco_id_mode)
+
+        grid_width = (nx - 1) * mark_pitch_x
+        grid_height = (ny - 1) * mark_pitch_y
+        start_x = -grid_width / 2.0
+        start_y = -grid_height / 2.0
+        quadrant_gap = max(float(quad_gap), 0.0)
+        display_base = int(index_base)
+
+        for i in range(nx):
+            for j in range(ny):
+                x = start_x + i * mark_pitch_x
+                y = start_y + j * mark_pitch_y
+                col_id = self._cv_marker_id(i, resolved_encoding, aruco_id_mode)
+                row_id = self._cv_marker_id(j, resolved_encoding, aruco_id_mode)
+                col_text = str(i + display_base)
+                row_text = str(j + display_base)
+
+                self._insert_shapes(cell, layer_mark, self._cv_main_mark_shapes(x, y, mark_type, mark_size, mark_width, mark_fine_width, mark_fine_ratio))
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._cv_marker_shapes(col_id, resolved_encoding, x + quadrant_gap, y + quadrant_gap, cv_size, anchor="left_bottom", border_bits=cv_module_border),
+                )
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._deplof_text(col_text, x - quadrant_gap, y + quadrant_gap, text_size, anchor="right_bottom", justify="right"),
+                )
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._cv_marker_shapes(row_id, resolved_encoding, x - quadrant_gap, y - quadrant_gap, cv_size, anchor="right_top", border_bits=cv_module_border),
+                )
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._deplof_text(row_text, x + quadrant_gap, y - quadrant_gap, text_size, anchor="left_top", justify="left"),
+                )
+
+        tl_anchor = (-active_width / 2.0, active_height / 2.0)
+        de_um = (sample_width - active_width) / 2.0
+        info_lines = [
+            f"CV:{CVMarkUtils.label(resolved_encoding)}, MP:{int(mark_pitch_x)}x{int(mark_pitch_y)}um",
+            f"M:{int(mark_size)}um, AA:{int(active_width)}um, DE:{int(round(de_um))}um",
+        ]
+        info_x = tl_anchor[0] + mark_size + info_text_offset[0]
+        info_y_start = tl_anchor[1] + mark_size / 2.0 + info_text_offset[1]
+        for idx, line in enumerate(info_lines):
+            self._insert_shapes(
+                cell,
+                layer_mark,
+                self._deplof_text(
+                    line,
+                    info_x,
+                    info_y_start - idx * info_text_size * 1.5,
+                    info_text_size,
+                    anchor="left_top",
+                    justify="left",
+                ),
+            )
+        self._insert_shapes(
+            cell,
+            layer_mark,
+            self._deplof_text(
+                user_name,
+                info_x,
+                info_y_start - len(info_lines) * info_text_size * 1.5,
+                info_text_size,
+                anchor="left_top",
+                justify="left",
+            ),
+        )
+        return self.layout, cell
+
     def build_writefield_array(
         self,
         sample_width=10000.0,
@@ -901,6 +1066,11 @@ class MarkArrayBuilder:
 def build_general_mark_array_layout(**kwargs):
     builder = MarkArrayBuilder()
     return builder.build_general_mark_array(**kwargs)
+
+
+def build_cv_mark_array_layout(**kwargs):
+    builder = MarkArrayBuilder()
+    return builder.build_cv_mark_array(**kwargs)
 
 
 def build_writefield_mark_layout(**kwargs):
