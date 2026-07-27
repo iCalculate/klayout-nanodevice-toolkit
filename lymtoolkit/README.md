@@ -168,6 +168,7 @@ Included tools:
 - Custom Global Mark Grid
 - Text Pattern Array
 - General Mark Array
+- CV-MarkArray
 
 Features:
 
