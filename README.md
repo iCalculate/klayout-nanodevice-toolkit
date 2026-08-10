@@ -24,7 +24,7 @@
 
 This repository focuses on the maintained KLayout toolkit and the reusable device-building modules underneath it.
 
-- Parametric device generation for MOSFET, FET, Hall bar, TLM, meander, and electrode structures
+- Parametric device generation for MOSFET, short-channel HEMT, FET, Hall bar, TLM, meander, and electrode structures
 - Maintained KLayout GUI, macro, and library workflow under `lymtoolkit/`
 - Reusable Python utilities under `components/` and `utils/`
 - Grayscale and image-driven pattern generation for nanofabrication workflows
@@ -120,6 +120,7 @@ KLayout_Nanodevice_Toolkit/
 ### Device generators
 
 - `components/mosfet.py`: dual-gate MOSFET layout generation
+- `components/hemt.py`: single- and double-finger short-channel HEMT generation (`S-G-D` / `S-G-D-G-S`)
 - `components/fet.py`: FET-focused parametric structures
 - `components/hallbar.py`: Hall bar generators
 - `components/tlm.py`: transfer-length-method structures

@@ -95,7 +95,7 @@ PREVIEW_LAYER_IDS = {
     "alignment_marks": [LAYER_DEFINITIONS["alignment_marks"]["id"], LAYER_DEFINITIONS["alignment_layer1"]["id"], LAYER_DEFINITIONS["alignment_layer2"]["id"]],
     "labels": [LAYER_DEFINITIONS["labels"]["id"]],
 }
-DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hall_component", "tlm_component", "sense_latch_array", "write_read_array"}
+DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hemt_component", "hall_component", "tlm_component", "sense_latch_array", "write_read_array"}
 _FONT_FAMILY_CACHE = {}
 
 
@@ -2503,6 +2503,16 @@ def _insert_mosfet_component(layout, top_cell, values):
     top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
 
 
+def _insert_hemt_component(layout, top_cell, values):
+    from components.hemt import HEMT
+
+    params = dict(values)
+    cell_name = params.pop("cell_name")
+    device = HEMT(**params)
+    cell = device.create_cell(layout, _next_cell_name(layout, cell_name))
+    top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+
 def _insert_fet_component(layout, top_cell, values):
     from components.fet import FET
 
@@ -2887,6 +2897,101 @@ def render_mosfet_component(scene, values, visible_layers=None):
         for shape in shapes:
             for path in _geometry_to_paths(shape):
                 _draw_path(scene, path, pen, brush)
+
+
+def render_hemt_component(scene, values, visible_layers=None):
+    from components.hemt import HEMT
+
+    visible_layers = visible_layers or {}
+    params = dict(values)
+    params.pop("cell_name", None)
+    device = HEMT(**params)
+    buckets = device.generate()
+    layer_ids = device.get_layer_ids()
+
+    preview_buckets = {
+        "channel": buckets["channel"],
+        "source_drain": buckets["source"] + buckets["drain"],
+        "top_gate": buckets["gate"],
+        "top_dielectric": buckets["gate_dielectric"],
+        "labels": buckets["labels"],
+        "parameter_labels": buckets["parameter_labels"],
+        "alignment_marks": buckets["alignment_marks"],
+    }
+    style_keys = {
+        "source_drain": "source",
+        "top_gate": "gate",
+        "top_dielectric": "gate_dielectric",
+        "labels": "labels",
+        "parameter_labels": "parameter_labels",
+        "alignment_marks": "alignment_marks",
+    }
+    for layer_key, shapes in preview_buckets.items():
+        if not visible_layers.get(layer_key, True):
+            continue
+        style_id = layer_ids.get(style_keys.get(layer_key, layer_key))
+        pen, brush = _preview_style_for_layer_id(style_id, layer_key)
+        for shape in shapes:
+            for path in _geometry_to_paths(shape):
+                _draw_path(scene, path, pen, brush)
+
+
+HEMT_COMPONENT_TOOL = ToolSpec(
+    key="hemt_component",
+    title="HEMT Device",
+    library_name="",
+    pcell_name="",
+    preview_renderer=render_hemt_component,
+    preview_layers=[
+        ("channel", "Active Mesa / Channel"),
+        ("source_drain", "Source / Drain Ohmics"),
+        ("top_dielectric", "Gate Dielectric"),
+        ("top_gate", "Gate"),
+        ("labels", "Labels"),
+        ("parameter_labels", "Notes"),
+        ("alignment_marks", "Marks"),
+    ],
+    insert_handler=_insert_hemt_component,
+    params=[
+        ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "HEMT_Device", kind="string"),
+        ParameterSpec("x", "Center X", "Cx", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("y", "Center Y", "Cy", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("finger_count", "Finger Count", "Nf", "Gate", 2, kind="choice", choices=[("single", 1), ("double", 2)], tooltip="single: S-G-D; double: symmetric S-G-D-G-S with shared drain and gate."),
+        ParameterSpec("gate_length", "Gate Length", "Lg", "Gate", 0.2, minimum=0.02, maximum=100.0, suffix=" um", tooltip="Critical short-channel dimension, measured along current flow."),
+        ParameterSpec("gate_width", "Gate Width", "Wg", "Gate", 20.0, minimum=0.1, maximum=5000.0, suffix=" um", tooltip="Length of each gate finger across the active mesa."),
+        ParameterSpec("gate_overhang", "Gate Tip Overhang", "Gov", "Gate", 1.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_head_length", "Gate Head Length", "Ghd", "Gate", 4.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("source_gate_spacing", "Source-Gate Spacing", "Lsg", "Access", 1.5, minimum=0.02, maximum=1000.0, suffix=" um"),
+        ParameterSpec("gate_drain_spacing", "Gate-Drain Spacing", "Lgd", "Access", 2.0, minimum=0.02, maximum=1000.0, suffix=" um"),
+        ParameterSpec("ohmic_width", "Ohmic Contact Width", "Wohm", "Ohmics", 4.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("ohmic_overhang", "Ohmic Tip Overhang", "Oohm", "Ohmics", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Extra source/drain length beyond the gate finger tip on the pad side."),
+        ParameterSpec("mesa_width", "Mesa Width", "Wmesa", "Mesa", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Electrical channel width defined by the Mesa; 0 uses the automatic contact-based width. May be narrower than Gate Width."),
+        ParameterSpec("mesa_margin_x", "Mesa Margin X", "Mmx", "Mesa", 3.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("mesa_margin_y", "Mesa Margin Y", "Mmy", "Mesa", 3.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("draw_gate_dielectric", "Gate Dielectric", "Di", "Dielectric", 0, kind="choice", choices=[("false", False), ("true", True)]),
+        ParameterSpec("dielectric_margin", "Dielectric Margin", "Dim", "Dielectric", 0.3, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("fanout_length", "Transition Neck", "Ln", "Outer Metal", 8.0, minimum=0.1, maximum=5000.0, suffix=" um", tooltip="Short transition from the device core into the filled outer metal."),
+        ParameterSpec("pad_size", "Outer Metal Depth", "Pdep", "Outer Metal", 45.0, minimum=2.0, maximum=5000.0, suffix=" um", tooltip="Depth and row height of the compact filled gate/source/drain fields."),
+        ParameterSpec("pad_spacing", "Metal Field Gap", "Pgap", "Outer Metal", 8.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Clearance between the central gate/drain field and upper/lower source fields."),
+        ParameterSpec("gate_pad_offset", "Gate Extra Depth", "Gext", "Outer Metal", 0.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("hollow_fanout", "Hollow Upper/Lower", "Hol", "Outer Metal", 0, kind="choice", choices=[("false", False), ("true", True)], tooltip="Hollow the complete upper/lower electrode trapezoids only: single-finger S/D or double-finger sources."),
+        ParameterSpec("fanout_wall_width", "Hollow Wall Width", "Wfw", "Outer Metal", 3.0, minimum=0.05, maximum=1000.0, suffix=" um", tooltip="Conductive frame width around a hollow upper/lower electrode trapezoid."),
+        ParameterSpec("gate_fanout_contact_width", "Gate Contact Edge", "Gfc", "Fanout Shape", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Single gate: 0 makes a triangle. Double gate automatically expands this edge to cover the common gate manifold."),
+        ParameterSpec("gate_fanout_pad_width", "Gate Pad Edge", "Gfp", "Fanout Shape", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Outer edge of each gate triangle/trapezoid; 0 follows Outer Metal Depth automatically."),
+        ParameterSpec("vertical_fanout_contact_width", "Vertical Contact Edge", "Vfc", "Fanout Shape", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Width of upper/lower trapezoids at the internal contact; 0 uses the full ohmic-bar length."),
+        ParameterSpec("vertical_fanout_pad_width", "Vertical Fanout Edge", "Vfp", "Fanout Shape", 34.0, minimum=0.1, maximum=5000.0, suffix=" um", tooltip="Width where the combined internal-pad/fanout trapezoid meets the separate outer pad."),
+        ParameterSpec("gate_control_margin", "Gate Control Margin", "Gcm", "Fanout Shape", 1.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Minimum lateral gate coverage beyond each side of the effective vertical contact edge."),
+        ParameterSpec("device_label", "Device Label", "Lbl", "Labels", "HEMT1", kind="string"),
+        ParameterSpec("show_device_label", "Show Device Label", "DL", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("show_parameter_label", "Show Param Label", "PL", "Options", 0, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("mark_mode", "Mark Placement", "Mpos", "Marks", "none", kind="choice", choices=[("none", "none"), ("four corners", "four_corners"), ("four corners + four sides", "corners_and_sides")], tooltip="Place 4 marks at device corners or 8 marks at corners plus side midpoints."),
+        ParameterSpec("mark_shape", "Mark Shape", "Msh", "Marks", "cross", kind="choice", choices=[("cross", "cross"), ("box frame", "box"), ("diamond", "diamond")]),
+        ParameterSpec("mark_size", "Mark Size", "Ms", "Marks", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
+        ParameterSpec("mark_width", "Mark Line Width", "Mw", "Marks", 2.0, minimum=0.02, maximum=500.0, suffix=" um"),
+        ParameterSpec("mark_margin_x", "Mark Margin X", "Mmx", "Marks", 15.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("mark_margin_y", "Mark Margin Y", "Mmy", "Marks", 15.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+    ],
+)
 
 
 MOSFET_COMPONENT_TOOL = ToolSpec(
@@ -3283,6 +3388,7 @@ def launch_toolkit_dialog():
             NANODEVICE_FET_TOOL,
             GDSFACTORY_TEXT_TOOL,
             MOSFET_COMPONENT_TOOL,
+            HEMT_COMPONENT_TOOL,
             HALL_COMPONENT_TOOL,
             TLM_COMPONENT_TOOL,
             SENSE_LATCH_ARRAY_TOOL,

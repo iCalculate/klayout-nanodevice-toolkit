@@ -6,6 +6,13 @@
 __all__ = []
 
 try:
+    from .hemt import HEMT
+
+    __all__.append('HEMT')
+except Exception:
+    pass
+
+try:
     from .electrode import Electrode, GateElectrode, SourceDrainElectrode, PadElectrode
 
     __all__.extend(['Electrode', 'GateElectrode', 'SourceDrainElectrode', 'PadElectrode'])
