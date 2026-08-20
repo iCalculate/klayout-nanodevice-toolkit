@@ -8,14 +8,29 @@ independent controls for gate length/width, source and drain access spacing,
 ohmic dimensions, mesa margins, optional gate dielectric, and compact outer
 gate/source/drain metal fields.
 
+`Lsg` and `Lgd` may be zero. Independent Source-Gate and Gate-Drain overlap
+parameters extend only the corresponding Gate edges while the Source and Drain
+remain fixed. The resulting Gate length is `Lg + Osg + Ogd`; the signed edge
+separations are `Lsg - Osg` and `Lgd - Ogd`, so zero spacing makes each
+configured overlap equal its physical overlap directly.
+
 For a single-finger device, gate pads are placed on both the left and right;
 source and drain occupy the upper and lower fields. Their internal landing and
 fanout are one complete trapezoid ending at a separate, solid rectangular outer
-pad. The combined internal-pad/fanout trapezoid can be solid or hollow with a
-configurable conductive frame width. Hollowing applies only to the
-single-finger source/drain or the double-finger sources. Single-finger gates
-use symmetric solid triangles on both sides; the common double-finger gate uses
-a solid trapezoid whose inner edge covers the two-finger manifold.
+pad. Optional **Split Fine / Coarse EBL** mode moves core source/drain metal to
+layer `26/0` and core gate metal to `28/0`; the large fanout and pads remain on
+their corresponding `16/0` and `18/0` layers. In this mode only the fanout area
+next to the inner contact is drawn as an open-ended fine-layer U: the inner
+ohmic is the base and two adjustable-width sloped arms extend towards the
+coarse fanout. `Fwid` is the shared line width for both Source and Drain inner
+pad bases and all U arms. The double-finger centre Drain is a horizontal U that
+opens towards its right-side coarse fanout; it is no longer a filled fine-layer
+rectangle. U depth, line width, and fine/coarse overlap are independently
+adjustable. The double-finger centre Drain and the gate transitions also
+receive finite fine/coarse overlap. A
+separate Gate Pad Retraction / Gap retracts only the right edge of the
+left-side gate pad/manifold. The centre drain inner electrode and gate fingers
+remain fixed.
 
 HEMT alignment marks can be disabled, placed at the four device corners, or
 placed at four corners plus the four side midpoints. Cross, box-frame, and

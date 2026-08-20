@@ -1,3 +1,5 @@
+import math
+
 import pya
 import pytest
 
@@ -27,6 +29,80 @@ def test_hemt_finger_topology_and_clearance(finger_count, expected_gate_shapes, 
     assert len(shapes["drain"]) == expected_drain_shapes
     assert (_region(shapes["gate"]) & _region(shapes["source"] + shapes["drain"])).area() == 0
     assert (_region(shapes["source"]) & _region(shapes["drain"])).area() == 0
+
+
+def test_zero_lsg_and_lgd_are_allowed_and_make_contact_edges_touch():
+    shapes = HEMT(
+        finger_count=2,
+        source_gate_spacing=0.0,
+        gate_drain_spacing=0.0,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    ).generate()
+
+    lower_source = _region([shapes["source_fine"][0]])
+    lower_gate = _region([shapes["gate_fine"][0]])
+    centre_drain = _region(shapes["drain_fine"])
+    assert lower_source.bbox().top == lower_gate.bbox().bottom
+    assert lower_gate.bbox().top == centre_drain.bbox().bottom
+    assert (lower_source & lower_gate).area() == 0
+    assert (lower_gate & centre_drain).area() == 0
+
+
+def test_gate_source_and_gate_drain_overlap_lengths_are_exact():
+    shapes = HEMT(
+        finger_count=2,
+        gate_length=8.0,
+        source_gate_spacing=0.0,
+        gate_drain_spacing=0.0,
+        source_gate_overlap=0.6,
+        gate_drain_overlap=0.8,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    ).generate()
+
+    lower_source = _region([shapes["source_fine"][0]])
+    lower_gate = _region([shapes["gate_fine"][0]])
+    centre_drain = _region(shapes["drain_fine"])
+    assert (lower_source & lower_gate).bbox().height() == 600
+    assert (lower_gate & centre_drain).bbox().height() == 800
+
+
+def test_overlap_extends_gate_edges_without_moving_source_or_drain():
+    common = dict(
+        finger_count=2,
+        gate_length=8.0,
+        source_gate_spacing=0.0,
+        gate_drain_spacing=0.0,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    )
+    baseline = HEMT(**common).generate()
+    extended = HEMT(
+        **common,
+        source_gate_overlap=0.6,
+        gate_drain_overlap=0.8,
+    ).generate()
+
+    assert (_region(baseline["source"] + baseline["source_fine"]) ^ _region(extended["source"] + extended["source_fine"])).area() == 0
+    assert (_region(baseline["drain"] + baseline["drain_fine"]) ^ _region(extended["drain"] + extended["drain_fine"])).area() == 0
+    baseline_gate = baseline["gate_fine"][0]
+    extended_gate = extended["gate_fine"][0]
+    assert extended_gate.bottom == baseline_gate.bottom - 600
+    assert extended_gate.top == baseline_gate.top + 800
+    assert extended_gate.height() == baseline_gate.height() + 1_400
+
+
+def test_gate_overlap_may_extend_beyond_the_complete_channel():
+    shapes = HEMT(
+        finger_count=2,
+        source_gate_overlap=20.0,
+        gate_drain_overlap=20.0,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    ).generate()
+
+    assert shapes["gate_fine"][0].height() == 40_200
 
 
 def test_double_finger_hemt_is_symmetric_about_centerline():
@@ -93,6 +169,228 @@ def test_hollow_fanout_reduces_transition_area_but_keeps_connectivity():
     hollow_taper = _region([hollow["source"][2]])
     assert 0 < hollow_taper.area() < solid_taper.area()
     assert hollow_taper.is_merged()
+
+
+@pytest.mark.parametrize(
+    "finger_count, fine_source_count, fine_drain_count, fine_gate_count",
+    [(1, 1, 1, 2), (2, 2, 1, 3)],
+)
+def test_split_ebl_moves_only_core_metal_to_corresponding_fine_layers(
+    finger_count, fine_source_count, fine_drain_count, fine_gate_count
+):
+    device = HEMT(
+        finger_count=finger_count,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    )
+    shapes = device.generate()
+
+    assert len(shapes["source_fine"]) == fine_source_count
+    assert len(shapes["drain_fine"]) == fine_drain_count
+    assert len(shapes["gate_fine"]) == fine_gate_count
+    assert device.get_layer_ids()["source_fine"] == 26
+    assert device.get_layer_ids()["drain_fine"] == 26
+    assert device.get_layer_ids()["gate_fine"] == 28
+
+
+def test_split_ebl_is_disabled_by_default():
+    shapes = HEMT(show_device_label=False).generate()
+
+    assert shapes["source_fine"] == []
+    assert shapes["drain_fine"] == []
+    assert shapes["gate_fine"] == []
+
+
+@pytest.mark.parametrize("finger_count", [1, 2])
+def test_split_ebl_outer_electrode_is_an_open_ended_fine_u(finger_count):
+    split = HEMT(
+        finger_count=finger_count,
+        split_ebl_exposure=True,
+        fine_fanout_depth=12.0,
+        fine_fanout_width=1.0,
+        show_device_label=False,
+    ).generate()
+
+    fine_u = _region([split["source_fine"][0]])
+    bbox = fine_u.bbox()
+    if bbox.center().y < 0:
+        outer_slice = pya.Box(bbox.left, bbox.bottom, bbox.right, bbox.bottom + 1_000)
+    else:
+        outer_slice = pya.Box(bbox.left, bbox.top - 1_000, bbox.right, bbox.top)
+    # The inner contact joins both arms into one U, while its open outer end
+    # intersects a transverse slice as two separate legs.
+    assert fine_u.size() == 1
+    assert (fine_u & pya.Region(outer_slice)).size() == 2
+
+
+def test_fine_u_depth_and_arm_width_are_independently_adjustable():
+    shallow = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        fine_fanout_depth=6.0,
+        fine_fanout_width=0.6,
+        show_device_label=False,
+    ).generate()["source_fine"][0]
+    deep = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        fine_fanout_depth=12.0,
+        fine_fanout_width=0.6,
+        show_device_label=False,
+    ).generate()["source_fine"][0]
+    wide = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        fine_fanout_depth=12.0,
+        fine_fanout_width=1.2,
+        show_device_label=False,
+    ).generate()["source_fine"][0]
+
+    assert deep.bbox().height() - shallow.bbox().height() == 6_000
+    assert wide.area() > deep.area()
+
+
+def test_fwid_controls_both_source_and_drain_fine_u_line_widths():
+    common = dict(
+        finger_count=2,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    )
+    narrow = HEMT(**common, fine_fanout_width=0.6).generate()
+    wide = HEMT(**common, fine_fanout_width=1.2).generate()
+
+    assert _region(wide["source_fine"]).area() > _region(narrow["source_fine"]).area()
+    assert _region(wide["drain_fine"]).area() > _region(narrow["drain_fine"]).area()
+
+
+def test_double_finger_centre_drain_is_a_u_open_towards_coarse_fanout():
+    shapes = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        fine_fanout_width=1.0,
+        show_device_label=False,
+    ).generate()
+
+    drain_u = _region(shapes["drain_fine"])
+    bbox = drain_u.bbox()
+    open_end = drain_u & pya.Region(
+        pya.Box(bbox.right - 1_000, bbox.bottom, bbox.right, bbox.top)
+    )
+    assert drain_u.area() < bbox.area()
+    assert open_end.size() == 2
+
+
+def test_split_ebl_adds_finite_overlap_at_all_coarse_fine_transitions():
+    split = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        ebl_overlap=2.0,
+        show_device_label=False,
+    ).generate()
+
+    assert (_region([split["source"][0]]) & _region([split["source_fine"][0]])).area() > 0
+    assert (_region(split["drain"]) & _region(split["drain_fine"])).area() > 0
+    assert (_region(split["gate"]) & _region(split["gate_fine"])).area() > 0
+
+
+def test_fine_u_and_coarse_fanout_share_one_continuous_outer_envelope():
+    split = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        ebl_overlap=2.0,
+        show_device_label=False,
+    ).generate()
+
+    joined = (_region([split["source_fine"][0]]) + _region([split["source"][0]])).merged()
+    hull_points = list(next(joined.each()).each_point_hull())
+    left_half = hull_points[: len(hull_points) // 2]
+    inner_vertical = next(
+        index
+        for index in range(len(left_half) - 1)
+        if left_half[index].x == left_half[index + 1].x
+    )
+    left_side = left_half[: inner_vertical + 1]
+    outer, inner = left_side[0], left_side[-1]
+    side_length = math.hypot(inner.x - outer.x, inner.y - outer.y)
+    for seam in left_side[1:-1]:
+        distance = abs(
+            (inner.x - outer.x) * (outer.y - seam.y)
+            - (outer.x - seam.x) * (inner.y - outer.y)
+        ) / side_length
+        assert distance <= 1.0  # one 1 nm database unit
+    assert all(a.y != b.y for a, b in zip(left_side, left_side[1:]))
+
+
+def test_double_finger_gate_pad_retraction_creates_configured_gap():
+    shapes = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        gate_pad_retraction=3.5,
+        show_device_label=False,
+    ).generate()
+
+    gate_manifold = shapes["gate_fine"][2]
+    centre_drain = shapes["drain_fine"][0].bbox()
+    assert centre_drain.left - gate_manifold.right == 3_500
+
+
+def test_gate_pad_retraction_does_not_move_contact_inner_electrode_or_gate_fingers():
+    aligned = HEMT(
+        finger_count=2,
+        gate_pad_retraction=0.0,
+        show_device_label=False,
+    ).generate()
+    separated = HEMT(
+        finger_count=2,
+        gate_pad_retraction=4.0,
+        show_device_label=False,
+    ).generate()
+
+    assert aligned["drain"][0] == separated["drain"][0]
+    assert aligned["gate"][:2] == separated["gate"][:2]
+    assert aligned["gate"][2].left == separated["gate"][2].left
+    assert aligned["gate"][2].right - separated["gate"][2].right == 4_000
+
+
+def test_gate_pad_retraction_cannot_consume_the_complete_gate_pad():
+    with pytest.raises(ValueError, match="no usable gate pad width"):
+        HEMT(finger_count=2, gate_pad_retraction=10_000.0).generate()
+
+
+def test_double_finger_center_drain_and_outer_sources_all_use_u_frames():
+    split = HEMT(
+        finger_count=2,
+        split_ebl_exposure=True,
+        show_device_label=False,
+    ).generate()
+
+    assert isinstance(split["drain_fine"][0], pya.Region)
+    assert all(isinstance(shape, pya.Region) for shape in split["source_fine"])
+
+
+def test_split_ebl_requires_nonzero_u_arm_width():
+    with pytest.raises(ValueError, match="fine_fanout_width"):
+        HEMT(split_ebl_exposure=True, fine_fanout_width=0.0)
+
+
+def test_double_drain_u_requires_room_for_a_real_cavity():
+    with pytest.raises(ValueError, match="less than half ohmic_width"):
+        HEMT(
+            finger_count=2,
+            split_ebl_exposure=True,
+            ohmic_width=4.0,
+            fine_fanout_width=2.0,
+        )
+
+
+def test_split_ebl_writes_fine_metal_to_layers_26_and_28():
+    device = HEMT(split_ebl_exposure=True, show_device_label=False)
+    layout = pya.Layout()
+    layout.dbu = 0.001
+    cell = device.create_cell(layout, "HEMT_SPLIT_EBL")
+
+    assert not cell.shapes(layout.layer(26, 0)).is_empty()
+    assert not cell.shapes(layout.layer(28, 0)).is_empty()
 
 
 def test_double_gate_uses_trapezoid_and_hollowing_only_targets_upper_lower_electrodes():

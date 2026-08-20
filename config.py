@@ -23,6 +23,8 @@ LAYER_DEFINITIONS = {
     'source_drain': {'id': 16, 'name': 'Source/Drain', 'color': 0xFFC840, 'description': '源漏电极'},
     'top_dielectric': {'id': 17, 'name': 'Top Dielectric', 'color': 0xD040E0, 'description': '顶介电层'},
     'top_gate': {'id': 18, 'name': 'Top Gate', 'color': 0x90E040, 'description': '顶栅电极'},
+    'fine_source_drain': {'id': 26, 'name': 'Fine Source/Drain', 'color': 0xA8E0A8, 'description': 'EBL小结构源漏电极'},
+    'fine_top_gate': {'id': 28, 'name': 'Fine Top Gate', 'color': 0xC8F0C8, 'description': 'EBL小结构顶栅电极'},
     'alignment_marks': {'id': 3, 'name': 'Alignment Marks', 'color': 0x5080FF, 'description': '对准标记'},
     'alignment_layer1': {'id': 3, 'name': 'Alignment Layer 1', 'color': 0x5080FF, 'description': '套刻对准层1'},
     'alignment_layer2': {'id': 4, 'name': 'Alignment Layer 2', 'color': 0xFF8840, 'description': '套刻对准层2'},

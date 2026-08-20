@@ -603,6 +603,180 @@ class MarkArrayBuilder:
 
         return self.layout, cell
 
+    def build_raith_ebl_global_mark(
+        self,
+        chip_width=10000.0,
+        chip_height=10000.0,
+        active_width=8000.0,
+        active_height=8000.0,
+        center_x=0.0,
+        center_y=0.0,
+        span_x=2000.0,
+        span_y=2000.0,
+        enabled_positions=None,
+        guide_line_width=5.0,
+        main_size=400.0,
+        main_width=10.0,
+        fine_width=4.0,
+        small_square_size=20.0,
+        satellite_near_offset=60.0,
+        manual_box_size=100.0,
+        enable_corner_text=True,
+        coord_text_size=16.0,
+        label_text_size=24.0,
+        text_offset=30.0,
+        layer_chip=(1, 0),
+        layer_active=(2, 0),
+        layer_mechanical=(6, 0),
+        layer_mark=(3, 0),
+        layer_mark2=(4, 0),
+        layer_manual_align=(63, 0),
+        name="raith_ebl_global_mark",
+    ):
+        """Build Raith global marks with satellites only in outward quadrants.
+
+        Corner marks reserve the quadrant facing the active area.  Side marks
+        place satellites in both quadrants outside the active area, while the
+        optional center mark uses all four quadrants.  Every satellite square
+        has a co-centered L63 manual-alignment box.
+        """
+        cell = self.layout.create_cell(str(name))
+        self._insert_shapes(cell, layer_chip, self._outline_rectangles(center_x, center_y, chip_width, chip_height, guide_line_width))
+        self._insert_shapes(cell, layer_active, self._outline_rectangles(center_x, center_y, active_width, active_height, guide_line_width))
+        self._insert_shapes(cell, layer_mechanical, self._guide_grid_shapes(center_x, center_y, span_x, span_y, guide_line_width))
+
+        slot_defs = [
+            ("tl", "NW", -1.0, 1.0),
+            ("tc", "N", 0.0, 1.0),
+            ("tr", "NE", 1.0, 1.0),
+            ("cl", "W", -1.0, 0.0),
+            ("cc", "C", 0.0, 0.0),
+            ("cr", "E", 1.0, 0.0),
+            ("bl", "SW", -1.0, -1.0),
+            ("bc", "S", 0.0, -1.0),
+            ("br", "SE", 1.0, -1.0),
+        ]
+        default_positions = {
+            "tl": True,
+            "tc": True,
+            "tr": True,
+            "cl": True,
+            "cc": False,
+            "cr": True,
+            "bl": True,
+            "bc": True,
+            "br": True,
+        }
+        default_positions.update(dict(enabled_positions or {}))
+        near_offset = float(satellite_near_offset)
+        distances = (near_offset, 2.0 * near_offset)
+
+        for key, slot_name, mx, my in slot_defs:
+            if not default_positions.get(key, False):
+                continue
+
+            pos_x = float(center_x) + mx * float(span_x)
+            pos_y = float(center_y) + my * float(span_y)
+            self._insert_shapes(
+                cell,
+                layer_mark,
+                self._split_bonecross_shapes(
+                    pos_x,
+                    pos_y,
+                    main_size,
+                    main_width,
+                    mode="main",
+                    narrow_width=fine_width,
+                ),
+            )
+            self._insert_shapes(
+                cell,
+                layer_mark2,
+                self._split_bonecross_shapes(
+                    pos_x,
+                    pos_y,
+                    main_size,
+                    main_width,
+                    mode="complement",
+                    narrow_width=fine_width,
+                ),
+            )
+
+            if mx and my:
+                quadrant_signs = [(mx, my)]
+            elif mx:
+                quadrant_signs = [(mx, 1.0), (mx, -1.0)]
+            elif my:
+                quadrant_signs = [(-1.0, my), (1.0, my)]
+            else:
+                quadrant_signs = [(-1.0, 1.0), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
+
+            for qx, qy in quadrant_signs:
+                for distance in distances:
+                    satellite_x = pos_x + qx * distance
+                    satellite_y = pos_y + qy * distance
+                    self._insert_shape(
+                        cell,
+                        layer_mark,
+                        GeometryUtils.create_rectangle(
+                            satellite_x,
+                            satellite_y,
+                            small_square_size,
+                            small_square_size,
+                            center=True,
+                        ),
+                    )
+                    self._insert_shape(
+                        cell,
+                        layer_manual_align,
+                        GeometryUtils.create_rectangle(
+                            satellite_x,
+                            satellite_y,
+                            manual_box_size,
+                            manual_box_size,
+                            center=True,
+                        ),
+                    )
+
+            # Only the four corner marks carry Raith u/v coordinates and names.
+            if enable_corner_text and mx and my:
+                coord_qx = mx
+                coord_qy = -my
+                coord_x = pos_x + coord_qx * float(text_offset)
+                inner_gap = max(float(main_width) * 1.2, float(coord_text_size) * 0.75)
+                coord_lines = (f"u: {pos_x:.1f}", f"v: {pos_y:.1f}", f"m: {near_offset:g}")
+                coord_y = pos_y + coord_qy * inner_gap
+                coord_anchor_x = "left" if coord_qx > 0.0 else "right"
+                coord_anchor_y = "bottom" if coord_qy > 0.0 else "top"
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._deplof_text(
+                        "\n".join(coord_lines),
+                        coord_x,
+                        coord_y,
+                        coord_text_size,
+                        anchor=f"{coord_anchor_x}_{coord_anchor_y}",
+                        justify="left",
+                    ),
+                )
+                label_qx = -mx
+                label_anchor = "left_center" if label_qx > 0.0 else "right_center"
+                self._insert_shapes(
+                    cell,
+                    layer_mark,
+                    self._deplof_text(
+                        slot_name,
+                        pos_x + label_qx * float(text_offset),
+                        pos_y + my * float(text_offset),
+                        label_text_size,
+                        anchor=label_anchor,
+                        justify="left" if label_qx > 0.0 else "right",
+                    ),
+                )
+
+        return self.layout, cell
+
     def _composite_mark_shapes(
         self,
         x,
@@ -1081,6 +1255,11 @@ def build_writefield_mark_layout(**kwargs):
 def build_custom_global_mark_grid_layout(**kwargs):
     builder = MarkArrayBuilder()
     return builder.build_custom_global_mark_grid(**kwargs)
+
+
+def build_raith_ebl_global_mark_layout(**kwargs):
+    builder = MarkArrayBuilder()
+    return builder.build_raith_ebl_global_mark(**kwargs)
 
 
 def build_text_pattern_array_layout(**kwargs):

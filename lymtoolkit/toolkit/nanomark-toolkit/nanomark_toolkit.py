@@ -57,6 +57,7 @@ from components.markarray import (
     build_custom_global_mark_grid_layout,
     build_cv_mark_array_layout,
     build_general_mark_array_layout,
+    build_raith_ebl_global_mark_layout,
     build_text_pattern_array_layout,
     build_writefield_mark_layout,
 )
@@ -468,6 +469,42 @@ def _custom_global_grid_values(values):
 
 def _generate_custom_global_grid(values):
     return build_custom_global_mark_grid_layout(**_custom_global_grid_values(values))
+
+
+def _raith_ebl_global_mark_values(values):
+    return {
+        "chip_width": values["chip_width"],
+        "chip_height": values["chip_height"],
+        "active_width": values["active_width"],
+        "active_height": values["active_height"],
+        "center_x": values["center_x"],
+        "center_y": values["center_y"],
+        "span_x": values["span_x"],
+        "span_y": values["span_y"],
+        "enabled_positions": values["enabled_positions"],
+        "guide_line_width": values["guide_line_width"],
+        "main_size": values["main_size"],
+        "main_width": values["main_width"],
+        "fine_width": values["fine_width"],
+        "small_square_size": values["small_square_size"],
+        "satellite_near_offset": values["satellite_near_offset"],
+        "manual_box_size": values["manual_box_size"],
+        "enable_corner_text": values["enable_corner_text"],
+        "coord_text_size": values["coord_text_size"],
+        "label_text_size": values["label_text_size"],
+        "text_offset": values["text_offset"],
+        "layer_chip": values["layer_chip"],
+        "layer_active": values["layer_active"],
+        "layer_mechanical": values["layer_mechanical"],
+        "layer_mark": values["layer_mark"],
+        "layer_mark2": values["layer_mark2"],
+        "layer_manual_align": values["layer_manual_align"],
+        "name": values["name"],
+    }
+
+
+def _generate_raith_ebl_global_mark(values):
+    return build_raith_ebl_global_mark_layout(**_raith_ebl_global_mark_values(values))
 
 
 def _text_pattern_array_values(values):
@@ -924,6 +961,11 @@ class NanoMarkDialog(QDialog):
             self._set_param_enabled(param.key, True)
 
         if tool.key != "custom_global_mark":
+            if tool.key == "raith_ebl_global_mark":
+                values = self._values()
+                show_corner_text = bool(values.get("enable_corner_text", True))
+                for key in ("coord_text_size", "label_text_size", "text_offset"):
+                    self._set_param_enabled(key, show_corner_text)
             if tool.key == "cv_mark_array":
                 values = self._values()
                 is_bonecross = str(values.get("mark_type", "bonecross")).lower() == "bonecross"
@@ -1292,6 +1334,65 @@ CUSTOM_GLOBAL_MARK_TOOL = ToolSpec(
 )
 
 
+RAITH_EBL_GLOBAL_MARK_TOOL = ToolSpec(
+    key="raith_ebl_global_mark",
+    title="Raith EBL Global Mark",
+    generator=_generate_raith_ebl_global_mark,
+    preview_layers=[
+        ("chip", "Sample"),
+        ("active", "Active"),
+        ("mechanical", "Layout Guide"),
+        ("mark", "Mark1 / Text / Small Mark"),
+        ("mark2", "Mark2 Overlay"),
+        ("manual_align", "L63 Manual Align"),
+    ],
+    layer_mapping={
+        "chip": "layer_chip",
+        "active": "layer_active",
+        "mechanical": "layer_mechanical",
+        "mark": "layer_mark",
+        "mark2": "layer_mark2",
+        "manual_align": "layer_manual_align",
+    },
+    params=[
+        ParameterSpec("chip_width", "Sample Width", "Layout", 10000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("chip_height", "Sample Height", "Layout", 10000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("active_width", "Active Width", "Layout", 8000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("active_height", "Active Height", "Layout", 8000.0, minimum=1.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("center_x", "Center X", "Layout", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("center_y", "Center Y", "Layout", 0.0, minimum=-1000000.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("span_x", "Layout Half Span X", "Layout", 2000.0, minimum=0.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("span_y", "Layout Half Span Y", "Layout", 2000.0, minimum=0.0, maximum=1000000.0, suffix=" um"),
+        ParameterSpec("guide_line_width", "Guide Line Width", "Layout", 5.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec(
+            "enabled_positions",
+            "Enabled Slots",
+            "Positions",
+            {"tl": True, "tc": True, "tr": True, "cl": True, "cc": False, "cr": True, "bl": True, "bc": True, "br": True},
+            kind="grid9",
+            tooltip="Corner and side marks are enabled by default; the center C mark is disabled.",
+        ),
+        ParameterSpec("main_size", "Large Mark Size", "Mark", 400.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("main_width", "Large Line Width", "Mark", 10.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("fine_width", "Fine Line Width", "Mark", 4.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("small_square_size", "Small Square Size", "Satellite", 20.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("satellite_near_offset", "Near Offset", "Satellite", 60.0, minimum=0.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("manual_box_size", "L63 Box Size", "Satellite", 100.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("enable_corner_text", "Show Corner UV / Name", "Text", True, kind="bool"),
+        ParameterSpec("coord_text_size", "UV Text Size", "Text", 16.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("label_text_size", "Name Text Size", "Text", 24.0, minimum=0.01, maximum=10000.0, suffix=" um"),
+        ParameterSpec("text_offset", "Text Edge Offset", "Text", 30.0, minimum=0.0, maximum=10000.0, suffix=" um", tooltip="Clearance from the large-mark centerlines to the nearest text edge."),
+        ParameterSpec("name", "Cell Name", "Output", "raith_ebl_global_mark", kind="string"),
+        ParameterSpec("layer_chip", "Sample Layer", "Layers", (1, 0), kind="layer_choice"),
+        ParameterSpec("layer_active", "Active Layer", "Layers", (2, 0), kind="layer_choice"),
+        ParameterSpec("layer_mechanical", "Layout Guide Layer", "Layers", (6, 0), kind="layer_choice"),
+        ParameterSpec("layer_mark", "Mark1 Layer", "Layers", (3, 0), kind="layer_choice"),
+        ParameterSpec("layer_mark2", "Mark2 Overlay Layer", "Layers", (4, 0), kind="layer_choice"),
+        ParameterSpec("layer_manual_align", "L63 Manual Layer", "Layers", (63, 0), kind="layer_choice"),
+    ],
+)
+
+
 TEXT_PATTERN_ARRAY_TOOL = ToolSpec(
     key="text_pattern_array",
     title="Text Pattern Array",
@@ -1561,7 +1662,7 @@ def launch_nanomark_dialog():
     # Keep a module-level reference so the Qt dialog remains alive after launch.
     global _dialog_ref
     if _dialog_ref is None:
-        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, TEXT_PATTERN_ARRAY_TOOL, MARK_ARRAY_TOOL, CV_MARK_ARRAY_TOOL])
+        _dialog_ref = NanoMarkDialog([WRITEFIELD_TOOL, CUSTOM_GLOBAL_MARK_TOOL, RAITH_EBL_GLOBAL_MARK_TOOL, TEXT_PATTERN_ARRAY_TOOL, MARK_ARRAY_TOOL, CV_MARK_ARRAY_TOOL])
     _dialog_ref.show()
     _dialog_ref.raise_()
     _dialog_ref.activateWindow()

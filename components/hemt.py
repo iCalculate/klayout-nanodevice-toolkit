@@ -30,6 +30,8 @@ class HEMT:
         gate_width=20.0,
         source_gate_spacing=1.5,
         gate_drain_spacing=2.0,
+        source_gate_overlap=0.0,
+        gate_drain_overlap=0.0,
         ohmic_width=4.0,
         ohmic_overhang=2.0,
         gate_overhang=1.0,
@@ -43,6 +45,11 @@ class HEMT:
         pad_size=45.0,
         pad_spacing=8.0,
         gate_pad_offset=0.0,
+        split_ebl_exposure=False,
+        fine_fanout_depth=12.0,
+        fine_fanout_width=1.0,
+        ebl_overlap=2.0,
+        gate_pad_retraction=1.0,
         hollow_fanout=False,
         fanout_wall_width=3.0,
         gate_fanout_contact_width=0.0,
@@ -68,6 +75,8 @@ class HEMT:
         self.gate_width = float(gate_width)
         self.source_gate_spacing = float(source_gate_spacing)
         self.gate_drain_spacing = float(gate_drain_spacing)
+        self.source_gate_overlap = float(source_gate_overlap)
+        self.gate_drain_overlap = float(gate_drain_overlap)
         self.ohmic_width = float(ohmic_width)
         self.ohmic_overhang = float(ohmic_overhang)
         self.gate_overhang = float(gate_overhang)
@@ -81,6 +90,11 @@ class HEMT:
         self.pad_size = float(pad_size)
         self.pad_spacing = float(pad_spacing)
         self.gate_pad_offset = float(gate_pad_offset)
+        self.split_ebl_exposure = bool(split_ebl_exposure)
+        self.fine_fanout_depth = float(fine_fanout_depth)
+        self.fine_fanout_width = float(fine_fanout_width)
+        self.ebl_overlap = float(ebl_overlap)
+        self.gate_pad_retraction = float(gate_pad_retraction)
         self.hollow_fanout = bool(hollow_fanout)
         self.fanout_wall_width = float(fanout_wall_width)
         self.gate_fanout_contact_width = float(gate_fanout_contact_width)
@@ -102,7 +116,10 @@ class HEMT:
             "channel": [],
             "source": [],
             "drain": [],
+            "source_fine": [],
+            "drain_fine": [],
             "gate": [],
+            "gate_fine": [],
             "gate_dielectric": [],
             "labels": [],
             "parameter_labels": [],
@@ -116,8 +133,6 @@ class HEMT:
         positive = {
             "gate_length": self.gate_length,
             "gate_width": self.gate_width,
-            "source_gate_spacing": self.source_gate_spacing,
-            "gate_drain_spacing": self.gate_drain_spacing,
             "ohmic_width": self.ohmic_width,
             "gate_head_length": self.gate_head_length,
             "fanout_length": self.fanout_length,
@@ -137,6 +152,14 @@ class HEMT:
             "dielectric_margin": self.dielectric_margin,
             "pad_spacing": self.pad_spacing,
             "gate_pad_offset": self.gate_pad_offset,
+            "source_gate_spacing": self.source_gate_spacing,
+            "gate_drain_spacing": self.gate_drain_spacing,
+            "source_gate_overlap": self.source_gate_overlap,
+            "gate_drain_overlap": self.gate_drain_overlap,
+            "fine_fanout_depth": self.fine_fanout_depth,
+            "fine_fanout_width": self.fine_fanout_width,
+            "ebl_overlap": self.ebl_overlap,
+            "gate_pad_retraction": self.gate_pad_retraction,
             "fanout_wall_width": self.fanout_wall_width,
             "gate_fanout_contact_width": self.gate_fanout_contact_width,
             "gate_fanout_pad_width": self.gate_fanout_pad_width,
@@ -148,6 +171,17 @@ class HEMT:
         invalid = [name for name, value in nonnegative.items() if value < 0.0]
         if invalid:
             raise ValueError("HEMT dimensions cannot be negative: " + ", ".join(invalid))
+        if self.split_ebl_exposure and self.fine_fanout_width <= 0.0:
+            raise ValueError("HEMT fine_fanout_width must be positive when split EBL is enabled")
+        if (
+            self.split_ebl_exposure
+            and self.finger_count == 2
+            and 2.0 * self.fine_fanout_width >= self.ohmic_width
+        ):
+            raise ValueError(
+                "HEMT fine_fanout_width must be less than half ohmic_width "
+                "to leave the centre Drain U hollow"
+            )
         positive_fanout = {"vertical_fanout_pad_width": self.vertical_fanout_pad_width}
         invalid = [name for name, value in positive_fanout.items() if value <= 0.0]
         if invalid:
@@ -203,12 +237,90 @@ class HEMT:
             return polygon
         return outer - inset
 
+    def _fine_u_fanout(
+        self,
+        center_x,
+        inner_y,
+        contact_width,
+        outer_y,
+        outer_width,
+    ):
+        """Return the open-ended fine-layer U shown in the EBL split sketch."""
+        direction = 1.0 if outer_y > inner_y else -1.0
+        inner_outer_face_y = inner_y + direction * self.fine_fanout_width / 2.0
+        available_depth = max(abs(outer_y - inner_outer_face_y), 0.0)
+        depth = min(self.fine_fanout_depth, available_depth)
+        fine_end_y = inner_outer_face_y + direction * depth
+
+        full_span = abs(outer_y - inner_outer_face_y)
+        fraction = depth / full_span if full_span > 0.0 else 0.0
+        fine_end_width = contact_width + (outer_width - contact_width) * fraction
+        arm_width = self.fine_fanout_width
+
+        fine = pya.Region(
+            self._center_box(
+                center_x,
+                inner_y,
+                contact_width,
+                self.fine_fanout_width,
+            )
+        )
+        if arm_width > 0.0 and depth > 0.0:
+            outer_segment = pya.Region(
+                self._vertical_taper(
+                    center_x,
+                    inner_outer_face_y,
+                    contact_width,
+                    center_x,
+                    fine_end_y,
+                    fine_end_width,
+                )
+            )
+            cavity = pya.Region(
+                self._vertical_taper(
+                    center_x,
+                    inner_outer_face_y,
+                    contact_width - 2.0 * arm_width,
+                    center_x,
+                    fine_end_y,
+                    fine_end_width - 2.0 * arm_width,
+                )
+            )
+            fine += outer_segment - cavity
+        return fine.merged(), fine_end_y, fine_end_width
+
+    def _fine_horizontal_u(self, left, right, center_y):
+        """Return a fine centre-Drain U opening towards its coarse fanout."""
+        line_width = self.fine_fanout_width
+        outer = pya.Region(
+            self._box(
+                left,
+                center_y - self.ohmic_width / 2.0,
+                right,
+                center_y + self.ohmic_width / 2.0,
+            )
+        )
+        # Extend the cavity one database unit beyond the right edge so this is
+        # a true open U, not a closed rectangular frame.
+        cavity = pya.Region(
+            self._box(
+                left + line_width,
+                center_y - self.ohmic_width / 2.0 + line_width,
+                right + 1.0 / _DBU_PER_UM,
+                center_y + self.ohmic_width / 2.0 - line_width,
+            )
+        )
+        return (outer - cavity).merged()
+
     def get_layer_ids(self):
         return {
             "channel": LAYER_DEFINITIONS["channel"]["id"],
             "source": LAYER_DEFINITIONS["source_drain"]["id"],
             "drain": LAYER_DEFINITIONS["source_drain"]["id"],
+            "source_fine": LAYER_DEFINITIONS["fine_source_drain"]["id"],
+            "drain_fine": LAYER_DEFINITIONS["fine_source_drain"]["id"],
             "gate": LAYER_DEFINITIONS["top_gate"]["id"],
+            "gate_fine": LAYER_DEFINITIONS["fine_top_gate"]["id"],
             "gate_dielectric": LAYER_DEFINITIONS["top_dielectric"]["id"],
             "labels": LAYER_DEFINITIONS["labels"]["id"],
             "parameter_labels": LAYER_DEFINITIONS.get("note", LAYER_DEFINITIONS["labels"])["id"],
@@ -240,7 +352,16 @@ class HEMT:
         if self.mark_mode == "none":
             return
         device_region = pya.Region()
-        for name in ("channel", "source", "drain", "gate", "gate_dielectric"):
+        for name in (
+            "channel",
+            "source",
+            "drain",
+            "source_fine",
+            "drain_fine",
+            "gate",
+            "gate_fine",
+            "gate_dielectric",
+        ):
             for shape in self.shapes[name]:
                 if isinstance(shape, pya.Region):
                     device_region += shape
@@ -260,8 +381,22 @@ class HEMT:
 
     def _vertical_geometry(self):
         """Return gate, source and drain centre lines relative to device y."""
-        sg = self.source_gate_spacing + (self.ohmic_width + self.gate_length) / 2.0
-        gd = self.gate_drain_spacing + (self.ohmic_width + self.gate_length) / 2.0
+        source_inner_width = (
+            self.fine_fanout_width if self.split_ebl_exposure else self.ohmic_width
+        )
+        drain_inner_width = (
+            self.fine_fanout_width
+            if self.split_ebl_exposure and self.finger_count == 1
+            else self.ohmic_width
+        )
+        # Osg/Ogd extend the corresponding Gate edges.  They do not alter the
+        # Source/Drain positions or the nominal Gate centre-line spacing.
+        sg = self.source_gate_spacing + (
+            source_inner_width + self.gate_length
+        ) / 2.0
+        gd = self.gate_drain_spacing + (
+            drain_inner_width + self.gate_length
+        ) / 2.0
         if self.finger_count == 1:
             # Centre a vertical D-G-S stack about y=0 even when access
             # spacings differ.  Keeping source above and drain below avoids
@@ -272,8 +407,8 @@ class HEMT:
             offset = (source_y + drain_y) / 2.0
             return [gate_y - offset], [source_y - offset], [drain_y - offset]
 
-        gate_y = self.ohmic_width / 2.0 + self.gate_drain_spacing + self.gate_length / 2.0
-        source_y = gate_y + self.gate_length / 2.0 + self.source_gate_spacing + self.ohmic_width / 2.0
+        gate_y = gd
+        source_y = gate_y + sg
         return [-gate_y, gate_y], [-source_y, source_y], [0.0]
 
     def generate(self):
@@ -286,6 +421,22 @@ class HEMT:
         source_ys = [self.y + value for value in source_ys]
         drain_ys = [self.y + value for value in drain_ys]
 
+        gate_bounds = []
+        for gate_y in gate_ys:
+            if self.finger_count == 1:
+                # Source above, Drain below.
+                gate_bottom = gate_y - self.gate_length / 2.0 - self.gate_drain_overlap
+                gate_top = gate_y + self.gate_length / 2.0 + self.source_gate_overlap
+            elif gate_y < self.y:
+                # Lower Gate: Source below, common Drain above.
+                gate_bottom = gate_y - self.gate_length / 2.0 - self.source_gate_overlap
+                gate_top = gate_y + self.gate_length / 2.0 + self.gate_drain_overlap
+            else:
+                # Upper Gate: common Drain below, Source above.
+                gate_bottom = gate_y - self.gate_length / 2.0 - self.gate_drain_overlap
+                gate_top = gate_y + self.gate_length / 2.0 + self.source_gate_overlap
+            gate_bounds.append((gate_bottom, gate_top))
+
         core_left = self.x - self.gate_width / 2.0
         core_right = self.x + self.gate_width / 2.0
         # Stop the ohmics at the active span's left edge so they cannot short
@@ -294,9 +445,52 @@ class HEMT:
         ohmic_left = core_left - self.ohmic_overhang if self.finger_count == 1 else core_left
         ohmic_right = core_right + self.ohmic_overhang
 
-        all_core_ys = source_ys + drain_ys + gate_ys
-        core_bottom = min(all_core_ys) - max(self.ohmic_width, self.gate_length) / 2.0
-        core_top = max(all_core_ys) + max(self.ohmic_width, self.gate_length) / 2.0
+        core_bottom = min(
+            [
+                y
+                - (
+                    self.fine_fanout_width
+                    if self.split_ebl_exposure
+                    else self.ohmic_width
+                )
+                / 2.0
+                for y in source_ys
+            ]
+            + [
+                y
+                - (
+                    self.fine_fanout_width
+                    if self.split_ebl_exposure and self.finger_count == 1
+                    else self.ohmic_width
+                )
+                / 2.0
+                for y in drain_ys
+            ]
+            + [bottom for bottom, _ in gate_bounds]
+        )
+        core_top = max(
+            [
+                y
+                + (
+                    self.fine_fanout_width
+                    if self.split_ebl_exposure
+                    else self.ohmic_width
+                )
+                / 2.0
+                for y in source_ys
+            ]
+            + [
+                y
+                + (
+                    self.fine_fanout_width
+                    if self.split_ebl_exposure and self.finger_count == 1
+                    else self.ohmic_width
+                )
+                / 2.0
+                for y in drain_ys
+            ]
+            + [top for _, top in gate_bounds]
+        )
         if self.mesa_width > 0.0:
             mesa_half_x = self.mesa_width / 2.0
         else:
@@ -324,26 +518,56 @@ class HEMT:
         # one trapezoid.  The double-finger centre drain is extended as a
         # narrow bar beyond the Mesa before it is allowed to widen, preventing
         # the drain fanout from touching the full-Mesa gate fingers.
+        sd_core_suffix = "_fine" if self.split_ebl_exposure else ""
+        gate_core_bucket = "gate_fine" if self.split_ebl_exposure else "gate"
+        drain_contact_left = ohmic_left
+        drain_contact_right = gate_right
         if self.finger_count == 2:
             for drain_y in drain_ys:
-                self.shapes["drain"].append(
-                    self._box(ohmic_left, drain_y - self.ohmic_width / 2.0, gate_right, drain_y + self.ohmic_width / 2.0)
-                )
-        for gate_y in gate_ys:
-            self.shapes["gate"].append(self._box(gate_left, gate_y - self.gate_length / 2.0, gate_right, gate_y + self.gate_length / 2.0))
+                if self.split_ebl_exposure:
+                    drain_contact = self._fine_horizontal_u(
+                        drain_contact_left,
+                        drain_contact_right,
+                        drain_y,
+                    )
+                else:
+                    drain_contact = self._box(
+                        drain_contact_left,
+                        drain_y - self.ohmic_width / 2.0,
+                        drain_contact_right,
+                        drain_y + self.ohmic_width / 2.0,
+                    )
+                self.shapes["drain" + sd_core_suffix].append(drain_contact)
+        for gate_y, (gate_bottom, gate_top) in zip(gate_ys, gate_bounds):
+            self.shapes[gate_core_bucket].append(
+                self._box(gate_left, gate_bottom, gate_right, gate_top)
+            )
             if self.draw_gate_dielectric:
                 margin = self.dielectric_margin
                 self.shapes["gate_dielectric"].append(
-                    self._box(gate_left - margin, gate_y - self.gate_length / 2.0 - margin, gate_right + margin, gate_y + self.gate_length / 2.0 + margin)
+                    self._box(
+                        gate_left - margin,
+                        gate_bottom - margin,
+                        gate_right + margin,
+                        gate_top + margin,
+                    )
                 )
-        manifold_bottom = min(gate_ys) - self.gate_length / 2.0
-        manifold_top = max(gate_ys) + self.gate_length / 2.0
-        self.shapes["gate"].append(self._box(gate_left, manifold_bottom, core_left, manifold_top))
+        manifold_bottom = min(bottom for bottom, _ in gate_bounds)
+        manifold_top = max(top for _, top in gate_bounds)
+        gate_manifold_right = core_left - (
+            self.gate_pad_retraction if self.finger_count == 2 else 0.0
+        )
+        if gate_manifold_right <= gate_left:
+            raise ValueError("Gate pad retraction leaves no usable gate pad width")
+        self.shapes[gate_core_bucket].append(
+            self._box(gate_left, manifold_bottom, gate_manifold_right, manifold_top)
+        )
 
         # Compact filled outer metal, matching the HEMT micrograph topology.
         # The upper/lower fields connect from their long horizontal edges;
         # left/right fields connect from their short vertical edges.
         neck = self.fanout_length
+        split_overlap = min(self.ebl_overlap, neck) if self.split_ebl_exposure else 0.0
         left_edge = gate_left - neck - self.pad_size - self.gate_pad_offset
         right_field_left = gate_right + neck
         right_edge = right_field_left + self.pad_size
@@ -373,7 +597,7 @@ class HEMT:
                 gate_pad_right,
                 self.y,
                 gate_pad_edge,
-                gate_left,
+                gate_left + split_overlap,
                 (manifold_bottom + manifold_top) / 2.0,
                 gate_contact_width,
             )
@@ -393,17 +617,55 @@ class HEMT:
             # Start at the channel-facing edge of the internal ohmic landing,
             # so the landing and all fanout metal form one trapezoid.  Stop at
             # the inner long edge of a separate solid rectangular outer pad.
-            contact_edge_y = inner_y - direction * self.ohmic_width / 2.0
-            outer_pad_inner_y = pad_y - direction * self.pad_size / 2.0
-            contact_and_fanout = self._vertical_taper(
-                inner_center_x,
-                contact_edge_y,
-                contact_taper_width,
-                inner_center_x,
-                outer_pad_inner_y,
-                outer_taper_width,
+            inner_pad_width = (
+                self.fine_fanout_width
+                if self.split_ebl_exposure
+                else self.ohmic_width
             )
-            self.shapes[bucket].append(self._fanout_shape(contact_and_fanout))
+            contact_edge_y = inner_y - direction * inner_pad_width / 2.0
+            outer_pad_inner_y = pad_y - direction * self.pad_size / 2.0
+            if self.split_ebl_exposure:
+                fine_u, fine_end_y, _fine_end_width = self._fine_u_fanout(
+                    inner_center_x,
+                    inner_y,
+                    contact_taper_width,
+                    outer_pad_inner_y,
+                    outer_taper_width,
+                )
+                self.shapes[bucket + "_fine"].append(fine_u)
+                coarse_start_y = fine_end_y - direction * min(
+                    split_overlap,
+                    abs(fine_end_y - (inner_y + direction * inner_pad_width / 2.0)),
+                )
+                inner_outer_face_y = inner_y + direction * inner_pad_width / 2.0
+                full_span = abs(outer_pad_inner_y - inner_outer_face_y)
+                coarse_fraction = (
+                    abs(coarse_start_y - inner_outer_face_y) / full_span
+                    if full_span > 0.0
+                    else 0.0
+                )
+                coarse_start_width = contact_taper_width + (
+                    outer_taper_width - contact_taper_width
+                ) * coarse_fraction
+                fanout_shape = self._vertical_taper(
+                    inner_center_x,
+                    coarse_start_y,
+                    coarse_start_width,
+                    inner_center_x,
+                    outer_pad_inner_y,
+                    outer_taper_width,
+                )
+            else:
+                contact_and_fanout = self._vertical_taper(
+                    inner_center_x,
+                    contact_edge_y,
+                    contact_taper_width,
+                    inner_center_x,
+                    outer_pad_inner_y,
+                    outer_taper_width,
+                )
+                fanout_shape = self._fanout_shape(contact_and_fanout)
+            self.shapes[bucket].append(fanout_shape)
             self.shapes[bucket].append(
                 self._center_box(self.x, pad_y, vertical_pad_right - vertical_pad_left, self.pad_size)
             )
@@ -417,7 +679,7 @@ class HEMT:
             self.shapes["gate"].append(right_gate_pad)
             self.shapes["gate"].append(
                 self._taper(
-                    gate_right,
+                    gate_right - split_overlap,
                     gate_ys[0],
                     self.gate_fanout_contact_width,
                     right_field_left,
@@ -430,7 +692,14 @@ class HEMT:
                 append_long_edge_field("source", source_y, pad_y)
             for drain_y, pad_y in zip(drain_ys, drain_pad_ys):
                 self.shapes["drain"].append(
-                        self._taper(gate_right, drain_y, self.ohmic_width, right_field_left, pad_y, self.pad_size)
+                        self._taper(
+                            drain_contact_right - split_overlap,
+                            drain_y,
+                            self.ohmic_width,
+                            right_field_left,
+                            pad_y,
+                            self.pad_size,
+                        )
                 )
                 self.shapes["drain"].append(
                     self._center_box(right_field_left + self.pad_size / 2.0, pad_y, self.pad_size, self.pad_size)
@@ -440,7 +709,16 @@ class HEMT:
         if self.show_device_label and self.device_label:
             self.shapes["labels"].append(pya.Text(self.device_label, self._coord(left_edge), self._coord(label_y)))
         if self.show_parameter_label:
-            text = "HEMT Nf={} Lg={:.3f}um Wg={:.2f}um".format(self.finger_count, self.gate_length, self.gate_width)
+            text = (
+                "HEMT Nf={} Lg={:.3f}um Wg={:.2f}um "
+                "Osg={:.3f}um Ogd={:.3f}um"
+            ).format(
+                self.finger_count,
+                self.gate_length,
+                self.gate_width,
+                self.source_gate_overlap,
+                self.gate_drain_overlap,
+            )
             self.shapes["parameter_labels"].append(pya.Text(text, self._coord(left_edge), self._coord(label_y - 7.0)))
         self._append_alignment_marks()
         return self.shapes

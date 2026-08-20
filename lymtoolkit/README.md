@@ -166,6 +166,7 @@ Included tools:
 
 - EBL Writefield Mark
 - Custom Global Mark Grid
+- Raith EBL Global Mark
 - Text Pattern Array
 - General Mark Array
 - CV-MarkArray
