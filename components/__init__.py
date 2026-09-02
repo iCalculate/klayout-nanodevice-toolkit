@@ -13,6 +13,20 @@ except Exception:
     pass
 
 try:
+    from .woodpile import Woodpile
+
+    __all__.append('Woodpile')
+except Exception:
+    pass
+
+try:
+    from .crossbar import CrossBar
+
+    __all__.append('CrossBar')
+except Exception:
+    pass
+
+try:
     from .electrode import Electrode, GateElectrode, SourceDrainElectrode, PadElectrode
 
     __all__.extend(['Electrode', 'GateElectrode', 'SourceDrainElectrode', 'PadElectrode'])

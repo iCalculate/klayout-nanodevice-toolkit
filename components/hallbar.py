@@ -6,6 +6,7 @@ Hall Bar device module - defines the complete Hall bar device structure.
 
 import sys
 import os
+import math
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import klayout.db as db
@@ -29,9 +30,16 @@ class HallBar:
         self.layout = layout or db.Layout()
         dist_v_value = kwargs.get('dist_v', kwargs.get('Dist_V', 25.0))
         label_anchor_value = kwargs.get('label_anchor', kwargs.get('label_cursor', 'left_top'))
+        source_drain_layer_id = int(kwargs.get('source_drain_layer_id', 15))
+        default_fine_layer_id = (
+            source_drain_layer_id + 10
+            if 11 <= source_drain_layer_id <= 19
+            else LAYER_DEFINITIONS['fine_source_drain']['id']
+        )
         self._layer_ids = {
             'channel': kwargs.get('channel_layer_id', 13),
-            'source_drain': kwargs.get('source_drain_layer_id', 15),
+            'source_drain': source_drain_layer_id,
+            'fine_source_drain': int(kwargs.get('fine_source_drain_layer_id', default_fine_layer_id)),
             'labels': kwargs.get('label_layer_id', 3),
             'alignment_marks': kwargs.get('alignment_mark_layer_id', 3),
             'parameter_labels': kwargs.get('parameter_label_layer_id', 6),
@@ -44,6 +52,12 @@ class HallBar:
         self.v_protrude = kwargs.get('v_protrude_width', 3.0)       # V区突出宽度 (μm)
         self.v_protrude_length = kwargs.get('v_protrude_length', 5.0)  # V区突出区域长度(沿沟道方向)
         self.dist_v = dist_v_value                            # V电极间距 (μm)
+        self.v_contact_pairs = int(kwargs.get('v_contact_pairs', kwargs.get('v_pair_count', 2)))
+        self.min_electrode_gap = float(kwargs.get('min_electrode_gap', 2.0))
+        self.outer_pad_gap = float(kwargs.get('outer_pad_gap', 10.0))
+        self.min_fanout_corner_angle = float(kwargs.get('min_fanout_corner_angle', 20.0))
+        # 0 means use the complete usable edge of the large pad.
+        self.coarse_fanout_pad_edge_width = float(kwargs.get('coarse_fanout_pad_edge_width', 0.0))
 
         # ===== V电极参数 =====
         self.v_inner_length = kwargs.get('v_inner_length', None)  # 沿沟道方向，None时自动联动
@@ -69,6 +83,14 @@ class HallBar:
         self.i_outer_offset_x = kwargs.get('i_outer_offset_x', 150)
         self.i_outer_offset_y = kwargs.get('i_outer_offset_y', 0.0)
 
+        # EBL split: channel-side contacts and short leads use the matching
+        # 21-29 layer; bridge pads, probe pads and coarse fanout stay on 11-19.
+        self.split_ebl_exposure = bool(kwargs.get('split_ebl_exposure', False))
+        self.fine_fanout_length = float(kwargs.get('fine_fanout_length', 12.0))
+        self.bridge_pad_length = float(kwargs.get('bridge_pad_length', 12.0))
+        self.bridge_pad_width = float(kwargs.get('bridge_pad_width', 10.0))
+        self.ebl_overlap = float(kwargs.get('ebl_overlap', 2.0))
+
         # 自动调整outer_offset，保证pad间距不小于10um
         min_pad_gap = 10.0
         min_gap = 20.0
@@ -90,6 +112,7 @@ class HallBar:
         self.label_offset_x = kwargs.get('label_offset_x',  10.0)
         self.label_offset_y = kwargs.get('label_offset_y', -10.0)
         self.electrode_text_label = kwargs.get('electrode_text_label', False)  # 是否为电极添加KLayout text label
+        self._validate()
 
     def setup_layers(self):
         for layer_name, layer_info in LAYER_DEFINITIONS.items():
@@ -106,6 +129,317 @@ class HallBar:
 
     def get_layer_ids(self):
         return dict(self._layer_ids)
+
+    def _resolved_v_inner_length(self):
+        return float(self.v_inner_length) if self.v_inner_length is not None else float(self.v_protrude_length) * 1.1
+
+    def get_v_contact_x_positions(self, x=0.0):
+        """Return centered V-pair positions; ``dist_v`` is the pair pitch."""
+        if self.v_contact_pairs == 1:
+            return [float(x)]
+        center = (self.v_contact_pairs - 1) / 2.0
+        return [float(x) + (index - center) * float(self.dist_v) for index in range(self.v_contact_pairs)]
+
+    def get_v_outer_x_positions(self, x=0.0):
+        """Spread probe pads while preserving order and the requested clearance."""
+        if self.v_contact_pairs == 1:
+            return [float(x)]
+        # Backward compatibility: the original two-pair, single-exposure Hall
+        # bar used the requested offsets verbatim.  Keep that familiar compact
+        # layout; automatic pad spreading is for the new multi-pair/split modes.
+        if self.v_contact_pairs == 2 and not self.split_ebl_exposure:
+            offset = abs(float(self.v_outer_offset_x))
+            return [float(x) - offset, float(x) + offset]
+        configured_pitch = 2.0 * abs(float(self.v_outer_offset_x)) / (self.v_contact_pairs - 1)
+        safe_pitch = float(self.v_outer_length) + self.outer_pad_gap
+        pitch = max(configured_pitch, safe_pitch)
+        center = (self.v_contact_pairs - 1) / 2.0
+        return [float(x) + (index - center) * pitch for index in range(self.v_contact_pairs)]
+
+    def _resolved_v_outer_offset_y(self):
+        # Preserve the original default geometry exactly when the new EBL split
+        # and variable-pair features are not in use.
+        if self.v_contact_pairs == 2 and not self.split_ebl_exposure:
+            return abs(float(self.v_outer_offset_y))
+
+        required = (
+            abs(float(self.i_outer_offset_y))
+            + float(self.i_outer_width) / 2.0
+            + float(self.v_outer_width) / 2.0
+            + self.outer_pad_gap
+        )
+        contact_y = (float(self.bar_width) + float(self.v_protrude)) / 2.0
+        if self.split_ebl_exposure:
+            bridge_outer_y = (
+                contact_y
+                + float(self.v_inner_width) / 2.0
+                + self.fine_fanout_length
+                + self.bridge_pad_length
+            )
+            route_start_y = bridge_outer_y
+        else:
+            route_start_y = contact_y + float(self.v_inner_width) / 2.0
+
+        # Leave an actual tapering run before the complete large-pad edge.
+        # Merely separating pad rectangles creates needle-like polygons.
+        if self.coarse_fanout_pad_edge_width > 0.0:
+            landing_width = self.coarse_fanout_pad_edge_width
+        else:
+            chamfer_reduction = 2.0 * float(self.v_outer_chamfer) if self.v_outer_chamfer_type != 'none' else 0.0
+            landing_width = max(float(self.v_outer_length) - chamfer_reduction, 0.0)
+        start_width = self.bridge_pad_width if self.split_ebl_exposure else self._resolved_v_inner_length()
+        minimum_taper_run = max(landing_width, start_width) + 5.0 * self.min_electrode_gap
+        required = max(
+            required,
+            route_start_y + float(self.v_outer_width) / 2.0 + minimum_taper_run,
+        )
+        return max(abs(float(self.v_outer_offset_y)), required)
+
+    def _resolved_i_outer_offset_x(self):
+        requested = abs(float(self.i_outer_offset_x))
+        if self.v_contact_pairs <= 2:
+            return requested
+        v_outermost = max(abs(position) for position in self.get_v_outer_x_positions(0.0))
+        required = (
+            v_outermost
+            + float(self.v_outer_length) / 2.0
+            + float(self.i_outer_length) / 2.0
+            + self.outer_pad_gap
+        )
+        return max(requested, required)
+
+    @staticmethod
+    def _pad_edge_center(pad, edge):
+        x, y = pad.center
+        if edge == 'L':
+            return x - pad.length / 2.0, y
+        if edge == 'R':
+            return x + pad.length / 2.0, y
+        if edge == 'D':
+            return x, y - pad.width / 2.0
+        return x, y + pad.width / 2.0
+
+    @staticmethod
+    def _facing_edges(pad, target):
+        """Return pad edges whose outward normal points toward ``target``."""
+        dx = target.center[0] - pad.center[0]
+        dy = target.center[1] - pad.center[1]
+        edges = []
+        if dx < -1e-9:
+            edges.append('L')
+        elif dx > 1e-9:
+            edges.append('R')
+        if dy < -1e-9:
+            edges.append('D')
+        elif dy > 1e-9:
+            edges.append('U')
+        return edges or ['L', 'R', 'D', 'U']
+
+    @staticmethod
+    def _edge_alignment_penalty(inner, outer, inner_edge, outer_edge):
+        normals = {'L': (-1.0, 0.0), 'R': (1.0, 0.0), 'D': (0.0, -1.0), 'U': (0.0, 1.0)}
+        dx = outer.center[0] - inner.center[0]
+        dy = outer.center[1] - inner.center[1]
+        length = max((dx * dx + dy * dy) ** 0.5, 1e-12)
+        ux, uy = dx / length, dy / length
+        in_normal = normals[inner_edge]
+        out_normal = normals[outer_edge]
+        inner_cosine = in_normal[0] * ux + in_normal[1] * uy
+        outer_cosine = out_normal[0] * -ux + out_normal[1] * -uy
+        return (1.0 - inner_cosine) + (1.0 - outer_cosine)
+
+    @staticmethod
+    def _polygon_region(polygon):
+        region = db.Region()
+        region.insert(polygon)
+        return region
+
+    @staticmethod
+    def _minimum_polygon_angle(polygon):
+        points = [(point.x, point.y) for point in polygon.each_point_hull()]
+        if len(points) < 3:
+            return 0.0
+        angles = []
+        for index, current in enumerate(points):
+            previous = points[index - 1]
+            following = points[(index + 1) % len(points)]
+            first = (previous[0] - current[0], previous[1] - current[1])
+            second = (following[0] - current[0], following[1] - current[1])
+            denominator = math.hypot(*first) * math.hypot(*second)
+            if denominator <= 1e-12:
+                return 0.0
+            cosine = (first[0] * second[0] + first[1] * second[1]) / denominator
+            angles.append(math.degrees(math.acos(max(-1.0, min(1.0, cosine)))))
+        return min(angles)
+
+    def _clearance_region(self, region):
+        half_gap = int(round(self.min_electrode_gap * GeometryUtils.UNIT_SCALE / 2.0))
+        return region.sized(half_gap) if half_gap > 0 else region
+
+    def _select_coarse_fanouts(self, routes):
+        """Choose globally non-intersecting pad edges for all coarse routes.
+
+        Candidate edges must face the destination.  A small constraint solver
+        then chooses a collision-free set, ordered by shortest edge-to-edge
+        distance and smallest polygon area.  This permits useful non-parallel
+        pairs such as L-D or U-R instead of forcing U-D/L-R everywhere.
+        """
+        endpoint_regions = []
+        for route_index, route in enumerate(routes):
+            endpoint_regions.extend([
+                (route_index, self._clearance_region(self._polygon_region(route['inner'].polygon))),
+                (route_index, self._clearance_region(self._polygon_region(route['outer'].polygon))),
+            ])
+
+        domains = []
+        for route_index, route in enumerate(routes):
+            candidates = []
+            inner = route['inner']
+            outer = route['outer']
+            for inner_edge in self._facing_edges(inner, outer):
+                for outer_edge in self._facing_edges(outer, inner):
+                    polygon = draw_trapezoidal_fanout(
+                        inner,
+                        outer,
+                        inner_edge=inner_edge,
+                        outer_edge=outer_edge,
+                        outer_edge_width=(
+                            self.coarse_fanout_pad_edge_width
+                            if self.coarse_fanout_pad_edge_width > 0.0
+                            else None
+                        ),
+                    )
+                    region = self._polygon_region(polygon)
+                    clearance_region = self._clearance_region(region)
+                    if region.area() <= 0:
+                        continue
+                    minimum_angle = self._minimum_polygon_angle(polygon)
+                    if minimum_angle < self.min_fanout_corner_angle:
+                        continue
+                    if any(
+                        owner != route_index and (clearance_region & endpoint_region).area() > 0
+                        for owner, endpoint_region in endpoint_regions
+                    ):
+                        continue
+                    p1 = self._pad_edge_center(inner, inner_edge)
+                    p2 = self._pad_edge_center(outer, outer_edge)
+                    distance2 = (p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2
+                    alignment_penalty = self._edge_alignment_penalty(
+                        inner, outer, inner_edge, outer_edge
+                    )
+                    candidates.append({
+                        'polygon': polygon,
+                        'region': region,
+                        'clearance_region': clearance_region,
+                        'inner_edge': inner_edge,
+                        'outer_edge': outer_edge,
+                        'minimum_angle': minimum_angle,
+                        # Prefer edges whose outward normals follow the route
+                        # direction, then the shortest/smallest valid taper.
+                        'score': (alignment_penalty, distance2, region.area()),
+                    })
+            candidates.sort(key=lambda candidate: candidate['score'])
+            if not candidates:
+                raise ValueError(f"No interference-free fanout edge pair for {route['name']}")
+            domains.append(candidates)
+
+        # Route the most constrained electrodes first.  Backtracking prevents
+        # an early locally-short choice from blocking a later electrode.
+        order = sorted(range(len(routes)), key=lambda index: (len(domains[index]), domains[index][0]['score']))
+        selected = [None] * len(routes)
+        selected_regions = []
+        attempts = [0]
+
+        def solve(depth):
+            if depth == len(order):
+                return True
+            route_index = order[depth]
+            for candidate in domains[route_index]:
+                attempts[0] += 1
+                if attempts[0] > 100000:
+                    return False
+                if any((candidate['clearance_region'] & occupied).area() > 0 for occupied in selected_regions):
+                    continue
+                selected[route_index] = candidate
+                selected_regions.append(candidate['clearance_region'])
+                if solve(depth + 1):
+                    return True
+                selected_regions.pop()
+                selected[route_index] = None
+            return False
+
+        if not solve(0):
+            raise ValueError(
+                'Cannot find interference-free Hall bar fanouts; increase pad offsets/gaps '
+                'or reduce pad dimensions'
+            )
+
+        self._last_fanout_edges = [
+            {
+                'name': route['name'],
+                'inner_edge': candidate['inner_edge'],
+                'outer_edge': candidate['outer_edge'],
+                'minimum_angle': candidate['minimum_angle'],
+            }
+            for route, candidate in zip(routes, selected)
+        ]
+        return [candidate['polygon'] for candidate in selected]
+
+    def _validate(self):
+        positive = {
+            'bar_length': self.bar_length,
+            'bar_width': self.bar_width,
+            'v_protrude_width': self.v_protrude,
+            'v_protrude_length': self.v_protrude_length,
+            'v_inner_width': self.v_inner_width,
+            'v_outer_length': self.v_outer_length,
+            'v_outer_width': self.v_outer_width,
+            'i_inner_length': self.i_inner_length,
+            'i_outer_length': self.i_outer_length,
+            'i_outer_width': self.i_outer_width,
+        }
+        invalid = [name for name, value in positive.items() if float(value) <= 0.0]
+        if invalid:
+            raise ValueError('HallBar dimensions must be positive: ' + ', '.join(invalid))
+        if self.v_contact_pairs < 1:
+            raise ValueError('v_contact_pairs must be >= 1')
+        if self.v_contact_pairs > 1 and float(self.dist_v) <= 0.0:
+            raise ValueError('dist_v must be positive when v_contact_pairs > 1')
+        if self.min_electrode_gap < 0.0:
+            raise ValueError('min_electrode_gap cannot be negative')
+        if self.outer_pad_gap < 0.0:
+            raise ValueError('outer_pad_gap cannot be negative')
+        if not (0.0 < self.min_fanout_corner_angle < 90.0):
+            raise ValueError('min_fanout_corner_angle must be between 0 and 90 degrees')
+        if self.coarse_fanout_pad_edge_width < 0.0:
+            raise ValueError('coarse_fanout_pad_edge_width cannot be negative')
+
+        v_inner_length = self._resolved_v_inner_length()
+        if self.v_contact_pairs > 1 and float(self.dist_v) < v_inner_length + self.min_electrode_gap:
+            raise ValueError('dist_v is too small: adjacent V channel contacts would interfere')
+
+        outermost = max(abs(position) for position in self.get_v_contact_x_positions(0.0))
+        v_half_length = max(float(self.v_protrude_length), v_inner_length) / 2.0
+        usable_half_length = float(self.bar_length) / 2.0 - float(self.i_inner_length) / 2.0
+        if outermost + v_half_length + self.min_electrode_gap > usable_half_length:
+            raise ValueError(
+                'V contacts do not fit between the I contacts; increase bar_length, '
+                'reduce dist_v/v_contact_pairs, or reduce contact dimensions'
+            )
+
+        if self.split_ebl_exposure:
+            if not (11 <= self._layer_ids['source_drain'] <= 19):
+                raise ValueError('split EBL coarse source_drain_layer_id must be in 11-19')
+            if self._layer_ids['fine_source_drain'] != self._layer_ids['source_drain'] + 10:
+                raise ValueError('split EBL fine layer must equal the coarse layer + 10 (21-29)')
+            if self.fine_fanout_length < 0.0 or self.ebl_overlap <= 0.0:
+                raise ValueError('fine_fanout_length cannot be negative and ebl_overlap must be positive')
+            if self.bridge_pad_length <= 0.0 or self.bridge_pad_width <= 0.0:
+                raise ValueError('bridge pad dimensions must be positive')
+            if self.ebl_overlap > self.bridge_pad_length:
+                raise ValueError('ebl_overlap cannot exceed bridge_pad_length')
+            if self.v_contact_pairs > 1 and float(self.dist_v) < self.bridge_pad_width + self.min_electrode_gap:
+                raise ValueError('dist_v is too small: adjacent V bridge pads would interfere')
 
     def _append_text_shape(self, text, x, y, layer_key):
         if not text:
@@ -170,6 +504,7 @@ class HallBar:
         return MarkUtils.cross(x, y, self.mark_size, self.mark_width).rotate(rotation)
 
     def create_bar(self, cell, x=0.0, y=0.0):
+        self._validate()
         layer_id = self._layer_index('channel')
         # 沟道主区
         bar = GeometryUtils.create_rectangle(
@@ -178,61 +513,96 @@ class HallBar:
         cell.shapes(layer_id).insert(bar)
         # V区突出
         protrude = self.v_protrude
-        dist_v = self.dist_v
         v_w = self.bar_width + protrude * 2
         v_len = self.v_protrude_length
-        # 左V区突出区域，中心与左V inner pad对齐
-        bar_left = GeometryUtils.create_rectangle(
-            x - dist_v/2, y, v_len, v_w, center=True
-        )
-        cell.shapes(layer_id).insert(bar_left)
-        # 右V区突出区域，中心与右V inner pad对齐
-        bar_right = GeometryUtils.create_rectangle(
-            x + dist_v/2, y, v_len, v_w, center=True
-        )
-        cell.shapes(layer_id).insert(bar_right)
+        for contact_x in self.get_v_contact_x_positions(x):
+            protrusion = GeometryUtils.create_rectangle(contact_x, y, v_len, v_w, center=True)
+            cell.shapes(layer_id).insert(protrusion)
 
     def create_contacts(self, cell, x=0.0, y=0.0):
-        layer_id = self._layer_index('source_drain')
+        self._validate()
+        coarse_layer = self._layer_index('source_drain')
+        fine_layer = self._layer_index('fine_source_drain')
+        coarse_routes = []
+
+        def insert_contact(name, inner, outer, inner_edge, outer_edge, direction, bridge_orientation):
+            target_inner_layer = fine_layer if self.split_ebl_exposure else coarse_layer
+            cell.shapes(target_inner_layer).insert(inner.polygon)
+            cell.shapes(coarse_layer).insert(outer.polygon)
+
+            if not self.split_ebl_exposure:
+                coarse_routes.append({'name': name, 'inner': inner, 'outer': outer})
+                return
+
+            dx, dy = direction
+            if bridge_orientation == 'horizontal':
+                inner_boundary = inner.center[0] + dx * inner.length / 2.0
+                bridge_inner = inner_boundary + dx * self.fine_fanout_length
+                bridge_center = (bridge_inner + dx * self.bridge_pad_length / 2.0, inner.center[1])
+                bridge = draw_pad(bridge_center, self.bridge_pad_length, self.bridge_pad_width)
+                transition_center = (bridge_inner + dx * self.ebl_overlap / 2.0, inner.center[1])
+                transition = draw_pad(transition_center, self.ebl_overlap, self.bridge_pad_width)
+            else:
+                inner_boundary = inner.center[1] + dy * inner.width / 2.0
+                bridge_inner = inner_boundary + dy * self.fine_fanout_length
+                bridge_center = (inner.center[0], bridge_inner + dy * self.bridge_pad_length / 2.0)
+                bridge = draw_pad(bridge_center, self.bridge_pad_width, self.bridge_pad_length)
+                transition_center = (inner.center[0], bridge_inner + dy * self.ebl_overlap / 2.0)
+                transition = draw_pad(transition_center, self.bridge_pad_width, self.ebl_overlap)
+
+            cell.shapes(coarse_layer).insert(bridge.polygon)
+            cell.shapes(fine_layer).insert(
+                draw_trapezoidal_fanout(inner, transition, inner_edge=inner_edge, outer_edge=outer_edge)
+            )
+            if self.ebl_overlap > 0.0:
+                cell.shapes(fine_layer).insert(transition.polygon)
+            coarse_routes.append({'name': name, 'inner': bridge, 'outer': outer})
         # I电极
         I_contacts = [
-            ("I_source", (x - self.bar_length/2, y), "left", (x - self.i_outer_offset_x, y + self.i_outer_offset_y)),
-            ("I_drain", (x + self.bar_length/2, y), "right", (x + self.i_outer_offset_x, y + self.i_outer_offset_y)),
+            ("I_source", (x - self.bar_length/2, y), "left"),
+            ("I_drain", (x + self.bar_length/2, y), "right"),
         ]
         i_inner_width = self.i_inner_width if self.i_inner_width is not None else self.bar_width * 1.1
-        for name, (cx, cy), direction, (lx, ly) in I_contacts:
+        i_outer_offset_x = self._resolved_i_outer_offset_x()
+        for name, (cx, cy), direction in I_contacts:
             inner = draw_pad((cx, cy), self.i_inner_length, i_inner_width, chamfer_size=0, chamfer_type='none')
-            cell.shapes(layer_id).insert(inner.polygon)
             if direction == "left":
-                outer_center = (x - self.i_outer_offset_x, y + self.i_outer_offset_y)
+                outer_center = (x - i_outer_offset_x, y + self.i_outer_offset_y)
+                inner_edge, outer_edge, vector = 'L', 'R', (-1.0, 0.0)
             else:
-                outer_center = (x + self.i_outer_offset_x, y + self.i_outer_offset_y)
+                outer_center = (x + i_outer_offset_x, y + self.i_outer_offset_y)
+                inner_edge, outer_edge, vector = 'R', 'L', (1.0, 0.0)
             outer = draw_pad(outer_center, self.i_outer_length, self.i_outer_width, chamfer_size=self.i_outer_chamfer, chamfer_type=cast(Literal['none', 'straight', 'round'], self.i_outer_chamfer_type))
-            cell.shapes(layer_id).insert(outer.polygon)
-            fanout = draw_trapezoidal_fanout(inner, outer)
-            cell.shapes(layer_id).insert(fanout)
+            insert_contact(name, inner, outer, inner_edge, outer_edge, vector, 'horizontal')
             if self.electrode_text_label:
                 for shape in self._append_text_shape(name, outer_center[0], outer_center[1], 'labels'):
                     cell.shapes(self._layer_index('labels')).insert(shape)
         # V电极
-        V_contacts = [
-            ("V_source_pos", (x - self.dist_v/2, y + (self.bar_width + self.v_protrude)/2), "top", (x - self.v_outer_offset_x, y + self.v_outer_offset_y)),
-            ("V_source_neg", (x - self.dist_v/2, y - (self.bar_width + self.v_protrude)/2), "bottom", (x - self.v_outer_offset_x, y - self.v_outer_offset_y)),
-            ("V_drain_pos", (x + self.dist_v/2, y + (self.bar_width + self.v_protrude)/2), "top", (x + self.v_outer_offset_x, y + self.v_outer_offset_y)),
-            ("V_drain_neg", (x + self.dist_v/2, y - (self.bar_width + self.v_protrude)/2), "bottom", (x + self.v_outer_offset_x, y - self.v_outer_offset_y)),
-        ]
-        v_inner_length = self.v_inner_length if self.v_inner_length is not None else self.v_protrude_length * 1.1
+        V_contacts = []
+        outer_xs = self.get_v_outer_x_positions(x)
+        outer_y = self._resolved_v_outer_offset_y()
+        contact_y = (self.bar_width + self.v_protrude) / 2.0
+        for index, (contact_x, outer_x) in enumerate(zip(self.get_v_contact_x_positions(x), outer_xs), start=1):
+            V_contacts.extend([
+                (f"V{index}_pos", (contact_x, y + contact_y), "top", (outer_x, y + outer_y)),
+                (f"V{index}_neg", (contact_x, y - contact_y), "bottom", (outer_x, y - outer_y)),
+            ])
+        v_inner_length = self._resolved_v_inner_length()
         for name, (cx, cy), direction, (lx, ly) in V_contacts:
             inner = draw_pad((cx, cy), v_inner_length, self.v_inner_width, chamfer_size=0, chamfer_type='none')
             outer_center = (lx, ly)
             outer = draw_pad(outer_center, self.v_outer_length, self.v_outer_width, chamfer_size=self.v_outer_chamfer, chamfer_type=cast(Literal['none', 'straight', 'round'], self.v_outer_chamfer_type))
-            cell.shapes(layer_id).insert(inner.polygon)
-            cell.shapes(layer_id).insert(outer.polygon)
-            fanout = draw_trapezoidal_fanout(inner, outer)
-            cell.shapes(layer_id).insert(fanout)
+            if direction == 'top':
+                inner_edge, outer_edge, vector = 'U', 'D', (0.0, 1.0)
+            else:
+                inner_edge, outer_edge, vector = 'D', 'U', (0.0, -1.0)
+            insert_contact(name, inner, outer, inner_edge, outer_edge, vector, 'vertical')
             if self.electrode_text_label:
                 for shape in self._append_text_shape(name, outer_center[0], outer_center[1], 'labels'):
                     cell.shapes(self._layer_index('labels')).insert(shape)
+
+        for fanout in self._select_coarse_fanouts(coarse_routes):
+            cell.shapes(coarse_layer).insert(fanout)
 
     def create_alignment_marks(self, cell, x=0.0, y=0.0):
         layer_id = self._layer_index('alignment_marks')
@@ -282,7 +652,9 @@ class HallBar:
             mark_y = y - self.device_margin_y
             label_x = mark_x + 10
             label_y = mark_y + 10
-            param_text = f"W={self.bar_width:.2f}, L={self.bar_length:.2f}, VP={self.v_protrude_length:.2f}"
+            param_text = f"W={self.bar_width:.2f}, L={self.bar_length:.2f}, VP={self.v_protrude_length:.2f}, NV={self.v_contact_pairs}"
+            if self.split_ebl_exposure:
+                param_text += f", EBL={self._layer_ids['source_drain']}/{self._layer_ids['fine_source_drain']}"
             layer_id = self._layer_index('parameter_labels')
             for shape in self._append_note_text(param_text, label_x, label_y):
                 cell.shapes(layer_id).insert(shape)

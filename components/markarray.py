@@ -227,6 +227,14 @@ class MarkArrayBuilder:
             ]
         return self._simple_cross_shapes(x, y, mark_size, mark_width)
 
+    def create_mark_shapes(self, x, y, mark_type, mark_size, mark_width):
+        """Public geometry entry point shared with other toolkit components."""
+        if str(mark_type).lower() == "split_bonecross":
+            return self._split_bonecross_shapes(
+                x, y, mark_size, mark_width, mode="main"
+            )
+        return self._mark_shapes(x, y, mark_type, mark_size, mark_width)
+
     def _cv_marker_id(self, index, cv_encoding="aruco4x4_50", mode="strict"):
         marker_id = int(index)
         if marker_id < 0:

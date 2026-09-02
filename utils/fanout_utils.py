@@ -147,6 +147,8 @@ def draw_trapezoidal_fanout(
     outer_pad: PadInfo,
     inner_edge: Optional[Literal['U','D','L','R']] = None,
     outer_edge: Optional[Literal['U','D','L','R']] = None,
+    inner_edge_width: Optional[float] = None,
+    outer_edge_width: Optional[float] = None,
 ) -> 'Polygon':
     s = GeometryUtils.UNIT_SCALE
     cx1, cy1 = inner_pad.center
@@ -174,8 +176,111 @@ def draw_trapezoidal_fanout(
     op1, op2 = _pad_edge_points(
         outer_pad.center, outer_pad.length, outer_pad.width,
         outer_pad.chamfer_size, outer_pad.chamfer_type, outer_edge_str)
-    points = [Point(int(ip1[0]), int(ip1[1])), Point(int(ip2[0]), int(ip2[1])), Point(int(op2[0]), int(op2[1])), Point(int(op1[0]), int(op1[1]))]
+
+    def trimmed_edge(first, second, requested_width):
+        if requested_width is None:
+            return first, second
+        requested = max(float(requested_width) * s, 0.0)
+        dx = second[0] - first[0]
+        dy = second[1] - first[1]
+        available = math.hypot(dx, dy)
+        if available <= 1e-12 or requested >= available:
+            return first, second
+        cx = (first[0] + second[0]) / 2.0
+        cy = (first[1] + second[1]) / 2.0
+        ux, uy = dx / available, dy / available
+        half = requested / 2.0
+        return (cx - ux * half, cy - uy * half), (cx + ux * half, cy + uy * half)
+
+    ip1, ip2 = trimmed_edge(ip1, ip2, inner_edge_width)
+    op1, op2 = trimmed_edge(op1, op2, outer_edge_width)
+    # Edge point order is not globally consistent when two non-parallel pad
+    # edges are connected (for example inner-left to outer-bottom).  Pair the
+    # endpoints by minimum total connector length so the quadrilateral does
+    # not become a bow-tie.  Parallel facing edges retain their old ordering.
+    direct_cost = math.hypot(ip1[0] - op1[0], ip1[1] - op1[1]) + math.hypot(ip2[0] - op2[0], ip2[1] - op2[1])
+    crossed_cost = math.hypot(ip1[0] - op2[0], ip1[1] - op2[1]) + math.hypot(ip2[0] - op1[0], ip2[1] - op1[1])
+    if crossed_cost < direct_cost:
+        points = [Point(int(ip1[0]), int(ip1[1])), Point(int(ip2[0]), int(ip2[1])), Point(int(op1[0]), int(op1[1])), Point(int(op2[0]), int(op2[1]))]
+    else:
+        points = [Point(int(ip1[0]), int(ip1[1])), Point(int(ip2[0]), int(ip2[1])), Point(int(op2[0]), int(op2[1])), Point(int(op1[0]), int(op1[1]))]
     return Polygon(points)
+
+
+def draw_tangent_fanout(
+    inner_pad: PadInfo,
+    outer_pad: PadInfo,
+    outer_edge: Optional[Literal['U','D','L','R']] = None,
+    circle_radius: Optional[float] = None,
+) -> 'Polygon':
+    """Connect an outer-pad edge to tangents of the inner pad's incircle.
+
+    The two ends of the outer pad's inward-facing edge are treated as external
+    points.  Their envelope tangents to the circle inscribed in ``inner_pad``
+    define a consistent four-sided fanout independent of pad displacement.
+    """
+    s = GeometryUtils.UNIT_SCALE
+    cx, cy = inner_pad.center[0] * s, inner_pad.center[1] * s
+    ox, oy = outer_pad.center[0] * s, outer_pad.center[1] * s
+    radius = (
+        min(inner_pad.length, inner_pad.width) / 2.0
+        if circle_radius is None
+        else float(circle_radius)
+    ) * s
+    if radius <= 0.0 or radius > min(inner_pad.length, inner_pad.width) * s / 2.0 + 1e-9:
+        raise ValueError("circle_radius must be positive and fit inside inner_pad")
+
+    edge_map: Dict[str, Literal['left','right','top','bottom']] = {
+        'U': 'top', 'D': 'bottom', 'L': 'left', 'R': 'right'
+    }
+    if outer_edge is not None and outer_edge in edge_map:
+        outer_edge_str = edge_map[outer_edge]
+    else:
+        dx, dy = ox - cx, oy - cy
+        if abs(dx) > abs(dy):
+            outer_edge_str = 'left' if dx > 0 else 'right'
+        else:
+            outer_edge_str = 'bottom' if dy > 0 else 'top'
+    op1, op2 = _pad_edge_points(
+        outer_pad.center,
+        outer_pad.length,
+        outer_pad.width,
+        outer_pad.chamfer_size,
+        outer_pad.chamfer_type,
+        outer_edge_str,
+    )
+    midpoint = ((op1[0] + op2[0]) / 2.0, (op1[1] + op2[1]) / 2.0)
+    ux, uy = midpoint[0] - cx, midpoint[1] - cy
+    axis_length = math.hypot(ux, uy)
+    if axis_length <= radius:
+        raise ValueError("outer pad edge must lie outside the inner-pad incircle")
+    ux, uy = ux / axis_length, uy / axis_length
+    nx, ny = -uy, ux
+
+    def transverse(point):
+        return (point[0] - cx) * nx + (point[1] - cy) * ny
+
+    def tangent_points(point):
+        vx, vy = point[0] - cx, point[1] - cy
+        distance_sq = vx * vx + vy * vy
+        if distance_sq <= radius * radius:
+            raise ValueError("outer pad edge endpoint must lie outside the inner-pad incircle")
+        base_scale = radius * radius / distance_sq
+        offset_scale = radius * math.sqrt(distance_sq - radius * radius) / distance_sq
+        base_x = cx + base_scale * vx
+        base_y = cy + base_scale * vy
+        offset_x = -vy * offset_scale
+        offset_y = vx * offset_scale
+        return (
+            (base_x + offset_x, base_y + offset_y),
+            (base_x - offset_x, base_y - offset_y),
+        )
+
+    outer_negative, outer_positive = sorted((op1, op2), key=transverse)
+    tangent_negative = min(tangent_points(outer_negative), key=transverse)
+    tangent_positive = max(tangent_points(outer_positive), key=transverse)
+    points = [tangent_negative, outer_negative, outer_positive, tangent_positive]
+    return Polygon([Point(int(round(px)), int(round(py))) for px, py in points])
 
 
 def _pad_edge_center(center, length, width, chamfer_size, chamfer_type, edge: Literal['left', 'right', 'top', 'bottom']):
@@ -420,4 +525,4 @@ if __name__ == '__main__':
         layout.write(output_path)
         print(f"GDS file generated: {output_path}")
     except Exception as e:
-        print("[WARN] GDS export failed:", e) 
+        print("[WARN] GDS export failed:", e)

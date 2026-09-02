@@ -8,8 +8,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import pya
-from PyQt5.QtCore import QEvent, QPointF, QRectF, Qt
-from PyQt5.QtGui import QColor, QBrush, QFont, QFontDatabase, QFontMetricsF, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QBrush, QFont, QFontDatabase, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,17 +19,21 @@ from PyQt5.QtWidgets import (
     QFormLayout,
     QGraphicsScene,
     QGraphicsView,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSpinBox,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 def _discover_root_dir():
@@ -95,7 +99,7 @@ PREVIEW_LAYER_IDS = {
     "alignment_marks": [LAYER_DEFINITIONS["alignment_marks"]["id"], LAYER_DEFINITIONS["alignment_layer1"]["id"], LAYER_DEFINITIONS["alignment_layer2"]["id"]],
     "labels": [LAYER_DEFINITIONS["labels"]["id"]],
 }
-DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "hemt_component", "hall_component", "tlm_component", "sense_latch_array", "write_read_array"}
+DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "mosfet_pcell", "hemt_component", "woodpile_component", "crossbar_component", "hall_component", "tlm_component", "sense_latch_array", "write_read_array"}
 _FONT_FAMILY_CACHE = {}
 
 
@@ -289,6 +293,294 @@ class SymbolDialog(QDialog):
         self.setLayout(layout)
 
 
+def _tool_icon(tool_key, size=64):
+    """Draw a square 64 px icon distilled from each tool's default layout."""
+    if isinstance(size, QSize):
+        side = min(size.width(), size.height())
+    else:
+        side = int(size)
+    side = max(side, 16)
+    pixmap = QPixmap(side, side)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    # All schematics use the same 88 x 58 design space.  Uniform scaling
+    # preserves device geometry; centering keeps a safe square-icon margin.
+    scale = min((side - 4.0) / 88.0, (side - 4.0) / 58.0)
+    painter.translate((side - 88.0 * scale) / 2.0, (side - 58.0 * scale) / 2.0)
+    painter.scale(scale, scale)
+
+    channel = QColor("#f4d35e")
+    contact = QColor("#ff5a6e")
+    bottom_gate = QColor("#43a9e6")
+    top_gate = QColor("#39d0b0")
+    dielectric = QColor("#c687e8")
+    pad = QColor("#f3ad45")
+    fine_metal = QColor("#39c58c")
+    frame = QColor("#738597")
+
+    def rect(x, y, w, h, color, radius=2.0):
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawRoundedRect(QRectF(x, y, w, h), radius, radius)
+
+    def stroke(x1, y1, x2, y2, color=bottom_gate, thickness=3.0):
+        painter.setPen(QPen(color, thickness, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+    def polygon(points, color):
+        path = QPainterPath()
+        path.moveTo(QPointF(*points[0]))
+        for point in points[1:]:
+            path.lineTo(QPointF(*point))
+        path.closeSubpath()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawPath(path)
+
+    if tool_key == "nanodevice_fet":
+        # Default top/bottom buses with alternating interdigitated S/D fingers.
+        rect(24, 13, 40, 32, channel, 1.5)
+        rect(22, 8, 44, 5, contact, 1.0)
+        rect(22, 45, 44, 5, contact, 1.0)
+        for index, x in enumerate((27, 34, 41, 48, 55)):
+            if index % 2 == 0:
+                rect(x, 12, 3.5, 23, contact, 0.8)
+            else:
+                rect(x, 24, 3.5, 23, contact, 0.8)
+        rect(4, 10, 13, 14, contact, 2.0)
+        rect(4, 34, 13, 14, contact, 2.0)
+        stroke(17, 17, 22, 17, contact, 3.0)
+        stroke(17, 41, 22, 41, contact, 3.0)
+        rect(72, 22, 12, 14, top_gate, 2.0)
+        stroke(64, 29, 72, 29, top_gate, 3.0)
+    elif tool_key in ("gdsfactory_text", "nanodevice_text", "digital"):
+        # Vector letterforms remain recognizable even when no UI font loads.
+        stroke(18, 45, 31, 12, bottom_gate, 4.0)
+        stroke(31, 12, 44, 45, bottom_gate, 4.0)
+        stroke(23, 33, 39, 33, bottom_gate, 3.0)
+        painter.setPen(QPen(top_gate, 3.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(QRectF(49, 25, 18, 18))
+        stroke(67, 24, 67, 44, top_gate, 3.5)
+        stroke(15, 50, 73, 50, frame, 1.5)
+    elif tool_key in ("mosfet_component", "mosfet_pcell"):
+        # Four-terminal MOSFET: S/D left-right, bottom/top gate vertically.
+        rect(35, 22, 18, 14, channel, 1.5)
+        rect(27, 20, 34, 18, dielectric, 2.0)
+        polygon([(6, 18), (20, 18), (34, 24), (34, 34), (20, 40), (6, 40)], contact)
+        polygon([(82, 18), (68, 18), (54, 24), (54, 34), (68, 40), (82, 40)], contact)
+        polygon([(34, 5), (54, 5), (50, 21), (38, 21)], top_gate)
+        polygon([(34, 53), (54, 53), (50, 37), (38, 37)], bottom_gate)
+        if tool_key == "mosfet_pcell":
+            badge_color = QColor("#ffffff")
+            painter.setPen(QPen(badge_color, 1.2))
+            painter.setBrush(QBrush(QColor("#315873")))
+            painter.drawEllipse(QRectF(68, 2, 17, 17))
+            stroke(73, 6, 73, 16, badge_color, 1.5)
+            painter.setPen(QPen(badge_color, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawArc(QRectF(72, 6, 8, 6), -90 * 16, 180 * 16)
+    elif tool_key == "woodpile_component":
+        # Default 80:10:20 pad/landing/bar proportions, reduced to silhouettes.
+        rect(3, 31, 23, 23, bottom_gate, 2.5)
+        polygon([(26, 34), (43, 38), (43, 48), (26, 51)], bottom_gate)
+        rect(42, 37, 12, 13, bottom_gate, 1.5)
+        rect(50, 42, 26, 4, bottom_gate, 1.0)
+
+        # Material enclosure sits above the bottom bar and below the top bar.
+        rect(58.5, 39.5, 10, 9, channel, 1.5)
+
+        rect(52, 2, 23, 23, top_gate, 2.5)
+        polygon([(55, 25), (59, 34), (68, 34), (72, 25)], top_gate)
+        rect(57, 33, 13, 12, top_gate, 1.5)
+        rect(61.5, 40, 4, 16, top_gate, 1.0)
+    elif tool_key == "crossbar_component":
+        # Shared row pads on the left and shared column pads on the top.
+        for y in (27, 42):
+            rect(3, y - 5, 14, 10, bottom_gate, 1.5)
+            stroke(17, y, 75, y, bottom_gate, 3.0)
+        for x in (34, 51, 68):
+            rect(x - 5, 2, 10, 14, top_gate, 1.5)
+            stroke(x, 16, x, 49, top_gate, 3.0)
+            for y in (27, 42):
+                rect(x - 4, y - 4, 8, 8, dielectric, 1.0)
+    elif tool_key == "hemt_component":
+        # Default three-terminal fanout around the compact mesa/finger stack.
+        rect(31, 17, 26, 24, channel, 2.0)
+        rect(5, 21, 15, 16, top_gate, 2.0)
+        polygon([(20, 24), (31, 27), (31, 31), (20, 34)], top_gate)
+        rect(68, 21, 15, 16, contact, 2.0)
+        polygon([(68, 24), (57, 27), (57, 31), (68, 34)], contact)
+        rect(36, 2, 16, 11, pad, 2.0)
+        polygon([(39, 13), (41, 17), (47, 17), (49, 13)], pad)
+        rect(36, 45, 16, 11, pad, 2.0)
+        polygon([(41, 41), (39, 45), (49, 45), (47, 41)], pad)
+        stroke(31, 23, 57, 23, fine_metal, 2.2)
+        stroke(31, 29, 57, 29, top_gate, 2.2)
+        stroke(31, 35, 57, 35, fine_metal, 2.2)
+    elif tool_key == "hall_component":
+        # Hall bar with two current terminals and two voltage-probe pairs.
+        rect(19, 25, 50, 8, channel, 1.0)
+        rect(3, 20, 14, 18, contact, 2.0)
+        rect(71, 20, 14, 18, contact, 2.0)
+        stroke(17, 29, 19, 29, fine_metal, 3.0)
+        stroke(69, 29, 71, 29, fine_metal, 3.0)
+        for x in (31, 55):
+            stroke(x, 25, x, 13, fine_metal, 2.4)
+            stroke(x, 33, x, 45, fine_metal, 2.4)
+            rect(x - 6, 3, 12, 10, pad, 1.5)
+            rect(x - 6, 45, 12, 10, pad, 1.5)
+    elif tool_key == "tlm_component":
+        # Default TLM: one channel crossed by contacts with increasing gaps.
+        rect(7, 26, 74, 6, QColor("#b7d6ec"), 1.0)
+        xs = (14, 25, 37, 51, 68)
+        for index, x in enumerate(xs):
+            rect(x - 2, 21, 4, 16, fine_metal, 0.8)
+            if index % 2 == 0:
+                stroke(x, 21, x, 12, fine_metal, 2.0)
+                rect(x - 6, 3, 12, 9, pad, 1.5)
+            else:
+                stroke(x, 37, x, 46, fine_metal, 2.0)
+                rect(x - 6, 46, 12, 9, pad, 1.5)
+    elif tool_key == "sense_latch_array":
+        # One cell: two MOS devices in series with a shared middle contact.
+        rect(10, 25, 27, 9, channel, 1.5)
+        rect(46, 25, 27, 9, channel, 1.5)
+        rect(4, 21, 9, 17, contact, 1.8)
+        rect(36, 20, 11, 19, contact, 1.8)
+        rect(72, 21, 9, 17, contact, 1.8)
+        stroke(23, 13, 23, 46, bottom_gate, 4.0)
+        stroke(59, 13, 59, 46, bottom_gate, 4.0)
+        rect(19, 7, 8, 7, bottom_gate, 1.5)
+        rect(55, 7, 8, 7, bottom_gate, 1.5)
+    elif tool_key == "write_read_array":
+        # One cell: the first MOS source is routed to the second MOS gate.
+        rect(8, 28, 25, 8, channel, 1.5)
+        rect(56, 28, 25, 8, channel, 1.5)
+        rect(3, 24, 8, 16, contact, 1.8)
+        rect(32, 23, 9, 18, contact, 1.8)
+        rect(52, 24, 8, 16, contact, 1.8)
+        rect(79, 24, 7, 16, contact, 1.8)
+        stroke(21, 18, 21, 46, bottom_gate, 4.0)
+        stroke(68, 20, 68, 45, top_gate, 4.0)
+        # Explicit source-to-gate coupling route and junction node.
+        stroke(36.5, 23, 36.5, 10, top_gate, 2.4)
+        stroke(36.5, 10, 68, 10, top_gate, 2.4)
+        stroke(68, 10, 68, 18, top_gate, 2.4)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(top_gate))
+        painter.drawEllipse(QPointF(36.5, 23), 3.0, 3.0)
+        polygon([(64, 17), (72, 17), (68, 22)], top_gate)
+    elif tool_key in ("qrcode", "mark"):
+        painter.setPen(QPen(bottom_gate, 3.0))
+        painter.setBrush(Qt.NoBrush)
+        for x, y in ((9, 8), (57, 8), (9, 35)):
+            painter.drawRect(QRectF(x, y, 17, 13))
+            painter.drawRect(QRectF(x + 5, y + 4, 7, 5))
+        rect(57, 36, 7, 7, top_gate, 0.5)
+        rect(68, 36, 7, 13, pad, 0.5)
+    else:
+        painter.setPen(QPen(bottom_gate, 3.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(QRectF(8, 8, 72, 42), 5, 5)
+        painter.setPen(QPen(QColor("#d7e3ee"), 1.5))
+        painter.drawLine(QPointF(16, 39), QPointF(31, 21))
+        painter.drawLine(QPointF(31, 21), QPointF(48, 35))
+        painter.drawLine(QPointF(48, 35), QPointF(70, 16))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+class FunctionPicker(QPushButton):
+    """ComboBox-compatible tool picker backed by a three-column icon grid."""
+
+    currentIndexChanged = pyqtSignal(int)
+
+    def __init__(self, parent=None, columns=3):
+        super().__init__(parent)
+        self._items = []
+        self._buttons = []
+        self._current_index = -1
+        self._columns = columns
+        # Match the compact, closed-state height of the previous QComboBox.
+        # Icons are intentionally shown only in the expanded grid.
+        self.setFixedHeight(26)
+        self.setStyleSheet(
+            "QPushButton { text-align: left; padding: 2px 28px 2px 7px; }"
+            "QPushButton::menu-indicator { subcontrol-position: right center; right: 10px; }"
+        )
+
+        self._menu = QMenu(self)
+        self._menu.setStyleSheet(
+            "QMenu { background: #f7f8fa; border: 1px solid #b8c0c8; padding: 6px; }"
+            "QToolButton#functionCard { color: #20262d; background: transparent; "
+            "border: 1px solid transparent; border-radius: 6px; padding: 5px; }"
+            "QToolButton#functionCard:hover { background: #eaf3fb; border-color: #9bc7eb; }"
+            "QToolButton#functionCard:checked { background: #dceefd; border: 1px solid #4b9ddd; }"
+        )
+        self._menu_host = QWidget(self._menu)
+        self._menu_host.setObjectName("functionPickerHost")
+        self._menu_host.setStyleSheet("#functionPickerHost { background: #f7f8fa; }")
+        self._grid = QGridLayout(self._menu_host)
+        self._grid.setContentsMargins(2, 2, 2, 2)
+        self._grid.setHorizontalSpacing(5)
+        self._grid.setVerticalSpacing(5)
+        action = QWidgetAction(self._menu)
+        action.setDefaultWidget(self._menu_host)
+        self._menu.addAction(action)
+        self.setMenu(self._menu)
+
+    def addItem(self, title, data):
+        index = len(self._items)
+        icon = _tool_icon(data)
+        self._items.append((title, data, icon))
+
+        button = QToolButton(self._menu_host)
+        button.setObjectName("functionCard")
+        button.setText(title)
+        button.setIcon(icon)
+        button.setIconSize(QSize(64, 64))
+        button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        button.setCheckable(True)
+        button.setFixedSize(146, 104)
+        button.clicked.connect(lambda _checked=False, idx=index: self._select_from_menu(idx))
+        self._grid.addWidget(button, index // self._columns, index % self._columns)
+        self._buttons.append(button)
+        if self._current_index < 0:
+            self.setCurrentIndex(0)
+
+    def _select_from_menu(self, index):
+        self.setCurrentIndex(index)
+        self._menu.close()
+
+    def currentData(self):
+        if self._current_index < 0:
+            return None
+        return self._items[self._current_index][1]
+
+    def findData(self, data):
+        for index, (_title, item_data, _icon) in enumerate(self._items):
+            if item_data == data:
+                return index
+        return -1
+
+    def setCurrentIndex(self, index):
+        if index < 0 or index >= len(self._items):
+            return
+        changed = index != self._current_index
+        self._current_index = index
+        title, _data, icon = self._items[index]
+        self.setText(title)
+        self.setIcon(QIcon())
+        for button_index, button in enumerate(self._buttons):
+            button.setChecked(button_index == index)
+        if changed:
+            self.currentIndexChanged.emit(index)
+
+
 class ToolkitDialog(QDialog):
     """Main NanoDevice dialog: parameter form, preview, config I/O, and insert."""
 
@@ -301,7 +593,7 @@ class ToolkitDialog(QDialog):
         self.setWindowTitle("NanoDevice Toolkit")
         self.setMinimumSize(980, 680)
 
-        self.tool_select = QComboBox()
+        self.tool_select = FunctionPicker(columns=6)
         for spec in tool_specs:
             self.tool_select.addItem(spec.title, spec.key)
         self.tool_select.currentIndexChanged.connect(self._rebuild_param_form)
@@ -560,6 +852,8 @@ class ToolkitDialog(QDialog):
 
     def _normalize_tool_values(self, tool, values):
         normalized = dict(values)
+        if tool.key == "woodpile_component" and bool(normalized.get("equal_bar_widths", True)):
+            normalized["top_bar_width"] = normalized.get("bottom_bar_width", 2.0)
         if tool.key in ("sense_latch_array", "write_read_array"):
             mode = str(normalized.get("array_shape_mode", "square") or "square").lower()
             if mode == "square":
@@ -572,6 +866,60 @@ class ToolkitDialog(QDialog):
 
     def _apply_dynamic_param_state(self):
         tool = self._current_tool()
+        if tool.key == "tlm_component":
+            raw_values = self._raw_values()
+            split_ebl = bool(raw_values.get("split_ebl_exposure", False))
+            ebl_keys = (
+                "fine_fanout_length", "bridge_pad_size", "bridge_pad_spacing",
+                "bridge_pad_v_step", "fine_landing_size", "fine_route_width",
+                "route_clearance", "bridge_center_mark_enabled",
+            )
+            for key in ebl_keys:
+                control = self.controls.get(key)
+                if control is not None:
+                    control.setEnabled(split_ebl)
+            show_bridge_mark = split_ebl and bool(raw_values.get("bridge_center_mark_enabled", False))
+            for key in ("bridge_center_mark_type", "bridge_center_mark_size", "bridge_center_mark_width"):
+                control = self.controls.get(key)
+                if control is not None:
+                    control.setEnabled(show_bridge_mark)
+            return
+        if tool.key == "hall_component":
+            split_ebl = bool(self._raw_values().get("split_ebl_exposure", False))
+            for key in ("fine_fanout_length", "bridge_pad_length", "bridge_pad_width", "ebl_overlap"):
+                control = self.controls.get(key)
+                if control is not None:
+                    control.setEnabled(split_ebl)
+            return
+        if tool.key == "woodpile_component":
+            raw_values = self._raw_values()
+            equal_widths = bool(raw_values.get("equal_bar_widths", True))
+            top_width_control = self.controls.get("top_bar_width")
+            if top_width_control is not None:
+                top_width_control.setEnabled(not equal_widths)
+            chamfer_size_control = self.controls.get("outer_pad_chamfer_size")
+            chamfer_type = str(raw_values.get("outer_pad_chamfer_type", "none"))
+            if chamfer_size_control is not None:
+                chamfer_size_control.setEnabled(chamfer_type != "none")
+            return
+        if tool.key == "crossbar_component":
+            raw_values = self._raw_values()
+            gradient = str(raw_values.get("array_mode", "equal")) == "gradient"
+            for key in ("horizontal_bar_width_end", "vertical_bar_width_end"):
+                control = self.controls.get(key)
+                if control is not None:
+                    control.setEnabled(gradient)
+            draw_pads = bool(raw_values.get("draw_array_pads", True))
+            for key in ("array_pad_size", "array_pad_overlap", "row_pad_offset", "column_pad_offset", "pad_connection_style", "horizontal_pad_side", "vertical_pad_side"):
+                control = self.controls.get(key)
+                if control is not None:
+                    control.setEnabled(draw_pads)
+            show_mark = bool(raw_values.get("show_center_mark", True))
+            for key in ("center_mark_type", "center_mark_size", "center_mark_width", "center_mark_offset_x", "center_mark_offset_y", "mark_interval_skip", "center_mark_layer"):
+                control = self.controls.get(key)
+                if control is not None:
+                    control.setEnabled(show_mark)
+            return
         if tool.key not in ("sense_latch_array", "write_read_array"):
             return
 
@@ -2513,6 +2861,30 @@ def _insert_hemt_component(layout, top_cell, values):
     top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
 
 
+def _insert_woodpile_component(layout, top_cell, values):
+    from components.woodpile import Woodpile
+
+    params = dict(values)
+    x = params.pop("x")
+    y = params.pop("y")
+    cell_name = params.pop("cell_name")
+    device = Woodpile(layout=layout, **params)
+    cell = device.create_single_device(_next_cell_name(layout, cell_name), x, y)
+    top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+
+def _insert_crossbar_component(layout, top_cell, values):
+    from components.crossbar import CrossBar
+
+    params = dict(values)
+    x = params.pop("x")
+    y = params.pop("y")
+    cell_name = params.pop("cell_name")
+    device = CrossBar(layout=layout, **params)
+    cell = device.create_array_cell(_next_cell_name(layout, cell_name), x, y)
+    top_cell.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+
 def _insert_fet_component(layout, top_cell, values):
     from components.fet import FET
 
@@ -2696,6 +3068,7 @@ def render_hall_component(scene, values, visible_layers=None):
     buckets = {
         "channel": [layer_ids["channel"]],
         "source_drain": [layer_ids["source_drain"]],
+        "fine_source_drain": [layer_ids["fine_source_drain"]],
         "labels": [layer_ids["labels"]],
         "alignment_marks": [layer_ids["alignment_marks"]],
         "parameter_labels": [layer_ids["parameter_labels"]],
@@ -2746,6 +3119,7 @@ def render_tlm_component(scene, values, visible_layers=None):
     buckets = {
         "channel": [layer_ids["channel"]],
         "source_drain": [layer_ids["source_drain"]],
+        "fine_source_drain": [layer_ids["fine_source_drain"]],
         "labels": [layer_ids["labels"]],
         "alignment_marks": [layer_ids["alignment_marks"]],
         "parameter_labels": [layer_ids["parameter_labels"]],
@@ -2940,6 +3314,149 @@ def render_hemt_component(scene, values, visible_layers=None):
                 _draw_path(scene, path, pen, brush)
 
 
+def render_woodpile_component(scene, values, visible_layers=None):
+    from components.woodpile import Woodpile
+
+    visible_layers = visible_layers or {}
+    params = dict(values)
+    cell_name = params.pop("cell_name", "Woodpile_Device")
+    x = params.pop("x", 0.0)
+    y = params.pop("y", 0.0)
+
+    layout = pya.Layout()
+    layout.dbu = DEFAULT_DBU
+    device = Woodpile(layout=layout, **params)
+    cell = device.create_single_device(f"__{cell_name}_PREVIEW__", x, y)
+    layer_ids = device.get_layer_ids()
+
+    for layer_key in ("bottom_gate", "material", "top_gate"):
+        if not visible_layers.get(layer_key, True):
+            continue
+        layer_id = layer_ids[layer_key]
+        style_key = "channel" if layer_key == "material" else layer_key
+        pen, brush = _preview_style_for_layer_id(layer_id, style_key)
+        for shape in cell.shapes(layout.layer(layer_id, 0)).each():
+            for path in _shape_to_paths(shape, layout.dbu):
+                _draw_path(scene, path, pen, brush)
+
+
+def render_crossbar_component(scene, values, visible_layers=None):
+    from components.crossbar import CrossBar
+
+    visible_layers = visible_layers or {}
+    params = dict(values)
+    cell_name = params.pop("cell_name", "CrossBar_Array")
+    x = params.pop("x", 0.0)
+    y = params.pop("y", 0.0)
+
+    layout = pya.Layout()
+    layout.dbu = DEFAULT_DBU
+    device = CrossBar(layout=layout, **params)
+    cell = device.create_array_cell(f"__{cell_name}_PREVIEW__", x, y)
+    layer_ids = device.get_layer_ids()
+
+    for layer_key in ("bottom_gate", "bottom_dielectric", "top_dielectric", "top_gate", "pad", "note", "alignment_marks"):
+        if not visible_layers.get(layer_key, True):
+            continue
+        layer_id = layer_ids[layer_key]
+        pen, brush = _preview_style_for_layer_id(layer_id, layer_key)
+        for shape in cell.shapes(layout.layer(layer_id, 0)).each():
+            for path in _shape_to_paths(shape, layout.dbu):
+                _draw_path(scene, path, pen, brush)
+
+
+WOODPILE_COMPONENT_TOOL = ToolSpec(
+    key="woodpile_component",
+    title="Woodpile Cross Device",
+    library_name="",
+    pcell_name="",
+    preview_renderer=render_woodpile_component,
+    preview_layers=[
+        ("bottom_gate", "Back Gate + Pad"),
+        ("material", "N/P Material"),
+        ("top_gate", "Top Gate + Pad"),
+    ],
+    insert_handler=_insert_woodpile_component,
+    params=[
+        ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "Woodpile_Device", kind="string"),
+        ParameterSpec("x", "Cross Center X", "Cx", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("y", "Cross Center Y", "Cy", "Placement", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("channel_type", "Material Type", "Type", "Material", "n", kind="choice", choices=[("n", "n"), ("p", "p")], tooltip="n uses layer 13/0; p uses layer 14/0."),
+        ParameterSpec("material_margin", "Material Enclosure", "M", "Material", 1.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Material extension around the central bar-overlap footprint."),
+        ParameterSpec("equal_bar_widths", "Equal Bar Widths", "Eq", "Bars", True, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("bottom_bar_length", "Back-Gate Bar Length", "Lbg", "Bars", 20.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bottom_bar_width", "Back-Gate Bar Width", "Wbg", "Bars", 2.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_bar_length", "Top-Gate Bar Length", "Ltg", "Bars", 20.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_bar_width", "Top-Gate Bar Width", "Wtg", "Bars", 2.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Enabled when Equal Bar Widths is false."),
+        ParameterSpec("inner_pad_length", "Inner Pad Length (Along Bar)", "Lin", "Inner Pads", 10.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("inner_pad_width", "Inner Pad Width (Across Bar)", "Win", "Inner Pads", 10.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("inner_pad_overlap", "Bar / Inner Overlap", "Oin", "Inner Pads", 1.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("fanout_length", "Fanout Length", "Lf", "Fanout", 40.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("outer_pad_length", "Outer Pad Length (Along Each Bar)", "Lout", "Synchronized Outer Pads", 80.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Top: along Y. Back gate: along X."),
+        ParameterSpec("outer_pad_width", "Outer Pad Width (Across Each Bar)", "Wout", "Synchronized Outer Pads", 80.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Top: along X. Back gate: along Y."),
+        ParameterSpec("outer_pad_chamfer_type", "Outer Pad Chamfer", "Tout", "Synchronized Outer Pads", "none", kind="choice", choices=[("none (square)", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("outer_pad_chamfer_size", "Outer Pad Chamfer Size", "Cout", "Synchronized Outer Pads", 6.0, minimum=0.0, maximum=2500.0, suffix=" um"),
+    ],
+)
+
+
+CROSSBAR_COMPONENT_TOOL = ToolSpec(
+    key="crossbar_component",
+    title="Cross Bar Array",
+    library_name="",
+    pcell_name="",
+    preview_renderer=render_crossbar_component,
+    preview_layers=[
+        ("bottom_gate", "Back-Gate Rows + Pads (11/0)"),
+        ("bottom_dielectric", "Back Dielectric (12/0)"),
+        ("top_dielectric", "Top Dielectric (17/0)"),
+        ("top_gate", "Top-Gate Columns + Pads (18/0)"),
+        ("pad", "Breakout Pads (41/0)"),
+        ("note", "Grid / Labels (6/0)"),
+        ("alignment_marks", "All Grid-Gap Marks (3/0)"),
+    ],
+    insert_handler=_insert_crossbar_component,
+    params=[
+        ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "CrossBar_Array", kind="string"),
+        ParameterSpec("x", "Array Center X", "Cx", "Placement", 0.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("y", "Array Center Y", "Cy", "Placement", 0.0, minimum=-100000.0, maximum=100000.0, suffix=" um"),
+        ParameterSpec("x_num", "Top-Gate Column Count N", "N", "Array", 16, kind="int", minimum=1, maximum=512, tooltip="N vertical shared lines and pads."),
+        ParameterSpec("y_num", "Back-Gate Row Count M", "M", "Array", 16, kind="int", minimum=1, maximum=512, tooltip="M horizontal shared lines and pads; total devices = N x M, total pads = N + M."),
+        ParameterSpec("x_pitch", "Column Pitch", "Px", "Array", 30.0, minimum=0.002, maximum=10000.0, suffix=" um"),
+        ParameterSpec("y_pitch", "Row Pitch", "Py", "Array", 30.0, minimum=0.002, maximum=10000.0, suffix=" um"),
+        ParameterSpec("array_mode", "Size Distribution", "Mode", "Bar Widths", "gradient", kind="choice", choices=[("equal", "equal"), ("linear gradient", "gradient")]),
+        ParameterSpec("horizontal_bar_width", "Horizontal Width / Start", "Wh0", "Bar Widths", 1.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Back-gate row width. In gradient mode this is the first (lowest-Y) row width."),
+        ParameterSpec("horizontal_bar_width_end", "Horizontal End Width", "Wh1", "Bar Widths", 5.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Last (highest-Y) row width in gradient mode."),
+        ParameterSpec("vertical_bar_width", "Vertical Width / Start", "Wv0", "Bar Widths", 1.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Top-gate column width. In gradient mode this is the first (lowest-X) column width."),
+        ParameterSpec("vertical_bar_width_end", "Vertical End Width", "Wv1", "Bar Widths", 5.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Last (highest-X) column width in gradient mode."),
+        ParameterSpec("bar_end_extension", "Shared Bar End Extension", "Be", "Layout", 2.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Extension beyond the outermost crossing before breakout routing."),
+        ParameterSpec("bottom_dielectric_extension_x", "Back Dielectric Extend X", "Bdx", "Back Dielectric", 2.0, minimum=0.05, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bottom_dielectric_extension_y", "Back Dielectric Extend Y", "Bdy", "Back Dielectric", 2.0, minimum=0.05, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_dielectric_extension_x", "Top Dielectric Extend X", "Tdx", "Top Dielectric", 2.0, minimum=0.05, maximum=5000.0, suffix=" um"),
+        ParameterSpec("top_dielectric_extension_y", "Top Dielectric Extend Y", "Tdy", "Top Dielectric", 2.0, minimum=0.05, maximum=5000.0, suffix=" um"),
+        ParameterSpec("draw_array_pads", "Array Pads", "Pad", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("note_text_enabled", "Pad Index Labels", "Txt", "Options", 1, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("array_pad_size", "Pad Size", "Ps", "Fanout", 20.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("array_pad_overlap", "Pad Overlap", "Po", "Fanout", 4.0, minimum=0.0, maximum=1000.0, suffix=" um"),
+        ParameterSpec("row_pad_offset", "Row Pad Offset", "Rpo", "Fanout", 18.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("column_pad_offset", "Column Pad Offset", "Cpo", "Fanout", 18.0, minimum=0.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("pad_connection_style", "Pad Connection", "Pcs", "Fanout", "line", kind="choice", choices=[("line", "line"), ("block", "block")]),
+        ParameterSpec("horizontal_pad_side", "Horizontal Pad Side", "Hps", "Fanout", "left", kind="choice", choices=[("left", "left"), ("right", "right")], tooltip="Places every horizontal back-gate row pad on the selected side."),
+        ParameterSpec("vertical_pad_side", "Vertical Pad Side", "Vps", "Fanout", "top", kind="choice", choices=[("top", "top"), ("bottom", "bottom")], tooltip="Places every vertical top-gate column pad on the selected side."),
+        ParameterSpec("show_center_mark", "Grid-Gap Marks", "Mk", "Marks", 1, kind="choice", choices=[("true", True), ("false", False)], tooltip="Places one mark in every blank interval between four neighbouring crossings: (N-1) x (M-1) marks."),
+        ParameterSpec("center_mark_type", "Mark Type", "Mt", "Marks", "cross", kind="choice", choices=[("cross", "cross"), ("box frame", "box"), ("diamond", "diamond"), ("circle", "circle"), ("triangle", "triangle"), ("L shape", "l_shape"), ("T shape", "t_shape")]),
+        ParameterSpec("center_mark_size", "Mark Size", "Ms", "Marks", 10.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("center_mark_width", "Mark Width", "Mw", "Marks", 1.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("center_mark_offset_x", "Mark Offset in Gap X", "Mox", "Marks", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("center_mark_offset_y", "Mark Offset in Gap Y", "Moy", "Marks", 0.0, minimum=-10000.0, maximum=10000.0, suffix=" um"),
+        ParameterSpec("mark_interval_skip", "Mark Interval Skip", "Mis", "Marks", 0, kind="int", minimum=0, maximum=511, tooltip="0 marks every grid gap; 1 marks one then skips one gap; 2 skips two gaps, applied along both X and Y."),
+        ParameterSpec("center_mark_layer", "Mark Layer", "Ml", "Marks", 3, kind="int", minimum=0, maximum=1000),
+        ParameterSpec("show_pixel_outline", "Show Grid Outline", "Out", "Debug", 0, kind="choice", choices=[("true", True), ("false", False)]),
+        ParameterSpec("pixel_outline_layer", "Grid Outline Layer", "Ol", "Debug", 6, kind="int", minimum=0, maximum=1000),
+    ],
+)
+
+
 HEMT_COMPONENT_TOOL = ToolSpec(
     key="hemt_component",
     title="HEMT Device",
@@ -3079,6 +3596,17 @@ MOSFET_COMPONENT_TOOL = ToolSpec(
 )
 
 
+MOSFET_PCELL_TOOL = ToolSpec(
+    key="mosfet_pcell",
+    title="MOSFET - PCell",
+    library_name="NanoDeviceToolkitLib",
+    pcell_name="MOSFETPCell",
+    preview_renderer=render_mosfet_component,
+    preview_layers=list(MOSFET_COMPONENT_TOOL.preview_layers),
+    params=list(MOSFET_COMPONENT_TOOL.params),
+)
+
+
 FET_COMPONENT_TOOL = ToolSpec(
     key="fet_component",
     title="FET",
@@ -3124,7 +3652,7 @@ HALL_COMPONENT_TOOL = ToolSpec(
     library_name="",
     pcell_name="",
     preview_renderer=render_hall_component,
-    preview_layers=[("channel", "Channel"), ("source_drain", "Contacts"), ("labels", "Labels"), ("alignment_marks", "Marks"), ("parameter_labels", "Notes")],
+    preview_layers=[("channel", "Channel"), ("source_drain", "Coarse Pads / Bridges (11-19)"), ("fine_source_drain", "Fine Channel Electrodes (21-29)"), ("labels", "Labels"), ("alignment_marks", "Marks"), ("parameter_labels", "Notes")],
     insert_handler=_insert_hall_component,
     params=[
         ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "HallBar_Device", kind="string"),
@@ -3141,7 +3669,10 @@ HALL_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("bar_width", "Bar Width", "Wb", "Channel", 20.0, minimum=0.1, maximum=5000.0, suffix=" um"),
         ParameterSpec("v_protrude_width", "V Protrude Width", "VpW", "Channel", 5.0, minimum=0.1, maximum=5000.0, suffix=" um"),
         ParameterSpec("v_protrude_length", "V Protrude Length", "VpL", "Channel", 5.0, minimum=0.1, maximum=5000.0, suffix=" um"),
-        ParameterSpec("dist_v", "V Distance", "Dv", "Channel", 15.5, minimum=0.1, maximum=5000.0, suffix=" um"),
+        ParameterSpec("v_contact_pairs", "V Electrode Pair Count", "NV", "Channel", 2, kind="int", minimum=1, maximum=64, tooltip="Number of transverse voltage-contact pairs. Pairs are centered along the channel."),
+        ParameterSpec("dist_v", "V Pair Pitch", "Dv", "Channel", 15.5, minimum=0.1, maximum=5000.0, suffix=" um", tooltip="Center-to-center pitch of adjacent V-contact pairs."),
+        ParameterSpec("min_electrode_gap", "Minimum Electrode Gap", "Gmin", "Channel", 2.0, minimum=0.0, maximum=1000.0, suffix=" um", tooltip="Required clearance between independent contacts, bridge pads, and probe pads."),
+        ParameterSpec("min_fanout_corner_angle", "Minimum Fanout Angle", "Amin", "Channel", 20.0, minimum=1.0, maximum=89.0, suffix=" deg", tooltip="Reject fanout edge combinations that create sharper corners or needle-like tapers."),
         ParameterSpec("device_margin_x", "Device Margin X", "DMx", "Marks", 170.0, minimum=0.0, maximum=10000.0, suffix=" um"),
         ParameterSpec("device_margin_y", "Device Margin Y", "DMy", "Marks", 140.0, minimum=0.0, maximum=10000.0, suffix=" um"),
         ParameterSpec("mark_size", "Mark Size", "MS", "Marks", 20.0, minimum=0.1, maximum=1000.0, suffix=" um"),
@@ -3170,6 +3701,14 @@ HALL_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("v_outer_chamfer_type", "V Chamfer Type", "VCt", "Contacts", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
         ParameterSpec("v_outer_offset_x", "V Offset X", "Vx", "Contacts", 45.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
         ParameterSpec("v_outer_offset_y", "V Offset Y", "Vy", "Contacts", 90.0, minimum=-5000.0, maximum=5000.0, suffix=" um"),
+        ParameterSpec("outer_pad_gap", "Outer Pad Gap", "Pgap", "Contacts", 10.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Minimum lithography gap between neighbouring large probe pads."),
+        ParameterSpec("coarse_fanout_pad_edge_width", "Fanout Landing Width", "Fw", "Contacts", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="0 uses the complete usable edge of the large pad; set a positive value only to request a narrower landing."),
+        ParameterSpec("source_drain_layer_id", "Coarse Metal Layer", "Lc", "EBL Split", 15, kind="int", minimum=11, maximum=19, tooltip="Layer 11-19 for probe pads, bridge pads, and coarse fanout."),
+        ParameterSpec("split_ebl_exposure", "Split Fine / Coarse EBL", "EBL", "EBL Split", 0, kind="choice", choices=[("false", False), ("true", True)], tooltip="Use the corresponding layer +10 for channel contacts and fine leads."),
+        ParameterSpec("fine_fanout_length", "Fine Lead Clearance", "Flen", "EBL Split", 12.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Distance from the outer edge of a channel contact to its coarse bridge pad."),
+        ParameterSpec("bridge_pad_length", "Bridge Pad Route Length", "Blen", "EBL Split", 12.0, minimum=0.01, maximum=5000.0, suffix=" um", tooltip="Bridge-pad dimension along its routing direction."),
+        ParameterSpec("bridge_pad_width", "Bridge Pad Width", "Bwid", "EBL Split", 10.0, minimum=0.01, maximum=5000.0, suffix=" um", tooltip="Bridge-pad transverse dimension; must preserve clearance between adjacent V electrodes."),
+        ParameterSpec("ebl_overlap", "Fine / Coarse Overlap", "Ovl", "EBL Split", 2.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Fine-metal penetration into every coarse bridge pad for overlay tolerance."),
     ],
 )
 
@@ -3180,7 +3719,7 @@ TLM_COMPONENT_TOOL = ToolSpec(
     library_name="",
     pcell_name="",
     preview_renderer=render_tlm_component,
-    preview_layers=[("channel", "Channel"), ("source_drain", "Pads / Fanout"), ("labels", "Labels"), ("alignment_marks", "Marks"), ("parameter_labels", "Notes")],
+    preview_layers=[("channel", "Channel"), ("source_drain", "Coarse Pads / Fanout"), ("fine_source_drain", "Fine EBL Metal"), ("labels", "Labels"), ("alignment_marks", "Marks"), ("parameter_labels", "Notes")],
     insert_handler=_insert_tlm_component,
     params=[
         ParameterSpec("cell_name", "Cell Name", "Cell", "Placement", "TLM_Device", kind="string"),
@@ -3200,6 +3739,20 @@ TLM_COMPONENT_TOOL = ToolSpec(
         ParameterSpec("outer_pad_offset_y", "Outer Pad Offset Y", "Oy", "Pads", 100.0, minimum=0.1, maximum=5000.0, suffix=" um"),
         ParameterSpec("outer_pad_chamfer_size", "Pad Chamfer", "Ch", "Pads", 6.0, minimum=0.0, maximum=1000.0, suffix=" um"),
         ParameterSpec("outer_pad_chamfer_type", "Chamfer Type", "CT", "Pads", "straight", kind="choice", choices=[("none", "none"), ("straight", "straight"), ("round", "round")]),
+        ParameterSpec("outer_pad_layout", "Outer Pad Layout", "Olay", "Pads", "auto", kind="choice", choices=[("auto", "auto"), ("two rows", "two_rows"), ("rectangular frame", "rectangular_frame")], tooltip="Auto uses two rows for small devices and a four-sided rectangular frame above the configured threshold."),
+        ParameterSpec("outer_pad_frame_threshold", "Frame Threshold", "Fthr", "Pads", 10, kind="int", minimum=4, maximum=100, tooltip="Electrode count at which Auto switches from two rows to a rectangular pad frame."),
+        ParameterSpec("split_ebl_exposure", "Split Fine / Coarse EBL", "EBL", "EBL Split", 0, kind="choice", choices=[("false", False), ("true", True)], tooltip="Place the small channel contacts and their leads on the corresponding 21-29 layer while keeping bridge pads, coarse fanout, and outer pads on the 11-19 layer."),
+        ParameterSpec("fine_fanout_length", "Minimum Channel / Bridge Gap", "Fgap", "EBL Split", 2.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Minimum clear distance to the bridge-pad row. It expands only when the Manhattan bundle needs more lane space to prevent interference."),
+        ParameterSpec("bridge_pad_size", "Square Bridge Pad Size", "Bsize", "EBL Split", 10.0, minimum=0.01, maximum=5000.0, suffix=" um", tooltip="Side length of every square bridge pad."),
+        ParameterSpec("bridge_pad_spacing", "Bridge Pad Spacing", "Bspace", "EBL Split", 12.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Minimum edge-to-edge spacing between bridge pads; the 12 um default keeps neighbouring tangent fanouts clear."),
+        ParameterSpec("bridge_pad_v_step", "Bridge V-Step", "Vstep", "EBL Split", 5.0, minimum=0.0, maximum=5000.0, suffix=" um / level", tooltip="Outward offset per V level. Five pads use levels 0, 1, 2, 1, 0; set 0 for one straight row."),
+        ParameterSpec("fine_landing_size", "Concentric Fine Landing", "Land", "EBL Split", 6.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Side length of the fine-layer square centred inside every coarse bridge pad. The fine route terminates at its centre."),
+        ParameterSpec("fine_route_width", "Fine Route Width", "Fwid", "EBL Routing", 1.0, minimum=0.001, maximum=5000.0, suffix=" um", tooltip="Constant width of the Manhattan route from each contact electrode to its bridge pad."),
+        ParameterSpec("route_clearance", "Route Clearance", "Clr", "EBL Routing", 1.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="Minimum lane clearance used by the NanoRoute-style bundle router."),
+        ParameterSpec("bridge_center_mark_enabled", "Etch Bridge-Centre Mark", "Etch", "Bridge Etch Mark", 0, kind="choice", choices=[("false", False), ("true", True)], tooltip="Subtract a NanoMark-style registration mark from the coarse metal at every bridge-pad centre."),
+        ParameterSpec("bridge_center_mark_type", "Etch Mark Type", "EtchT", "Bridge Etch Mark", "chessboard", kind="choice", choices=[("diagonal squares", "chessboard"), ("bonecross", "bonecross"), ("split bonecross (EBL composite)", "split_bonecross"), ("plain cross", "cross")]),
+        ParameterSpec("bridge_center_mark_size", "Etch Mark Size", "EtchS", "Bridge Etch Mark", 4.0, minimum=0.001, maximum=5000.0, suffix=" um"),
+        ParameterSpec("bridge_center_mark_width", "Etch Mark Width", "EtchW", "Bridge Etch Mark", 0.8, minimum=0.001, maximum=5000.0, suffix=" um"),
         ParameterSpec("channel_length", "Channel Length", "Lch", "Channel", 0.0, minimum=0.0, maximum=5000.0, suffix=" um", tooltip="0 means auto"),
         ParameterSpec("channel_width", "Channel Width", "Wch", "Channel", 10.0, minimum=0.1, maximum=1000.0, suffix=" um"),
         ParameterSpec("device_margin_x", "Device Margin X", "DMx", "Marks", 150.0, minimum=0.0, maximum=10000.0, suffix=" um"),
@@ -3399,6 +3952,9 @@ def launch_toolkit_dialog():
             NANODEVICE_FET_TOOL,
             GDSFACTORY_TEXT_TOOL,
             MOSFET_COMPONENT_TOOL,
+            MOSFET_PCELL_TOOL,
+            WOODPILE_COMPONENT_TOOL,
+            CROSSBAR_COMPONENT_TOOL,
             HEMT_COMPONENT_TOOL,
             HALL_COMPONENT_TOOL,
             TLM_COMPONENT_TOOL,

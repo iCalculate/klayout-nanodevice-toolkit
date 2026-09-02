@@ -98,6 +98,28 @@ if errorlevel 1 (
   call :fail "Failed to copy components directory."
   goto :end_fail
 )
+if not exist "%TARGET%\components\hallbar.py" (
+  call :fail "Hall bar runtime was not installed."
+  goto :end_fail
+)
+if not exist "%TARGET%\utils\fanout_utils.py" (
+  call :fail "Fanout runtime was not installed."
+  goto :end_fail
+)
+if not exist "%TARGET%\nanodevice-toolkit\nanodevice_toolkit.py" (
+  call :fail "NanoDevice GUI runtime was not installed."
+  goto :end_fail
+)
+findstr /C:"v_contact_pairs" "%TARGET%\components\hallbar.py" >nul
+if errorlevel 1 (
+  call :fail "Installed Hall bar runtime is missing multi-pair support."
+  goto :end_fail
+)
+findstr /C:"coarse_fanout_pad_edge_width" "%TARGET%\nanodevice-toolkit\nanodevice_toolkit.py" >nul
+if errorlevel 1 (
+  call :fail "Installed NanoDevice GUI is missing Hall bar fanout controls."
+  goto :end_fail
+)
 call :ok "Runtime dependencies copied"
 
 call :step "Copying LabPDK runtime bundle"
@@ -119,6 +141,7 @@ call :bullet "NanoRoutingLib PCells"
 call :bullet "NanoRouting GUI and toolbar button"
 call :bullet "NanoMark GUI for writefield marks and mark arrays"
 call :bullet "config.py, utils, components, and PDK runtime files"
+call :bullet "Hall bar multi-pair, split-EBL, full-edge fanout, and clearance controls"
 echo.
 call :headline "Next step"
 call :info "Action" "Restart KLayout to load the updated toolkit."

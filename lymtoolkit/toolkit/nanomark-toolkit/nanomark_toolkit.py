@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 
 import pya
-from PyQt5.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QBrush, QFont, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QBrush, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,11 +22,14 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 
@@ -696,6 +699,183 @@ class Grid9Selector(QWidget):
             box.setChecked(bool(values.get(key, False)))
 
 
+def _mark_tool_icon(tool_key, side=64):
+    """Draw one square, 64 px mark-tool thumbnail from its default topology."""
+    side = max(int(side), 16)
+    pixmap = QPixmap(side, side)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    scale = side / 64.0
+    painter.scale(scale, scale)
+
+    mark = QColor("#d83b62")
+    guide = QColor("#1479b8")
+    active = QColor("#159b83")
+    overlay = QColor("#8e5bb7")
+    frame = QColor("#4e5d6c")
+
+    def rect(x, y, width, height, color, radius=0.8):
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawRoundedRect(QRectF(x, y, width, height), radius, radius)
+
+    def stroke(x1, y1, x2, y2, color=mark, width=2.0):
+        painter.setPen(QPen(color, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+    def cross(cx, cy, size, width, color=mark):
+        rect(cx - width / 2.0, cy - size / 2.0, width, size, color)
+        rect(cx - size / 2.0, cy - width / 2.0, size, width, color)
+
+    def outline(x, y, width, height, color=frame, pen_width=1.5):
+        painter.setPen(QPen(color, pen_width))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(QRectF(x, y, width, height), 1.5, 1.5)
+
+    if tool_key == "writefield_mark":
+        # One writefield with corner registration marks and central composite.
+        outline(7, 7, 50, 50, guide, 1.8)
+        for x, y, sx, sy in ((11, 11, 1, 1), (53, 11, -1, 1), (11, 53, 1, -1), (53, 53, -1, -1)):
+            stroke(x, y, x + sx * 7, y, frame, 2.2)
+            stroke(x, y, x, y + sy * 7, frame, 2.2)
+        cross(32, 32, 20, 3.0, mark)
+        for x, y in ((21, 21), (43, 21), (21, 43), (43, 43)):
+            cross(x, y, 6, 1.4, overlay)
+    elif tool_key == "custom_global_mark":
+        # Default 3 x 3 enabled-slot grid inside chip/active boundaries.
+        outline(5, 5, 54, 54, frame, 1.4)
+        outline(10, 10, 44, 44, active, 1.2)
+        for row, y in enumerate((17, 32, 47)):
+            for col, x in enumerate((17, 32, 47)):
+                cross(x, y, 7 if (row, col) != (0, 0) else 11, 1.6, mark)
+        outline(10.5, 10.5, 13, 13, overlay, 1.1)
+    elif tool_key == "raith_ebl_global_mark":
+        # Large main cross with the four fine satellite squares used by Raith.
+        cross(32, 32, 38, 3.2, mark)
+        cross(32, 32, 16, 1.3, active)
+        for x, y in ((18, 18), (46, 18), (18, 46), (46, 46)):
+            rect(x - 3, y - 3, 6, 6, overlay, 0.8)
+            outline(x - 5, y - 5, 10, 10, guide, 1.0)
+    elif tool_key == "text_pattern_array":
+        # Four vector A glyphs convey the default two-dimensional text array.
+        for ox, oy in ((9, 8), (35, 8), (9, 34), (35, 34)):
+            stroke(ox, oy + 18, ox + 8, oy, guide, 2.2)
+            stroke(ox + 8, oy, ox + 16, oy + 18, guide, 2.2)
+            stroke(ox + 4, oy + 11, ox + 12, oy + 11, active, 1.7)
+    elif tool_key == "mark_array":
+        # Default general cross array within sample and active boundaries.
+        outline(5, 5, 54, 54, frame, 1.3)
+        outline(10, 10, 44, 44, active, 1.1)
+        for y in (17, 32, 47):
+            for x in (17, 32, 47):
+                cross(x, y, 8, 1.8, mark)
+    elif tool_key == "cv_mark_array":
+        # Four compact ArUco-like codes plus the default bonecross references.
+        patterns = (
+            (1, 0, 1, 1), (1, 1, 0, 1), (0, 1, 1, 1), (1, 0, 0, 1),
+        )
+        for index, (ox, oy) in enumerate(((7, 7), (35, 7), (7, 35), (35, 35))):
+            outline(ox, oy, 22, 22, frame, 1.4)
+            bits = patterns[index]
+            for bit, (dx, dy) in zip(bits, ((4, 4), (12, 4), (4, 12), (12, 12))):
+                if bit:
+                    rect(ox + dx, oy + dy, 6, 6, mark, 0.4)
+            cross(ox + 11, oy + 11, 8, 1.2, overlay)
+    else:
+        outline(8, 8, 48, 48, frame, 1.5)
+        cross(32, 32, 26, 3.0, mark)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+class MarkFunctionPicker(QPushButton):
+    """Compact closed selector with a light six-column 64 px icon menu."""
+
+    currentIndexChanged = pyqtSignal(int)
+
+    def __init__(self, parent=None, columns=6):
+        super().__init__(parent)
+        self._items = []
+        self._buttons = []
+        self._current_index = -1
+        self._columns = columns
+        self.setFixedHeight(26)
+        self.setStyleSheet(
+            "QPushButton { text-align: left; padding: 2px 28px 2px 7px; }"
+            "QPushButton::menu-indicator { subcontrol-position: right center; right: 10px; }"
+        )
+
+        self._menu = QMenu(self)
+        self._menu.setStyleSheet(
+            "QMenu { background: #f7f8fa; border: 1px solid #b8c0c8; padding: 6px; }"
+            "QToolButton#functionCard { color: #20262d; background: transparent; "
+            "border: 1px solid transparent; border-radius: 6px; padding: 5px; font-size: 8pt; }"
+            "QToolButton#functionCard:hover { background: #eaf3fb; border-color: #9bc7eb; }"
+            "QToolButton#functionCard:checked { background: #dceefd; border: 1px solid #4b9ddd; }"
+        )
+        self._menu_host = QWidget(self._menu)
+        self._menu_host.setObjectName("functionPickerHost")
+        self._menu_host.setStyleSheet("#functionPickerHost { background: #f7f8fa; }")
+        self._grid = QGridLayout(self._menu_host)
+        self._grid.setContentsMargins(2, 2, 2, 2)
+        self._grid.setHorizontalSpacing(5)
+        self._grid.setVerticalSpacing(5)
+        action = QWidgetAction(self._menu)
+        action.setDefaultWidget(self._menu_host)
+        self._menu.addAction(action)
+        self.setMenu(self._menu)
+
+    def addItem(self, title, data):
+        index = len(self._items)
+        icon = _mark_tool_icon(data)
+        self._items.append((title, data, icon))
+        button = QToolButton(self._menu_host)
+        button.setObjectName("functionCard")
+        button.setText(title)
+        button.setToolTip(title)
+        button.setIcon(icon)
+        button.setIconSize(QSize(64, 64))
+        button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        button.setCheckable(True)
+        button.setFixedSize(146, 104)
+        button.clicked.connect(lambda _checked=False, idx=index: self._select_from_menu(idx))
+        self._grid.addWidget(button, index // self._columns, index % self._columns)
+        self._buttons.append(button)
+        if self._current_index < 0:
+            self.setCurrentIndex(0)
+
+    def _select_from_menu(self, index):
+        self.setCurrentIndex(index)
+        self._menu.close()
+
+    def currentData(self):
+        if self._current_index < 0:
+            return None
+        return self._items[self._current_index][1]
+
+    def findData(self, data):
+        for index, (_title, item_data, _icon) in enumerate(self._items):
+            if item_data == data:
+                return index
+        return -1
+
+    def setCurrentIndex(self, index):
+        if index < 0 or index >= len(self._items):
+            return
+        changed = index != self._current_index
+        self._current_index = index
+        title, _data, _icon = self._items[index]
+        self.setText(title)
+        self.setIcon(QIcon())
+        for button_index, button in enumerate(self._buttons):
+            button.setChecked(button_index == index)
+        if changed:
+            self.currentIndexChanged.emit(index)
+
+
 class NanoMarkDialog(QDialog):
     def __init__(self, tool_specs, parent=None):
         super().__init__(parent)
@@ -706,7 +886,7 @@ class NanoMarkDialog(QDialog):
         self.setWindowTitle("NanoMark Toolkit")
         self.setMinimumSize(1000, 700)
 
-        self.tool_select = QComboBox()
+        self.tool_select = MarkFunctionPicker(columns=6)
         for spec in tool_specs:
             self.tool_select.addItem(spec.title, spec.key)
         self.tool_select.currentIndexChanged.connect(self._rebuild_form)

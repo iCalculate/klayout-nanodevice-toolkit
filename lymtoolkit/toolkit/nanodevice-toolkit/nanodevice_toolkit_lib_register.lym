@@ -22,6 +22,7 @@ import pya
 sys.path.insert(0, os.path.dirname(__file__))
 from nanodevice_fet_pcell import NanoDeviceFETPCell
 from gdsfactory_text_pcell import GdsfactoryTextPCell
+from mosfet_pcell import MOSFETPCell
 
 
 class NanoDeviceToolkitLib(pya.Library):
@@ -29,6 +30,7 @@ class NanoDeviceToolkitLib(pya.Library):
         self.description = "NanoDevice Toolkit Library"
         self.layout().register_pcell("NanoDeviceFETPCell", NanoDeviceFETPCell())
         self.layout().register_pcell("NanoDeviceTextPCell", GdsfactoryTextPCell())
+        self.layout().register_pcell("MOSFETPCell", MOSFETPCell())
         self.register("NanoDeviceToolkitLib")
 
 
