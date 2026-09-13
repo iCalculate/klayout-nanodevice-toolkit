@@ -25,6 +25,7 @@
 This repository focuses on the maintained KLayout toolkit and the reusable device-building modules underneath it.
 
 - Parametric device generation for MOSFET, short-channel HEMT, crossbar arrays, FET, Hall bar, TLM, meander, and electrode structures
+- External NanoDevice add-ons with validated ZIP installation, development-directory loading, and isolated failures
 - Maintained KLayout GUI, macro, and library workflow under `lymtoolkit/`
 - Reusable Python utilities under `components/` and `utils/`
 - Grayscale and image-driven pattern generation for nanofabrication workflows
@@ -37,6 +38,7 @@ The older root-level Python launcher files were removed to avoid maintaining a s
 | --- | --- | --- |
 | KLayout install | `lymtoolkit/install_lymtoolkit.bat` | Installs the toolkit GUI, runtime modules, and bundled resources into KLayout |
 | KLayout GUI | `Tools -> NanoDevice -> NanoDevice GUI` | Opens the maintained interactive GUI after installation |
+| NanoDevice add-ons | `NanoDevice GUI -> Add-ons` | Installs external device ZIPs and reloads trusted local plugins |
 | NanoRouting GUI | `Tools -> NanoDevice -> NanoRouting GUI` | Opens the routing-focused GUI for direct path / bundle generation |
 | NanoMark GUI | `Tools -> NanoMark -> NanoMark GUI` | Opens the mark toolkit for EBL writefield marks, general mark arrays, and CV mark arrays |
 | PDK tooling | `lymtoolkit/pdk/` | Keeps technology files, layers, examples, and registration macros together |
@@ -149,6 +151,7 @@ KLayout_Nanodevice_Toolkit/
 - [Chinese documentation](docs/README_CN.md)
 - [Environment setup notes](docs/ENV_SETUP.md)
 - [Quick start notes](docs/QUICK_START.md)
+- [NanoDevice Add-on API v1](docs/ADDON_DEVELOPMENT.md)
 - [KLayout toolkit notes](lymtoolkit/README.md)
 
 ## Known Boundaries

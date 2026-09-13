@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Vendored DEPLOF polygon font data derived from gdsfactory constants.
 
 Source: gdsfactory (MIT), polygon font tables used by gf.components.text().

@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 
 import pya
 from PyQt5.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
@@ -34,6 +33,14 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QWidgetAction,
+)
+
+from addon_api import ParameterSpec, ToolSpec, TOOLKIT_ADDON_API_VERSION
+from addon_manager import (
+    add_development_path,
+    discover_addons,
+    install_addon_zip,
+    user_addon_dir,
 )
 
 def _discover_root_dir():
@@ -101,39 +108,6 @@ PREVIEW_LAYER_IDS = {
 }
 DIRECT_PREVIEW_TOOL_KEYS = {"gdsfactory_text", "nanodevice_fet", "mosfet_component", "mosfet_pcell", "hemt_component", "woodpile_component", "crossbar_component", "hall_component", "tlm_component", "sense_latch_array", "write_read_array"}
 _FONT_FAMILY_CACHE = {}
-
-
-@dataclass
-class ParameterSpec:
-    """UI/control metadata for one NanoDevice toolkit parameter."""
-
-    key: str
-    label: str
-    symbol: str
-    group: str
-    default: object
-    kind: str = "float"
-    minimum: float = -1e6
-    maximum: float = 1e6
-    decimals: int = 3
-    choices: list = None
-    suffix: str = ""
-    tooltip: str = ""
-
-
-@dataclass
-class ToolSpec:
-    """Connect one tool entry to its PCell, preview renderer, and insert path."""
-
-    key: str
-    title: str
-    library_name: str
-    pcell_name: str
-    preview_renderer: callable
-    params: list
-    preview_layers: list
-    insert_params_builder: callable = None
-    insert_handler: callable = None
 
 
 class PreviewView(QGraphicsView):
@@ -552,6 +526,15 @@ class FunctionPicker(QPushButton):
         if self._current_index < 0:
             self.setCurrentIndex(0)
 
+    def clear(self):
+        for button in self._buttons:
+            self._grid.removeWidget(button)
+            button.deleteLater()
+        self._items = []
+        self._buttons = []
+        self._current_index = -1
+        self.setText("")
+
     def _select_from_menu(self, index):
         self.setCurrentIndex(index)
         self._menu.close()
@@ -581,20 +564,108 @@ class FunctionPicker(QPushButton):
             self.currentIndexChanged.emit(index)
 
 
+class AddonManagerDialog(QDialog):
+    """Install and inspect external NanoDevice add-ons."""
+
+    def __init__(self, owner, parent=None):
+        super().__init__(parent)
+        self.owner = owner
+        self.setWindowTitle("NanoDevice Add-on Manager")
+        self.setMinimumSize(720, 420)
+        self.status = QTextEdit()
+        self.status.setReadOnly(True)
+        install_btn = QPushButton("Install ZIP")
+        install_btn.clicked.connect(self._install_zip)
+        dev_btn = QPushButton("Add Development Directory")
+        dev_btn.clicked.connect(self._add_development_directory)
+        reload_btn = QPushButton("Reload")
+        reload_btn.clicked.connect(self._reload)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        buttons = QHBoxLayout()
+        for button in (install_btn, dev_btn, reload_btn):
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        buttons.addWidget(close_btn)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Installed add-ons are trusted Python code and run inside KLayout."))
+        layout.addWidget(self.status, 1)
+        layout.addLayout(buttons)
+        self.setLayout(layout)
+        self._render_records()
+
+    def _render_records(self):
+        lines = ["User add-on folder: {}".format(user_addon_dir()), ""]
+        if not self.owner.addon_records:
+            lines.append("No external add-ons discovered.")
+        for record in self.owner.addon_records:
+            identity = record.addon_id or "unknown"
+            lines.append("[{}] {} {} ({})".format(record.status.upper(), record.name, record.version, identity))
+            lines.append("  {}".format(record.source))
+            if record.message:
+                lines.append("  {}".format(record.message))
+        self.status.setPlainText("\n".join(lines))
+
+    def _install_zip(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Install NanoDevice Add-on", "", "ZIP Files (*.zip)")
+        if not path:
+            return
+        answer = QMessageBox.warning(
+            self, "Trust Add-on Code",
+            "This ZIP contains Python code that will run inside KLayout. Install only if you trust its source.\n\nContinue?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            install_addon_zip(path)
+        except FileExistsError as exc:
+            replace = QMessageBox.question(self, "Replace Add-on", "{}\n\nReplace it?".format(exc))
+            if replace != QMessageBox.Yes:
+                return
+            try:
+                install_addon_zip(path, replace=True)
+            except Exception as replace_exc:
+                QMessageBox.critical(self, "Install Failed", str(replace_exc))
+                return
+        except Exception as exc:
+            QMessageBox.critical(self, "Install Failed", str(exc))
+            return
+        self._reload()
+
+    def _add_development_directory(self):
+        path = QFileDialog.getExistingDirectory(self, "Select NanoDevice Add-on Directory")
+        if not path:
+            return
+        try:
+            add_development_path(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Add Directory Failed", str(exc))
+            return
+        self._reload()
+
+    def _reload(self):
+        self.owner.reload_addons()
+        self._render_records()
+
+
 class ToolkitDialog(QDialog):
     """Main NanoDevice dialog: parameter form, preview, config I/O, and insert."""
 
     def __init__(self, tool_specs, parent=None):
         super().__init__(parent)
-        self.tool_specs = {spec.key: spec for spec in tool_specs}
+        self.core_tool_specs = list(tool_specs)
+        addon_tools, self.addon_records = discover_addons(ROOT_DIR)
+        all_tools = self.core_tool_specs + addon_tools
+        self.tool_specs = {spec.key: spec for spec in all_tools}
         self.controls = {}
-        self.current_tool_key = tool_specs[0].key
+        self.current_tool_key = all_tools[0].key
 
         self.setWindowTitle("NanoDevice Toolkit")
         self.setMinimumSize(980, 680)
 
         self.tool_select = FunctionPicker(columns=6)
-        for spec in tool_specs:
+        for spec in all_tools:
             self.tool_select.addItem(spec.title, spec.key)
         self.tool_select.currentIndexChanged.connect(self._rebuild_param_form)
 
@@ -609,6 +680,9 @@ class ToolkitDialog(QDialog):
 
         self.preview = PreviewView()
         self.preview_label = QLabel("Generated preview")
+        self.validation_text = QTextEdit()
+        self.validation_text.setReadOnly(True)
+        self.validation_text.setMaximumHeight(105)
         self.layer_checks = {}
         self.layer_layout = QHBoxLayout()
         self.layer_layout.setContentsMargins(0, 0, 0, 0)
@@ -624,9 +698,11 @@ class ToolkitDialog(QDialog):
         self.export_btn.clicked.connect(self._export_config)
         self.symbol_btn = QPushButton("Symbols")
         self.symbol_btn.clicked.connect(self._show_symbols)
+        self.addon_btn = QPushButton("Add-ons")
+        self.addon_btn.clicked.connect(self._show_addon_manager)
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.reject)
-        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.close_btn):
+        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.addon_btn, self.close_btn):
             button.setAutoDefault(False)
             button.setDefault(False)
 
@@ -660,11 +736,13 @@ class ToolkitDialog(QDialog):
         layer_row.addStretch(1)
         right.addLayout(layer_row)
         right.addWidget(self.preview, 1)
+        right.addWidget(self.validation_text)
         split.addLayout(right, 1)
         main.addLayout(split, 1)
 
         btns = QHBoxLayout()
         btns.addWidget(self.symbol_btn)
+        btns.addWidget(self.addon_btn)
         btns.addWidget(self.import_btn)
         btns.addWidget(self.export_btn)
         btns.addStretch(1)
@@ -677,6 +755,23 @@ class ToolkitDialog(QDialog):
     def _current_tool(self):
         key = self.tool_select.currentData()
         return self.tool_specs[key]
+
+    def _show_addon_manager(self):
+        AddonManagerDialog(self, self).exec_()
+
+    def reload_addons(self):
+        current_key = self.tool_select.currentData()
+        addon_tools, self.addon_records = discover_addons(ROOT_DIR)
+        all_tools = self.core_tool_specs + addon_tools
+        self.tool_specs = {spec.key: spec for spec in all_tools}
+        self.tool_select.blockSignals(True)
+        self.tool_select.clear()
+        for spec in all_tools:
+            self.tool_select.addItem(spec.title, spec.key)
+        index = self.tool_select.findData(current_key)
+        self.tool_select.setCurrentIndex(index if index >= 0 else 0)
+        self.tool_select.blockSignals(False)
+        self._rebuild_param_form()
 
     def _clear_layout(self, layout):
         while layout.count():
@@ -866,8 +961,18 @@ class ToolkitDialog(QDialog):
 
     def _apply_dynamic_param_state(self):
         tool = self._current_tool()
+        raw_values = self._raw_values()
+        for param in tool.params:
+            control = self.controls.get(param.key)
+            label = self.control_labels.get(param.key)
+            visible = self._condition_matches(param.visible_if, raw_values)
+            enabled = self._condition_matches(param.enabled_if, raw_values) and not param.read_only
+            if control is not None:
+                control.setVisible(visible)
+                control.setEnabled(enabled)
+            if label is not None:
+                label.setVisible(visible)
         if tool.key == "tlm_component":
-            raw_values = self._raw_values()
             split_ebl = bool(raw_values.get("split_ebl_exposure", False))
             ebl_keys = (
                 "fine_fanout_length", "bridge_pad_size", "bridge_pad_spacing",
@@ -885,14 +990,13 @@ class ToolkitDialog(QDialog):
                     control.setEnabled(show_bridge_mark)
             return
         if tool.key == "hall_component":
-            split_ebl = bool(self._raw_values().get("split_ebl_exposure", False))
+            split_ebl = bool(raw_values.get("split_ebl_exposure", False))
             for key in ("fine_fanout_length", "bridge_pad_length", "bridge_pad_width", "ebl_overlap"):
                 control = self.controls.get(key)
                 if control is not None:
                     control.setEnabled(split_ebl)
             return
         if tool.key == "woodpile_component":
-            raw_values = self._raw_values()
             equal_widths = bool(raw_values.get("equal_bar_widths", True))
             top_width_control = self.controls.get("top_bar_width")
             if top_width_control is not None:
@@ -903,7 +1007,6 @@ class ToolkitDialog(QDialog):
                 chamfer_size_control.setEnabled(chamfer_type != "none")
             return
         if tool.key == "crossbar_component":
-            raw_values = self._raw_values()
             gradient = str(raw_values.get("array_mode", "equal")) == "gradient"
             for key in ("horizontal_bar_width_end", "vertical_bar_width_end"):
                 control = self.controls.get(key)
@@ -923,7 +1026,6 @@ class ToolkitDialog(QDialog):
         if tool.key not in ("sense_latch_array", "write_read_array"):
             return
 
-        raw_values = self._raw_values()
         mode = str(raw_values.get("array_shape_mode", "square") or "square").lower()
         draw_top_dielectric = bool(raw_values.get("draw_top_dielectric", False))
         sense_fet_structure = str(raw_values.get("sense_fet_structure", "plain") or "plain").lower()
@@ -956,6 +1058,19 @@ class ToolkitDialog(QDialog):
                     control.setVisible(show_interdigit)
                 if label is not None:
                     label.setVisible(show_interdigit)
+
+    @staticmethod
+    def _condition_matches(condition, values):
+        if not condition:
+            return True
+        for key, expected in condition.items():
+            actual = values.get(key)
+            if isinstance(expected, (list, tuple, set)):
+                if actual not in expected:
+                    return False
+            elif actual != expected:
+                return False
+        return True
 
     def _set_control_value(self, param, value):
         control = self.controls.get(param.key)
@@ -1007,7 +1122,10 @@ class ToolkitDialog(QDialog):
         tool = self._current_tool()
         return {
             "format": "nanodevice-toolkit-config",
-            "version": 1,
+            "version": 2,
+            "toolkit_addon_api": TOOLKIT_ADDON_API_VERSION,
+            "addon_id": tool.addon_id,
+            "addon_version": tool.addon_version,
             "tool_key": tool.key,
             "tool_title": tool.title,
             "values": self._serialize_values(self._values()),
@@ -1023,6 +1141,9 @@ class ToolkitDialog(QDialog):
         return serialized
 
     def _deserialize_values(self, tool, values):
+        migrator = getattr(tool, "config_migrator", None)
+        if migrator is not None:
+            values = migrator(dict(values))
         deserialized = {}
         params_by_key = {param.key: param for param in tool.params}
         for key, value in values.items():
@@ -1075,7 +1196,11 @@ class ToolkitDialog(QDialog):
 
         tool_key = payload.get("tool_key")
         if tool_key not in self.tool_specs:
-            QMessageBox.critical(self, "Import Failed", f"Unsupported tool_key: {tool_key}")
+            addon_id = payload.get("addon_id", "")
+            detail = f"Unsupported tool_key: {tool_key}"
+            if addon_id and addon_id != "core":
+                detail += f"\nRequired add-on is not loaded: {addon_id}"
+            QMessageBox.critical(self, "Import Failed", detail)
             return
 
         tool_index = self.tool_select.findData(tool_key)
@@ -1085,7 +1210,11 @@ class ToolkitDialog(QDialog):
 
         self.tool_select.setCurrentIndex(tool_index)
         tool = self._current_tool()
-        values = self._deserialize_values(tool, payload.get("values", {}))
+        try:
+            values = self._deserialize_values(tool, payload.get("values", {}))
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Failed", str(exc))
+            return
         for param in tool.params:
             if param.key in values:
                 self._set_control_value(param, values[param.key])
@@ -1093,15 +1222,37 @@ class ToolkitDialog(QDialog):
 
     def _refresh_preview(self):
         tool = self._current_tool()
+        self._update_tool_status(tool, self._values())
         for key, visible in self._layer_visibility().items():
             self.preview.set_layer_visibility(key, visible)
         self.preview.draw_tool_preview(tool, self._values(), preserve_view=True)
 
     def _refit_preview(self):
         tool = self._current_tool()
+        self._update_tool_status(tool, self._values())
         for key, visible in self._layer_visibility().items():
             self.preview.set_layer_visibility(key, visible)
         self.preview.draw_tool_preview(tool, self._values(), preserve_view=False)
+
+    def _update_tool_status(self, tool, values):
+        lines = []
+        if tool.summary_renderer is not None:
+            try:
+                summary = tool.summary_renderer(values)
+                if summary:
+                    lines.append(str(summary))
+            except Exception as exc:
+                lines.append("Summary unavailable: {}".format(exc))
+        if tool.validator is not None:
+            try:
+                result = tool.validator(values) or {}
+                for error in result.get("errors", []):
+                    lines.append("ERROR: {}".format(error))
+                for warning in result.get("warnings", []):
+                    lines.append("WARNING: {}".format(warning))
+            except Exception as exc:
+                lines.append("ERROR: validation failed: {}".format(exc))
+        self.validation_text.setPlainText("\n".join(lines) if lines else "Ready")
 
     def _update_layer_controls(self, tool):
         while self.layer_layout.count():
@@ -1186,6 +1337,20 @@ class ToolkitDialog(QDialog):
         params = dict(self._values())
 
         try:
+            if tool.validator is not None:
+                validation = tool.validator(params) or {}
+                errors = list(validation.get("errors", []))
+                warnings = list(validation.get("warnings", []))
+                if errors:
+                    QMessageBox.critical(self, "Design Check Failed", "\n".join(errors))
+                    return
+                if warnings:
+                    answer = QMessageBox.warning(
+                        self, "Design Check Warnings", "\n".join(warnings) + "\n\nInsert this layout anyway?",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+                    )
+                    if answer != QMessageBox.Yes:
+                        return
             if tool.insert_handler is not None:
                 tool.insert_handler(layout, top_cell, params)
             else:
@@ -1385,7 +1550,7 @@ def _build_preview_layout(tool_spec, values):
 
 def _preview_layer_ids_for_tool_key(tool_spec, values, raw_key):
     layer_key = PREVIEW_LAYER_KEY_ALIASES.get(raw_key, raw_key)
-    layer_ids = list(PREVIEW_LAYER_IDS.get(layer_key, []))
+    layer_ids = list(tool_spec.layer_ids.get(raw_key, tool_spec.layer_ids.get(layer_key, PREVIEW_LAYER_IDS.get(layer_key, []))))
 
     if tool_spec.key == "mosfet_component":
         channel_type = str(values.get("channel_type", "p")).lower()
