@@ -138,7 +138,8 @@ Install:
 
 GUI highlights:
 - Extensible toolkit-style architecture
-- Symbolic preview before insertion
+- Symbolic preview before insertion; expensive add-ons may opt into manual
+  **Regenerate** mode with a compact Preparing/percentage/Ready indicator.
 - Separate `Preview`, `Insert`, and `Symbols` actions
 - Parameter symbols included for future schematic/annotation diagrams
 

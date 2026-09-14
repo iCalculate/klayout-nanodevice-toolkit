@@ -10,6 +10,7 @@ import pya
 from PyQt5.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush, QFont, QFontDatabase, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt5.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -27,8 +28,11 @@ from PyQt5.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -178,13 +182,15 @@ class PreviewView(QGraphicsView):
         saved_center = self.mapToScene(self.viewport().rect().center())
         tool_changed = tool_spec.key != self._last_tool_key
         scene.clear()
+        error = None
         try:
             if tool_spec.key in DIRECT_PREVIEW_TOOL_KEYS:
                 tool_spec.preview_renderer(scene, values, self._layer_visibility)
             else:
                 _draw_generated_preview(scene, tool_spec, values, self._layer_visibility)
         except Exception as exc:
-            self._draw_preview_error(scene, str(exc))
+            error = str(exc)
+            self._draw_preview_error(scene, error)
         item_bounds = scene.itemsBoundingRect()
         if item_bounds.isNull():
             item_bounds = QRectF(-50.0, -50.0, 100.0, 100.0)
@@ -194,11 +200,12 @@ class PreviewView(QGraphicsView):
             self.setTransform(saved_transform)
             self.centerOn(saved_center)
             self._last_tool_key = tool_spec.key
-            return
+            return error
         self.resetTransform()
         self.fitInView(self._preview_bounds, Qt.KeepAspectRatio)
         self._has_fitted_once = True
         self._last_tool_key = tool_spec.key
+        return error
 
     def _draw_preview_error(self, scene, message):
         text_item = scene.addText("Preview unavailable")
@@ -507,9 +514,11 @@ class FunctionPicker(QPushButton):
         self._menu.addAction(action)
         self.setMenu(self._menu)
 
-    def addItem(self, title, data):
+    def addItem(self, title, data, icon_path=""):
         index = len(self._items)
-        icon = _tool_icon(data)
+        icon = QIcon(icon_path) if icon_path and os.path.isfile(icon_path) else _tool_icon(data)
+        if icon.isNull():
+            icon = _tool_icon(data)
         self._items.append((title, data, icon))
 
         button = QToolButton(self._menu_host)
@@ -557,7 +566,8 @@ class FunctionPicker(QPushButton):
         self._current_index = index
         title, _data, icon = self._items[index]
         self.setText(title)
-        self.setIcon(QIcon())
+        self.setIcon(icon)
+        self.setIconSize(QSize(18, 18))
         for button_index, button in enumerate(self._buttons):
             button.setChecked(button_index == index)
         if changed:
@@ -571,9 +581,22 @@ class AddonManagerDialog(QDialog):
         super().__init__(parent)
         self.owner = owner
         self.setWindowTitle("NanoDevice Add-on Manager")
-        self.setMinimumSize(720, 420)
-        self.status = QTextEdit()
-        self.status.setReadOnly(True)
+        self.setMinimumSize(820, 440)
+
+        install_path = QLabel(user_addon_dir())
+        install_path.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        install_path.setStyleSheet(
+            "QLabel { background: #f4f6f8; border: 1px solid #c7cdd3; "
+            "border-radius: 3px; padding: 6px 8px; }"
+        )
+        self.addon_list = QTreeWidget()
+        self.addon_list.setColumnCount(5)
+        self.addon_list.setHeaderLabels(["Add-on", "Version", "Functions", "Status", "Source"])
+        self.addon_list.setRootIsDecorated(False)
+        self.addon_list.setAlternatingRowColors(True)
+        self.empty_label = QLabel()
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setStyleSheet("QLabel { color: #69727c; padding: 18px; }")
         install_btn = QPushButton("Install ZIP")
         install_btn.clicked.connect(self._install_zip)
         dev_btn = QPushButton("Add Development Directory")
@@ -583,28 +606,54 @@ class AddonManagerDialog(QDialog):
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         buttons = QHBoxLayout()
+        buttons.setSpacing(8)
         for button in (install_btn, dev_btn, reload_btn):
             buttons.addWidget(button)
         buttons.addStretch(1)
+        close_btn.setMinimumWidth(82)
         buttons.addWidget(close_btn)
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(9)
         layout.addWidget(QLabel("Installed add-ons are trusted Python code and run inside KLayout."))
-        layout.addWidget(self.status, 1)
+        layout.addWidget(QLabel("ZIP installation folder"))
+        layout.addWidget(install_path)
+        layout.addWidget(QLabel("Installed and registered add-ons"))
+        layout.addWidget(self.addon_list, 1)
+        layout.addWidget(self.empty_label, 1)
         layout.addLayout(buttons)
         self.setLayout(layout)
         self._render_records()
 
     def _render_records(self):
-        lines = ["User add-on folder: {}".format(user_addon_dir()), ""]
-        if not self.owner.addon_records:
-            lines.append("No external add-ons discovered.")
+        self.addon_list.clear()
         for record in self.owner.addon_records:
             identity = record.addon_id or "unknown"
-            lines.append("[{}] {} {} ({})".format(record.status.upper(), record.name, record.version, identity))
-            lines.append("  {}".format(record.source))
+            functions = ""
+            if record.addon is not None:
+                functions = ", ".join(tool.title for tool in record.addon.tools)
+            item = QTreeWidgetItem([
+                record.name,
+                record.version or "-",
+                functions or "-",
+                record.status.upper(),
+                record.source,
+            ])
+            item.setToolTip(0, "Add-on ID: {}".format(identity))
             if record.message:
-                lines.append("  {}".format(record.message))
-        self.status.setPlainText("\n".join(lines))
+                item.setToolTip(3, record.message)
+                item.setToolTip(4, record.message)
+            self.addon_list.addTopLevelItem(item)
+        has_records = bool(self.owner.addon_records)
+        self.addon_list.setVisible(has_records)
+        self.empty_label.setVisible(not has_records)
+        self.empty_label.setText(
+            "No add-ons are currently installed or registered.\n"
+            "Use Install ZIP to copy one into the folder shown above."
+        )
+        if has_records:
+            for column in range(4):
+                self.addon_list.resizeColumnToContents(column)
 
     def _install_zip(self):
         path, _ = QFileDialog.getOpenFileName(self, "Install NanoDevice Add-on", "", "ZIP Files (*.zip)")
@@ -666,7 +715,7 @@ class ToolkitDialog(QDialog):
 
         self.tool_select = FunctionPicker(columns=6)
         for spec in all_tools:
-            self.tool_select.addItem(spec.title, spec.key)
+            self.tool_select.addItem(spec.title, spec.key, getattr(spec, "icon_path", ""))
         self.tool_select.currentIndexChanged.connect(self._rebuild_param_form)
 
         self.scroll = QScrollArea()
@@ -680,9 +729,19 @@ class ToolkitDialog(QDialog):
 
         self.preview = PreviewView()
         self.preview_label = QLabel("Generated preview")
-        self.validation_text = QTextEdit()
-        self.validation_text.setReadOnly(True)
-        self.validation_text.setMaximumHeight(105)
+        self.status_label = QLabel()
+        self.status_label.setMinimumWidth(80)
+        self.status_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.status_label.setStyleSheet("QLabel { color: #56606a; padding: 2px 5px; }")
+        self.progress_label = QLabel("0%")
+        self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.setFixedWidth(96)
+        self.progress_label.setStyleSheet(
+            "QLabel { color: #4b6477; background: #edf2f6; border: 1px solid #cbd6df; "
+            "border-radius: 9px; padding: 2px 8px; }"
+        )
+        self._preview_dirty = False
         self.layer_checks = {}
         self.layer_layout = QHBoxLayout()
         self.layer_layout.setContentsMargins(0, 0, 0, 0)
@@ -702,9 +761,19 @@ class ToolkitDialog(QDialog):
         self.addon_btn.clicked.connect(self._show_addon_manager)
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.reject)
-        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.addon_btn, self.close_btn):
+        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.close_btn):
             button.setAutoDefault(False)
             button.setDefault(False)
+            button.setFixedHeight(26)
+        self.addon_btn.setAutoDefault(False)
+        self.addon_btn.setDefault(False)
+        self.symbol_btn.setMinimumWidth(82)
+        self.import_btn.setMinimumWidth(104)
+        self.export_btn.setMinimumWidth(104)
+        self.preview_btn.setMinimumWidth(88)
+        self.insert_btn.setMinimumWidth(88)
+        self.close_btn.setMinimumWidth(82)
+        self.addon_btn.setFixedSize(92, 26)
 
         self._build_ui()
         self._rebuild_param_form()
@@ -719,13 +788,18 @@ class ToolkitDialog(QDialog):
 
     def _build_ui(self):
         main = QVBoxLayout()
+        main.setContentsMargins(12, 12, 12, 12)
+        main.setSpacing(10)
 
         top_row = QHBoxLayout()
+        top_row.setSpacing(8)
         top_row.addWidget(QLabel("Function"))
         top_row.addWidget(self.tool_select, 1)
+        top_row.addWidget(self.addon_btn)
         main.addLayout(top_row)
 
         split = QHBoxLayout()
+        split.setSpacing(12)
         split.addWidget(self.scroll, 0)
 
         right = QVBoxLayout()
@@ -736,16 +810,16 @@ class ToolkitDialog(QDialog):
         layer_row.addStretch(1)
         right.addLayout(layer_row)
         right.addWidget(self.preview, 1)
-        right.addWidget(self.validation_text)
         split.addLayout(right, 1)
         main.addLayout(split, 1)
 
         btns = QHBoxLayout()
+        btns.setSpacing(8)
         btns.addWidget(self.symbol_btn)
-        btns.addWidget(self.addon_btn)
         btns.addWidget(self.import_btn)
         btns.addWidget(self.export_btn)
-        btns.addStretch(1)
+        btns.addWidget(self.status_label, 1)
+        btns.addWidget(self.progress_label)
         btns.addWidget(self.preview_btn)
         btns.addWidget(self.insert_btn)
         btns.addWidget(self.close_btn)
@@ -767,7 +841,7 @@ class ToolkitDialog(QDialog):
         self.tool_select.blockSignals(True)
         self.tool_select.clear()
         for spec in all_tools:
-            self.tool_select.addItem(spec.title, spec.key)
+            self.tool_select.addItem(spec.title, spec.key, getattr(spec, "icon_path", ""))
         index = self.tool_select.findData(current_key)
         self.tool_select.setCurrentIndex(index if index >= 0 else 0)
         self.tool_select.blockSignals(False)
@@ -813,7 +887,16 @@ class ToolkitDialog(QDialog):
         self.form_layout.addStretch(1)
         self._update_layer_controls(tool)
         self._apply_dynamic_param_state()
-        self._refresh_preview()
+        manual = self._manual_preview(tool)
+        self.preview_btn.setText("Regenerate" if manual else "Preview")
+        if manual:
+            # Do not leave the previously selected tool visible while a manual
+            # add-on is waiting for its first explicit generation.
+            self.preview.scene().clear()
+            self.preview._last_tool_key = tool.key
+            self._mark_preview_pending()
+        else:
+            self._refresh_preview()
 
     def _make_control(self, param):
         if param.kind == "font_path":
@@ -823,7 +906,7 @@ class ToolkitDialog(QDialog):
             layout.setSpacing(6)
             text = QLineEdit()
             text.setText(str(param.default))
-            text.textChanged.connect(self._refresh_preview)
+            text.textChanged.connect(self._on_param_control_changed)
             text.installEventFilter(self)
             if param.tooltip:
                 text.setToolTip(param.tooltip)
@@ -909,7 +992,10 @@ class ToolkitDialog(QDialog):
 
     def _on_param_control_changed(self, *_args):
         self._apply_dynamic_param_state()
-        self._refresh_preview()
+        if self._manual_preview():
+            self._mark_preview_pending()
+        else:
+            self._refresh_preview()
 
     def _values(self):
         # Read widget values and normalize them before preview/insert so all
@@ -1218,21 +1304,58 @@ class ToolkitDialog(QDialog):
         for param in tool.params:
             if param.key in values:
                 self._set_control_value(param, values[param.key])
-        self._refresh_preview()
+        if self._manual_preview(tool):
+            self._mark_preview_pending()
+        else:
+            self._refresh_preview()
 
     def _refresh_preview(self):
         tool = self._current_tool()
-        self._update_tool_status(tool, self._values())
+        if self._manual_preview(tool):
+            self._mark_preview_pending()
+            return
+        self._set_generation_state("Preparing", 20)
         for key, visible in self._layer_visibility().items():
             self.preview.set_layer_visibility(key, visible)
-        self.preview.draw_tool_preview(tool, self._values(), preserve_view=True)
+        error = self.preview.draw_tool_preview(tool, self._values(), preserve_view=True)
+        self._finish_generation(error)
 
     def _refit_preview(self):
         tool = self._current_tool()
-        self._update_tool_status(tool, self._values())
+        self._set_generation_state("Preparing", 10)
+        QApplication.processEvents()
         for key, visible in self._layer_visibility().items():
             self.preview.set_layer_visibility(key, visible)
-        self.preview.draw_tool_preview(tool, self._values(), preserve_view=False)
+        self._set_generation_state("Preparing", 45)
+        QApplication.processEvents()
+        error = self.preview.draw_tool_preview(tool, self._values(), preserve_view=False)
+        self._finish_generation(error)
+
+    def _manual_preview(self, tool=None):
+        tool = tool or self._current_tool()
+        return str(getattr(tool, "preview_policy", "live")).lower() == "manual"
+
+    def _set_generation_state(self, status, percent, detail=""):
+        self.status_label.setText(status)
+        self.status_label.setToolTip(detail)
+        self.progress_label.setText(
+            "Ready · 100%" if status == "Ready" else "{}%".format(int(percent))
+        )
+        color = "#b42318" if status == "Needs attention" else ("#287a4b" if status == "Ready" else "#56606a")
+        self.status_label.setStyleSheet("QLabel { color: %s; padding: 2px 5px; }" % color)
+        self._preview_dirty = status == "Preparing"
+
+    def _mark_preview_pending(self):
+        self._set_generation_state(
+            "Preparing", 0,
+            "Parameters changed. Click Regenerate to update the preview.",
+        )
+
+    def _finish_generation(self, error=None):
+        if error:
+            self._set_generation_state("Needs attention", 0, error)
+            return
+        self._set_generation_state("Ready", 100)
 
     def _update_tool_status(self, tool, values):
         lines = []
@@ -1252,7 +1375,13 @@ class ToolkitDialog(QDialog):
                     lines.append("WARNING: {}".format(warning))
             except Exception as exc:
                 lines.append("ERROR: validation failed: {}".format(exc))
-        self.validation_text.setPlainText("\n".join(lines) if lines else "Ready")
+        status = "Needs attention" if lines else "Ready"
+        self.status_label.setText(status)
+        self.status_label.setToolTip("\n".join(lines))
+        has_error = any(line.startswith("ERROR:") for line in lines)
+        has_warning = any(line.startswith("WARNING:") for line in lines)
+        color = "#b42318" if has_error else ("#9a6700" if has_warning else "#56606a")
+        self.status_label.setStyleSheet("QLabel { color: %s; padding: 2px 5px; }" % color)
 
     def _update_layer_controls(self, tool):
         while self.layer_layout.count():
@@ -1267,13 +1396,19 @@ class ToolkitDialog(QDialog):
         for key, label in tool.preview_layers:
             checkbox = QCheckBox(label)
             checkbox.setChecked(True)
-            checkbox.toggled.connect(self._refresh_preview)
+            checkbox.toggled.connect(self._on_preview_layer_changed)
             self.layer_layout.addWidget(checkbox)
             self.layer_checks[key] = checkbox
         self.layer_layout.addStretch(1)
 
     def _layer_visibility(self):
         return {key: checkbox.isChecked() for key, checkbox in self.layer_checks.items()}
+
+    def _on_preview_layer_changed(self, *_args):
+        if self._manual_preview():
+            self._mark_preview_pending()
+        else:
+            self._refresh_preview()
 
     def _available_layers(self, default_value):
         layers = []
@@ -1580,8 +1715,8 @@ def _draw_generated_preview(scene, tool_spec, values, visible_layers=None):
         layer_key, layer_ids = _preview_layer_ids_for_tool_key(tool_spec, values, raw_key)
         if not visible_layers.get(raw_key, True):
             continue
-        pen, brush = _preview_style_for_key(layer_key)
         for layer_id in layer_ids:
+            pen, brush = _preview_style_for_layer_id(layer_id, layer_key)
             layer_index = layout.layer(layer_id, 0)
             for cell in _iter_cells_recursive(layout, top_cell):
                 shapes = cell.shapes(layer_index)

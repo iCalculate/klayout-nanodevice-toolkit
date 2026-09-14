@@ -76,10 +76,24 @@ Open **Tools → NanoDevice → NanoDevice GUI**, then select **Add-ons**:
 
 - **Install ZIP** validates and copies a packaged add-on to
   `%USERPROFILE%\KLayout\nanodevice-addons`.
+- The manager shows that exact installation folder followed by every discovered
+  add-on's name, version, functions, load status, and source path.
 - **Add Development Directory** registers a source directory without copying
   it, which is useful while developing an add-on.
 - **Reload** rescans installed and development add-ons without
   restarting KLayout.
+
+Optional `ToolSpec` presentation fields:
+
+- `icon_path`: an absolute path to a local PNG or SVG. The icon is shown in
+  the Function picker; unavailable files fall back to the built-in schematic.
+- `preview_policy`: `"live"` by default, or `"manual"` for expensive devices.
+  A manual tool is marked Preparing after parameter changes and is generated
+  only when the user clicks **Regenerate**.
+
+Generated add-on previews are colored from each declared `layer_ids` entry and
+the active LabPDK `.lyp` map. Add-ons should declare real process layer IDs
+instead of relying on abstract preview-key fallbacks.
 
 Device add-ons are not bundled or copied by `install_lymtoolkit.bat`. Keep each
 device implementation in its own project and distribute it as one ZIP. The ZIP

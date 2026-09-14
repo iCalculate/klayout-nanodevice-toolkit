@@ -52,6 +52,8 @@ class ToolSpec:
     addon_id: str = "core"
     addon_version: str = ""
     config_migrator: Optional[Callable] = None
+    icon_path: str = ""
+    preview_policy: str = "live"
 
 
 @dataclass

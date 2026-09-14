@@ -11,12 +11,20 @@ TOOLKIT = os.path.join(ROOT, "lymtoolkit", "toolkit", "nanodevice-toolkit")
 if TOOLKIT not in sys.path:
     sys.path.insert(0, TOOLKIT)
 
+import addon_manager as addon_manager_module  # noqa: E402
 from addon_manager import (  # noqa: E402
     MANIFEST_NAME,
     discover_addons,
     install_addon_zip,
     load_addon,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_real_user_addons(tmp_path, monkeypatch):
+    """Unit discovery must not consume the developer's registered add-ons."""
+    monkeypatch.setattr(addon_manager_module, "read_development_paths", lambda: [])
+    monkeypatch.setattr(addon_manager_module, "user_addon_dir", lambda: str(tmp_path / "user-addons"))
 
 
 def _write_minimal_addon(path, addon_id="example.addon", api=1, tool_key="example_tool"):
@@ -45,6 +53,7 @@ def test_load_and_discover_addon(tmp_path):
     _write_minimal_addon(addon)
     record = load_addon(str(addon))
     assert record.status == "loaded"
+    assert record.version == "1.0.0"
     tools, records = discover_addons(str(tmp_path), extra_paths=[str(addon)])
     assert [tool.key for tool in tools] == ["example_tool"]
     assert records[0].addon_id == "example.addon"
@@ -96,6 +105,22 @@ def test_zip_install_and_path_traversal_rejection(tmp_path):
         archive.writestr(MANIFEST_NAME, "{}")
     with pytest.raises(ValueError, match="unsafe ZIP path"):
         install_addon_zip(str(bad_zip), destination=str(tmp_path / "bad-install"))
+
+
+def test_zip_install_uses_user_addon_folder_by_default(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    _write_minimal_addon(source)
+    archive_path = tmp_path / "addon.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for filename in (MANIFEST_NAME, "addon.py"):
+            archive.write(source / filename, filename)
+
+    default_folder = tmp_path / "user-addons"
+    monkeypatch.setattr(addon_manager_module, "user_addon_dir", lambda: str(default_folder))
+    installed = install_addon_zip(str(archive_path))
+
+    assert installed == str(default_folder / "example.addon")
+    assert os.path.isfile(os.path.join(installed, MANIFEST_NAME))
 
 
 def test_declared_documentation_is_required_and_installed(tmp_path):
