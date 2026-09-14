@@ -90,6 +90,10 @@ Optional `ToolSpec` presentation fields:
 - `preview_policy`: `"live"` by default, or `"manual"` for expensive devices.
   A manual tool is marked Preparing after parameter changes and is generated
   only when the user clicks **Regenerate**.
+- `documentation_path`: a local HTML entry page, absolute or relative to the
+  add-on directory. The GUI enables **Manual** only when the page exists. Keep
+  images, CSS, and linked pages inside a manifest-declared resource directory
+  so the complete manual remains available after ZIP installation.
 
 Generated add-on previews are colored from each declared `layer_ids` entry and
 the active LabPDK `.lyp` map. Add-ons should declare real process layer IDs

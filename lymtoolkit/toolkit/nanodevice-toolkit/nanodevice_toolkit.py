@@ -7,8 +7,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 import pya
-from PyQt5.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QBrush, QFont, QFontDatabase, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt5.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QUrl, pyqtSignal
+from PyQt5.QtGui import QColor, QBrush, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -704,6 +704,10 @@ class ToolkitDialog(QDialog):
     def __init__(self, tool_specs, parent=None):
         super().__init__(parent)
         self.core_tool_specs = list(tool_specs)
+        manual_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "manuals")
+        for spec in self.core_tool_specs:
+            if not getattr(spec, "documentation_path", ""):
+                spec.documentation_path = os.path.join(manual_dir, spec.key + ".html")
         addon_tools, self.addon_records = discover_addons(ROOT_DIR)
         all_tools = self.core_tool_specs + addon_tools
         self.tool_specs = {spec.key: spec for spec in all_tools}
@@ -757,17 +761,20 @@ class ToolkitDialog(QDialog):
         self.export_btn.clicked.connect(self._export_config)
         self.symbol_btn = QPushButton("Symbols")
         self.symbol_btn.clicked.connect(self._show_symbols)
+        self.manual_btn = QPushButton("Manual")
+        self.manual_btn.clicked.connect(self._show_manual)
         self.addon_btn = QPushButton("Add-ons")
         self.addon_btn.clicked.connect(self._show_addon_manager)
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.reject)
-        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.close_btn):
+        for button in (self.preview_btn, self.insert_btn, self.import_btn, self.export_btn, self.symbol_btn, self.manual_btn, self.close_btn):
             button.setAutoDefault(False)
             button.setDefault(False)
             button.setFixedHeight(26)
         self.addon_btn.setAutoDefault(False)
         self.addon_btn.setDefault(False)
         self.symbol_btn.setMinimumWidth(82)
+        self.manual_btn.setMinimumWidth(82)
         self.import_btn.setMinimumWidth(104)
         self.export_btn.setMinimumWidth(104)
         self.preview_btn.setMinimumWidth(88)
@@ -816,6 +823,7 @@ class ToolkitDialog(QDialog):
         btns = QHBoxLayout()
         btns.setSpacing(8)
         btns.addWidget(self.symbol_btn)
+        btns.addWidget(self.manual_btn)
         btns.addWidget(self.import_btn)
         btns.addWidget(self.export_btn)
         btns.addWidget(self.status_label, 1)
@@ -832,6 +840,14 @@ class ToolkitDialog(QDialog):
 
     def _show_addon_manager(self):
         AddonManagerDialog(self, self).exec_()
+
+    def _show_manual(self):
+        path = str(getattr(self._current_tool(), "documentation_path", "") or "")
+        if not path or not os.path.isfile(path):
+            QMessageBox.warning(self, "Manual Unavailable", "No local HTML manual is installed for this function.")
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(path))):
+            QMessageBox.warning(self, "Manual Unavailable", "The local HTML manual could not be opened:\n{}".format(path))
 
     def reload_addons(self):
         current_key = self.tool_select.currentData()
@@ -1047,6 +1063,9 @@ class ToolkitDialog(QDialog):
 
     def _apply_dynamic_param_state(self):
         tool = self._current_tool()
+        manual_path = str(getattr(tool, "documentation_path", "") or "")
+        self.manual_btn.setEnabled(bool(manual_path and os.path.isfile(manual_path)))
+        self.manual_btn.setToolTip(manual_path if manual_path else "No local HTML manual is installed for this function.")
         raw_values = self._raw_values()
         for param in tool.params:
             control = self.controls.get(param.key)
@@ -2141,12 +2160,13 @@ def _build_truetype_text_path(values):
 
     path = QPainterPath()
     cursor_x = 0.0
+    text_advance = metrics.horizontalAdvance if hasattr(metrics, "horizontalAdvance") else metrics.width
     for char in text:
         char_path = QPainterPath()
         char_path.addText(0.0, 0.0, font, char)
         char_bounds = char_path.boundingRect()
         path.addPath(char_path.translated(cursor_x - char_bounds.left(), 0.0))
-        cursor_x += metrics.horizontalAdvance(char) + spacing_px
+        cursor_x += text_advance(char) + spacing_px
 
     bounds = path.boundingRect()
     anchor_x, anchor_y = _anchor_offset(bounds, anchor)

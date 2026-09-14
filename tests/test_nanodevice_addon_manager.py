@@ -144,6 +144,24 @@ def test_declared_documentation_is_required_and_installed(tmp_path):
     assert os.path.isfile(os.path.join(installed, "docs", "modes", "mode.md"))
 
 
+def test_tool_html_documentation_is_resolved_inside_addon(tmp_path):
+    source = tmp_path / "html-manual"
+    _write_minimal_addon(source)
+    addon_path = source / "addon.py"
+    code = addon_path.read_text(encoding="utf-8")
+    code = code.replace(
+        "    return AddonSpec",
+        "    tool.documentation_path='docs/manual.html'\n    return AddonSpec",
+    )
+    addon_path.write_text(code, encoding="utf-8")
+    (source / "docs").mkdir()
+    manual = source / "docs" / "manual.html"
+    manual.write_text("<!doctype html><title>Manual</title>", encoding="utf-8")
+    record = load_addon(str(source))
+    assert record.status == "loaded"
+    assert record.addon.tools[0].documentation_path == str(manual.resolve())
+
+
 def test_repository_addons_are_not_implicitly_discovered(tmp_path):
     bundled = tmp_path / "addons" / "should_stay_external"
     _write_minimal_addon(bundled)

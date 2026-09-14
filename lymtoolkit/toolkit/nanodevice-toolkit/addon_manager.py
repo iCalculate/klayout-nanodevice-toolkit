@@ -158,6 +158,14 @@ def load_addon(addon_dir):
             seen.add(tool.key)
             tool.addon_id = addon.addon_id
             tool.addon_version = addon.version
+            documentation_path = str(getattr(tool, "documentation_path", "") or "")
+            if documentation_path and not os.path.isabs(documentation_path):
+                documentation_path = os.path.abspath(os.path.join(source, documentation_path))
+                if os.path.commonpath([source, documentation_path]) != source:
+                    raise ValueError("documentation escapes the add-on directory: {}".format(tool.key))
+                tool.documentation_path = documentation_path
+            if documentation_path and not os.path.isfile(documentation_path):
+                raise ValueError("documentation does not exist for tool: {}".format(tool.key))
         return AddonRecord(addon.addon_id, addon.name, addon.version, source, "loaded", addon=addon)
     except Exception as exc:
         return AddonRecord("", os.path.basename(source), "", source, "error", str(exc))

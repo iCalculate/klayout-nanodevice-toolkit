@@ -73,3 +73,38 @@ def test_manual_tool_waits_for_regenerate(monkeypatch):
     assert len(calls) == 1
     assert dialog.status_label.text() == "Ready"
     assert dialog.progress_label.text() == "Ready · 100%"
+
+
+def test_every_core_function_has_an_offline_html_manual(monkeypatch):
+    _app()
+    monkeypatch.setattr(gui, "discover_addons", lambda _root: ([], []))
+    tools = [
+        gui.NANODEVICE_FET_TOOL,
+        gui.GDSFACTORY_TEXT_TOOL,
+        gui.MOSFET_COMPONENT_TOOL,
+        gui.MOSFET_PCELL_TOOL,
+        gui.WOODPILE_COMPONENT_TOOL,
+        gui.CROSSBAR_COMPONENT_TOOL,
+        gui.HEMT_COMPONENT_TOOL,
+        gui.HALL_COMPONENT_TOOL,
+        gui.TLM_COMPONENT_TOOL,
+        gui.SENSE_LATCH_ARRAY_TOOL,
+        gui.WRITE_READ_ARRAY_TOOL,
+    ]
+    dialog = gui.ToolkitDialog(tools)
+    for index, tool in enumerate(tools):
+        dialog.tool_select.setCurrentIndex(index)
+        assert dialog.manual_btn.isEnabled(), tool.key
+        assert tool.documentation_path.endswith(tool.key + ".html")
+        assert os.path.isfile(tool.documentation_path)
+        html = open(tool.documentation_path, "r", encoding="utf-8").read()
+        assert '<svg class="diagram"' in html
+        assert tool.key + "-canvas.png" in html
+        assert os.path.isfile(os.path.join(os.path.dirname(tool.documentation_path), "assets", tool.key + "-canvas.png"))
+        assert "如何改变结构" in html
+        assert 'data-lang="zh"' in html
+        assert 'data-lang="en"' in html
+        assert "Structural effect" in html
+    manual_js = os.path.join(os.path.dirname(tools[0].documentation_path), "assets", "manual.js")
+    assert os.path.isfile(manual_js)
+    assert "nanodevice-manual-language" in open(manual_js, "r", encoding="utf-8").read()

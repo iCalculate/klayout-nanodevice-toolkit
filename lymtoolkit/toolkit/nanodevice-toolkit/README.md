@@ -140,7 +140,8 @@ GUI highlights:
 - Extensible toolkit-style architecture
 - Symbolic preview before insertion; expensive add-ons may opt into manual
   **Regenerate** mode with a compact Preparing/percentage/Ready indicator.
-- Separate `Preview`, `Insert`, and `Symbols` actions
+- Separate `Preview`, `Insert`, `Symbols`, and per-function `Manual` actions
+- Illustrated, dependency-free local HTML manuals with parameter-to-geometry annotations
 - Parameter symbols included for future schematic/annotation diagrams
 
 Main adjustable parameters:

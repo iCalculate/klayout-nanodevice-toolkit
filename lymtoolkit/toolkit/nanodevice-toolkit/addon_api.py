@@ -54,6 +54,7 @@ class ToolSpec:
     config_migrator: Optional[Callable] = None
     icon_path: str = ""
     preview_policy: str = "live"
+    documentation_path: str = ""
 
 
 @dataclass

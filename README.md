@@ -39,6 +39,7 @@ The older root-level Python launcher files were removed to avoid maintaining a s
 | KLayout install | `lymtoolkit/install_lymtoolkit.bat` | Installs the toolkit GUI, runtime modules, and bundled resources into KLayout |
 | KLayout GUI | `Tools -> NanoDevice -> NanoDevice GUI` | Opens the maintained interactive GUI after installation |
 | NanoDevice add-ons | `NanoDevice GUI -> Add-ons` | Installs external device ZIPs and reloads trusted local plugins |
+| Function manuals | `NanoDevice GUI -> select Function -> Manual` | Opens the selected function's illustrated offline HTML manual |
 | NanoRouting GUI | `Tools -> NanoDevice -> NanoRouting GUI` | Opens the routing-focused GUI for direct path / bundle generation |
 | NanoMark GUI | `Tools -> NanoMark -> NanoMark GUI` | Opens the mark toolkit for EBL writefield marks, general mark arrays, and CV mark arrays |
 | PDK tooling | `lymtoolkit/pdk/` | Keeps technology files, layers, examples, and registration macros together |
@@ -152,6 +153,7 @@ KLayout_Nanodevice_Toolkit/
 - [Environment setup notes](docs/ENV_SETUP.md)
 - [Quick start notes](docs/QUICK_START.md)
 - [NanoDevice Add-on API v1](docs/ADDON_DEVELOPMENT.md)
+- [NanoDevice illustrated function manuals](lymtoolkit/toolkit/nanodevice-toolkit/manuals/index.html)
 - [KLayout toolkit notes](lymtoolkit/README.md)
 
 ## Known Boundaries
